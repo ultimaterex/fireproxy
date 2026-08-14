@@ -1,0 +1,52 @@
+# FireProxy — local / contributor stack (build images from this repo).
+# Prefer docker-compose.yml (GHCR pull) for normal installs.
+#
+#   cp .env.example .env
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# UI:     http://localhost:3080
+# API:    http://localhost:8081/v1/health
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    ports:
+      - "8081:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_DEV_AGENT_TOKEN: ${AUTH_DEV_AGENT_TOKEN:-}
+      AUTH_TRUSTED_PROXY: ${AUTH_TRUSTED_PROXY:-}
+      AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-}
+      STORE_SIZE: ${STORE_SIZE:-120}
+      DATA_PATH: /data/fireproxy.db
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      GEOIP_MMDB: ${GEOIP_MMDB:-/data/GeoLite2-Country.mmdb}
+      MAXMIND_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID:-}
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+      GEOIP_UPDATE_EVERY: ${GEOIP_UPDATE_EVERY:-12h}
+      MODULES: ${MODULES:-}
+      UNIFI_BASE_URL: ${UNIFI_BASE_URL:-https://unifi.lan:11443}
+      UNIFI_API_KEY: ${UNIFI_API_KEY:-}
+      FIREPROXY_SECRETS_KEY: ${FIREPROXY_SECRETS_KEY:-}
+    volumes:
+      - fireproxy-data:/data
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.ui
+    ports:
+      - "3080:80"
+    environment:
+      DEBUG: ${DEBUG:-0}
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  fireproxy-data:

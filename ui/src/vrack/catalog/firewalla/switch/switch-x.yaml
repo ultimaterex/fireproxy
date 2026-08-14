@@ -1,0 +1,28 @@
+manufacturer: firewalla
+type: switch
+product: switch-x
+match:
+  model:
+    - fwsw-A
+    - FWSW12X
+    - Firewalla Switch X
+    - Firewalla-Switch-X
+    - Switch X
+ru: 1
+width_in: 12.99
+blocks:
+  - kind: badge
+  - kind: rj45
+    rail: low
+    ports: 1-8
+    numbers: above
+    gap: 12
+  - kind: sfp
+    rail: low
+    cols: 4
+    order: rows
+    gap: 22
+    ports: [9, 10, 11, 12]
+    numbers:
+      high: above
+      low: below

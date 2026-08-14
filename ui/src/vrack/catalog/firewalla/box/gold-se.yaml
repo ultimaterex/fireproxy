@@ -1,0 +1,24 @@
+manufacturer: firewalla
+type: box
+product: gold-se
+match:
+  model:
+    - Firewalla Gold SE
+    - Gold SE
+    - gold_se
+ru: 1
+window_in: 5.51
+blocks:
+  - kind: keystone
+    side: left
+    rail: center
+    slots: 8
+  - kind: badge
+  - kind: rj45
+    rail: center
+    ports: 1-4
+    numbers: above
+  - kind: keystone
+    side: right
+    rail: center
+    slots: 8

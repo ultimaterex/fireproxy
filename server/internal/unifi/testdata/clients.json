@@ -1,0 +1,27 @@
+{
+  "offset": 0,
+  "limit": 200,
+  "count": 2,
+  "totalCount": 2,
+  "data": [
+    {
+      "type": "WIRED",
+      "id": "e1111111-1111-1111-1111-111111111111",
+      "name": "nas",
+      "macAddress": "02:00:00:00:00:01",
+      "ipAddress": "203.0.113.20",
+      "uplinkDeviceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "access": {"type": "DEFAULT"}
+    },
+    {
+      "type": "WIRELESS",
+      "id": "e2222222-2222-2222-2222-222222222222",
+      "name": "phone",
+      "macAddress": "02:00:00:00:00:02",
+      "ipAddress": "203.0.113.21",
+      "uplinkDeviceId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "ssid": "Home",
+      "access": {"type": "DEFAULT"}
+    }
+  ]
+}

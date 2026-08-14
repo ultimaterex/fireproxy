@@ -1,0 +1,20 @@
+{
+  "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "macAddress": "02:00:00:00:00:aa",
+  "ipAddress": "203.0.113.10",
+  "name": "USW-1",
+  "model": "USW Pro HD 24",
+  "supported": true,
+  "state": "ONLINE",
+  "firmwareVersion": "7.4.1",
+  "firmwareUpdatable": false,
+  "features": {
+    "switching": {}
+  },
+  "interfaces": {
+    "ports": [
+      {"idx": 1, "state": "UP", "connector": "RJ45", "maxSpeedMbps": 2500, "speedMbps": 2500},
+      {"idx": 2, "state": "DOWN", "connector": "SFPPLUS", "maxSpeedMbps": 10000}
+    ]
+  }
+}

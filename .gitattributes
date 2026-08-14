@@ -1,0 +1,5 @@
+# Shell / unit files must stay LF for Linux (Firewalla enroll).
+*.sh text eol=lf
+*.service text eol=lf
+deploy/agent/install-agent.sh text eol=lf
+deploy/agent/fireproxy-agent.service text eol=lf

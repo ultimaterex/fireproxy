@@ -1,0 +1,18 @@
+manufacturer: unifi
+type: switch
+product: usw-aggregation
+match:
+  model:
+    - USW Aggregation
+    - USW-Aggregation
+ru: 1
+blocks:
+  - kind: screen
+  - kind: sfp
+    cols: 4
+    order: columns
+    ports: [1, 2, 3, 4, 5, 6, 7, 8]
+    numbers:
+      high: above
+      low: below
+  - kind: trailer

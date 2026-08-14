@@ -1,0 +1,22 @@
+{
+  "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "macAddress": "02:00:00:00:00:bb",
+  "ipAddress": "203.0.113.12",
+  "name": "U7-1",
+  "model": "U7 Pro",
+  "supported": true,
+  "state": "ONLINE",
+  "firmwareVersion": "8.6.11",
+  "firmwareUpdatable": false,
+  "uplink": {"deviceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+  "features": {
+    "accessPoint": {}
+  },
+  "interfaces": {
+    "radios": [
+      {"wlanStandard": "802.11be", "frequencyGHz": 2.4, "channelWidthMHz": 20, "channel": 6},
+      {"wlanStandard": "802.11be", "frequencyGHz": 5, "channelWidthMHz": 80, "channel": 44},
+      {"wlanStandard": "802.11be", "frequencyGHz": 6, "channelWidthMHz": 320, "channel": 69}
+    ]
+  }
+}

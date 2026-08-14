@@ -1,0 +1,19 @@
+{
+  "ts": 1786365456,
+  "host": "Firewalla",
+  "load": { "m1": 7.2, "m5": 6.8, "m15": 7.0 },
+  "cpu": { "user": 24.0, "sys": 20.0, "idle": 5.0, "softirq": 50.0 },
+  "dns_restarts": 159642,
+  "dns_blocks_delta": 3,
+  "ifaces": {
+    "eth1": { "rx_bytes": 88163542, "tx_bytes": 98847450, "speed_mbps": 1000, "carrier": true },
+    "eth2": { "rx_bytes": 1000, "tx_bytes": 1000, "speed_mbps": 1000, "carrier": true },
+    "eth3": { "rx_bytes": 506126936596, "tx_bytes": 346776135577, "speed_mbps": 2500, "carrier": true },
+    "br0": { "rx_bytes": 100, "tx_bytes": 200, "speed_mbps": null, "carrier": true },
+    "br2": { "rx_bytes": 300, "tx_bytes": 400, "speed_mbps": null, "carrier": true }
+  },
+  "wan": {
+    "eth1": { "name": "ISP A", "ready": true, "active": true },
+    "eth2": { "name": "ISP B", "ready": true, "active": false }
+  }
+}

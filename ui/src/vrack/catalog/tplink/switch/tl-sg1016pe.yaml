@@ -1,0 +1,19 @@
+manufacturer: tplink
+type: switch
+product: tl-sg1016pe
+match:
+  model:
+    - TL-SG1016PE
+    - TL-SG1016PE 3.0
+    - SG1016PE
+ru: 1
+# 440 mm rack body (ears fill the rest of 19″)
+width_in: 17.32
+blocks:
+  - kind: badge
+  - kind: rj45
+    order: columns
+    odds: high
+    bank: 8
+    gap: 8
+    ports: 1-16

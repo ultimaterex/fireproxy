@@ -1,0 +1,19 @@
+{
+  "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+  "macAddress": "02:00:00:00:00:dd",
+  "ipAddress": "203.0.113.13",
+  "name": "USW-Off",
+  "model": "USW Flex",
+  "supported": true,
+  "state": "OFFLINE",
+  "firmwareVersion": "2.1.8",
+  "firmwareUpdatable": false,
+  "features": {
+    "switching": {}
+  },
+  "interfaces": {
+    "ports": [
+      {"idx": 1, "state": "DOWN", "connector": "RJ45", "maxSpeedMbps": 2500}
+    ]
+  }
+}

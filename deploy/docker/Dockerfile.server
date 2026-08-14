@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.25-alpine AS build
+ARG VERSION=dev
+WORKDIR /src
+COPY pkg/ ./pkg/
+COPY server/ ./server/
+COPY agent/ ./agent/
+COPY deploy/agent/install-agent.sh /out/install-agent.sh
+WORKDIR /src/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-server ./cmd/fireproxy-server
+WORKDIR /src/agent
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-agent-arm64 ./cmd/fireproxy-agent \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-agent-amd64 ./cmd/fireproxy-agent \
+ && echo "${VERSION}" > /out/VERSION
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates \
+    && mkdir -p /data /agent \
+    && chown nobody:nobody /data
+COPY --from=build /out/fireproxy-server /usr/local/bin/fireproxy-server
+COPY --from=build /out/fireproxy-agent-arm64 /agent/fireproxy-agent-arm64
+COPY --from=build /out/fireproxy-agent-amd64 /agent/fireproxy-agent-amd64
+COPY --from=build /out/VERSION /agent/VERSION
+COPY --from=build /out/install-agent.sh /agent/install-agent.sh
+ENV LISTEN_ADDR=:8080
+ENV DATA_PATH=/data/fireproxy.db
+ENV AGENT_BIN_DIR=/agent
+ENV INSTALL_SCRIPT_PATH=/agent/install-agent.sh
+EXPOSE 8080
+USER nobody
+ENTRYPOINT ["/usr/local/bin/fireproxy-server"]

@@ -1,0 +1,26 @@
+# Shared 1U + port kit. Products only describe layout.
+scale_px_per_in: 48
+u:
+  width_in: 19
+  height_in: 1.75
+# Front display (UniFi 1.3″). VRACK draws the maker logo there.
+screen:
+  diagonal_in: 1.3
+rj45:
+  width_in: 0.63
+sfp:
+  width_mm: 13.4
+  height_mm: 8.5
+keystone:
+  width_in: 0.58
+# Engine rules (not overridable per product):
+#   screen.y = vertical center of the 1U
+#   product.width_in < 19 → chassis centered, flush ears fill the rest
+#   align left/right + ear_in → short ear + long blank extension (Pro Max 16)
+#   no screen → pack ports, right-align in the chassis (Switch X)
+#   narrow bay → rj45 scales down to fit
+#   rj45.height = screen.side / 2
+#   rj45.bottom = screen.bottom (low) / mid (center)
+#   sfp.stack_height = screen.side (2-row); 1-row uses one stack cell (sfpH)
+#   trailer.width = sfp.width
+#   window_in → centered device cutout; keystones fill the wings

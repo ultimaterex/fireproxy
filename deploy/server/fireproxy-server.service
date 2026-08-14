@@ -1,0 +1,13 @@
+[Unit]
+Description=FireProxy Server (ingest + API + modules)
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/fireproxy/fireproxy-server.env
+ExecStart=/usr/local/bin/fireproxy-server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

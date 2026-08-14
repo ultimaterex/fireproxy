@@ -1,0 +1,20 @@
+[Unit]
+Description=FireProxy Agent (low-CPU Firewalla metrics pusher)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=pi
+# Journal read for service logs (unbound/dnsmasq/firerouter)
+SupplementaryGroups=systemd-journal
+EnvironmentFile=/home/pi/fireproxy/deploy/agent/fireproxy-agent.env
+ExecStart=/home/pi/fireproxy/bin/fireproxy-agent
+Nice=10
+CPUQuota=5%
+MemoryMax=64M
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

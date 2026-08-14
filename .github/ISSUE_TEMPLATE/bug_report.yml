@@ -1,0 +1,58 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please **don't** include ingest tokens, real
+        MAC/IP/hostnames, or other sensitive network data — redact before posting.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Agent
+        - Server
+        - UI
+        - Install / enroll
+        - CI / release
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: e.g. 0.1.0, or a commit sha
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker Compose
+        - Prebuilt binary
+        - Built from source
+        - Other
+  - type: input
+    id: hardware
+    attributes:
+      label: Firewalla model / architecture (if agent-related)
+      placeholder: e.g. Gold SE (arm64), Purple, x86
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact tokens and any real IP / MAC / hostname values.
+      render: shell

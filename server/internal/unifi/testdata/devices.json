@@ -1,0 +1,47 @@
+{
+  "offset": 0,
+  "limit": 200,
+  "count": 3,
+  "totalCount": 3,
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "macAddress": "02:00:00:00:00:aa",
+      "ipAddress": "203.0.113.10",
+      "name": "USW-1",
+      "model": "USW Pro HD 24",
+      "state": "ONLINE",
+      "supported": true,
+      "firmwareVersion": "7.4.1",
+      "firmwareUpdatable": false,
+      "features": ["switching"],
+      "interfaces": ["ports"]
+    },
+    {
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "macAddress": "02:00:00:00:00:cc",
+      "ipAddress": "203.0.113.11",
+      "name": "USW-2",
+      "model": "USW Aggregation",
+      "state": "ONLINE",
+      "supported": true,
+      "firmwareVersion": "7.4.1",
+      "firmwareUpdatable": false,
+      "features": ["switching"],
+      "interfaces": ["ports"]
+    },
+    {
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "macAddress": "02:00:00:00:00:bb",
+      "ipAddress": "203.0.113.12",
+      "name": "U7-1",
+      "model": "U7 Pro",
+      "state": "ONLINE",
+      "supported": true,
+      "firmwareVersion": "8.6.11",
+      "firmwareUpdatable": false,
+      "features": ["accessPoint"],
+      "interfaces": ["radios"]
+    }
+  ]
+}

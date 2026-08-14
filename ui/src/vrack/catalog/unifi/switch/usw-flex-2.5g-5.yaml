@@ -1,0 +1,25 @@
+manufacturer: unifi
+type: switch
+product: usw-flex-2.5g-5
+match:
+  model:
+    - USW Flex 2.5G 5
+    - USW Flex 2.5G 5 PoE
+    - USW-Flex-2.5G-5
+    - USW-Flex-2.5G-5-PoE
+form: shelf
+width_in: 4.61
+height_in: 1.1
+blocks:
+  - kind: badge
+  - kind: rj45
+    rail: center
+    ports: 1-4
+    numbers: below
+    gap: 2
+  - kind: rj45
+    rail: center
+    ports: "5"
+    numbers: below
+    gap: 2
+    lead: 10

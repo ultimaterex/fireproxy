@@ -1,0 +1,28 @@
+manufacturer: unifi
+type: switch
+product: usw-pro-max-16
+match:
+  model:
+    - USW Pro Max 16
+    - USW Pro Max 16 PoE
+    - USW-Pro-Max-16
+    - USW-Pro-Max-16-PoE
+ru: 1
+width_in: 12.8
+align: left
+blocks:
+  - kind: screen
+  - kind: rj45
+    rail: center
+    bank: 8
+    ports: 1-16
+    numbers: below
+    gap: 3
+  - kind: sfp
+    rail: center
+    cols: 2
+    order: rows
+    ports: [17, 18]
+    numbers:
+      high: below
+      low: below

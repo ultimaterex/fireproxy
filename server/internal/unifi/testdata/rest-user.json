@@ -1,0 +1,23 @@
+{
+  "meta": { "rc": "ok" },
+  "data": [
+    {
+      "_id": "64aaaaaaaaaaaaaaaaaaaa01",
+      "mac": "02:00:00:00:00:01",
+      "name": "kvm02",
+      "hostname": "kvm02",
+      "ip": "203.0.113.20"
+    },
+    {
+      "_id": "64aaaaaaaaaaaaaaaaaaaa02",
+      "mac": "02:00:00:00:00:02",
+      "name": "old-nas",
+      "fixed_ip": "203.0.113.21"
+    },
+    {
+      "_id": "64aaaaaaaaaaaaaaaaaaaa03",
+      "mac": "02:00:00:00:00:03",
+      "hostname": "android-xx"
+    }
+  ]
+}

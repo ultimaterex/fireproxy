@@ -1,0 +1,20 @@
+{
+  "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "macAddress": "02:00:00:00:00:cc",
+  "ipAddress": "203.0.113.11",
+  "name": "USW-2",
+  "model": "USW Aggregation",
+  "supported": true,
+  "state": "ONLINE",
+  "firmwareVersion": "7.4.1",
+  "firmwareUpdatable": false,
+  "uplink": {"deviceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+  "features": {
+    "switching": {"lags": [{"portIdxs": [7, 8]}]}
+  },
+  "interfaces": {
+    "ports": [
+      {"idx": 1, "state": "UP", "connector": "SFPPLUS", "maxSpeedMbps": 10000, "speedMbps": 10000}
+    ]
+  }
+}

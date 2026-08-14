@@ -1,0 +1,24 @@
+manufacturer: unifi
+type: switch
+product: usw-pro-hd-24
+match:
+  model:
+    - USW Pro HD 24
+    - USW-Pro-HD-24
+    - USW-Pro-HD-24-PoE
+ru: 1
+blocks:
+  - kind: screen
+  - kind: rj45
+    rail: low
+    bank: 8
+    ports: 1-24
+    numbers: below
+  - kind: sfp
+    cols: 2
+    order: columns
+    ports: [25, 26, 27, 28]
+    numbers:
+      high: above
+      low: below
+  - kind: trailer

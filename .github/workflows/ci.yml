@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (test / vet / fmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache-dependency-path: |
+            pkg/go.sum
+            agent/go.sum
+            server/go.sum
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l pkg agent server)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"; echo "$unformatted"
+            echo "Run: gofmt -w pkg agent server"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet fireproxy/pkg/... fireproxy/agent/... fireproxy/server/...
+      - name: go test (with coverage)
+        run: go test -covermode=atomic -coverprofile=coverage.out fireproxy/pkg/... fireproxy/agent/... fireproxy/server/...
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  ui:
+    name: UI (lint / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  govulncheck:
+    name: govulncheck (main)
+    # Vulnerability scanning on main builds only.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan modules
+        run: |
+          for m in pkg agent server; do
+            echo "== govulncheck $m =="
+            (cd "$m" && govulncheck ./...)
+          done
+
+  trivy:
+    name: Trivy filesystem scan (main)
+    # Dependency/vuln scan on main builds; results appear in the Security tab.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: trivy.sarif

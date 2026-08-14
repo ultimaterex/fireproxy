@@ -1,0 +1,67 @@
+FireProxy
+Copyright (C) 2026 ultimaterex
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3, as published by
+the Free Software Foundation. See the LICENSE file for the full text.
+
+Contributions are licensed to the maintainers under the terms described in CLA.md.
+
+
+================================================================================
+Trademarks
+================================================================================
+
+FireProxy is an independent project and is NOT affiliated with, endorsed by, or
+sponsored by Firewalla Inc., Ubiquiti Inc. (UniFi), or TP-Link Corporation.
+
+"Firewalla" is a trademark of Firewalla Inc. "Ubiquiti" and "UniFi" are
+trademarks of Ubiquiti Inc. "TP-Link" is a trademark of TP-Link Corporation.
+"WireGuard" is a registered trademark of Jason A. Donenfeld. All other product
+names, logos, and brands are the property of their respective owners and are used
+in this project for identification purposes only.
+
+The brand logo images under ui/public/logos/ are the property of their respective
+owners. They are NOT covered by this project's AGPL-3.0 license and are included
+solely to identify the corresponding hardware in the UI.
+
+
+================================================================================
+Third-party components
+================================================================================
+
+Server (Go):
+  - github.com/gorilla/websocket              (BSD-2-Clause)
+  - modernc.org/sqlite                        (BSD-3-Clause)
+  - github.com/oschwald/geoip2-golang         (ISC)
+  - github.com/oschwald/maxminddb-golang      (ISC; via geoip2-golang)
+  - github.com/coreos/go-oidc/v3              (Apache-2.0)
+  - golang.org/x/oauth2                       (BSD-3-Clause)
+
+Agent (Go):
+  - github.com/gorilla/websocket              (BSD-2-Clause)
+  - github.com/redis/go-redis/v9              (BSD-2-Clause)
+
+GeoIP data (optional feature):
+  This product can use GeoLite2 data created by MaxMind, available from
+  https://www.maxmind.com. The GeoLite2 database is NOT distributed with this
+  project; operators must supply their own under MaxMind's GeoLite2 EULA, which
+  requires attribution.
+
+UI (npm):
+  - react, react-dom                    (MIT)
+  - radix-ui                            (MIT)
+  - lucide-react                        (ISC)
+  - d3-geo                              (ISC)
+  - topojson-client                     (ISC)
+  - tailwindcss, @tailwindcss/vite, tailwind-merge, clsx,
+    class-variance-authority, tw-animate-css (MIT)
+  - yaml                                (ISC)
+
+World map boundaries rendered by the UI use TopoJSON data derived from Natural
+Earth (public domain) via the world-atlas project (loaded at runtime from CDN;
+not vendored in this repo).
+
+Exact versions are pinned in server/go.mod, agent/go.mod, and ui/package.json.
+This list covers direct runtime dependencies on a best-effort basis; consult
+each dependency's own license (and its transitive tree) for authoritative terms.
