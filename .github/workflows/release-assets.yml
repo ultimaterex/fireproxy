@@ -3,15 +3,18 @@ name: Release assets
 # Manual backfill / republish of GitHub Release binaries (and optionally GHCR
 # images) for an existing tag. Use when release-please created the tag/Release
 # but the binaries/images jobs did not run (or need a rebuild).
+#
+# Does not move floating image tags (:latest / :0.1) — only the exact version
+# tag — so republishing an older release cannot roll back current pointers.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Git tag to attach assets to (e.g. v0.1.1)"
+        description: "Existing git tag to attach assets to (e.g. v0.1.1)"
         required: true
         type: string
       publish_images:
-        description: "Also rebuild and push multi-arch GHCR images"
+        description: "Also rebuild and push multi-arch GHCR images for this version tag only"
         required: false
         type: boolean
         default: false
@@ -30,6 +33,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Require existing tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
@@ -63,6 +74,8 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           files: dist/*
+          overwrite_files: true
+          make_latest: false
 
   images:
     name: Build & push images
@@ -75,6 +88,14 @@ jobs:
       matrix:
         component: [server, ui]
     steps:
+      - name: Require existing tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
@@ -84,9 +105,7 @@ jobs:
         id: ver
         run: |
           tag="${{ inputs.tag }}"
-          v="${tag#v}"
-          echo "version=${v}" >> "$GITHUB_OUTPUT"
-          echo "minor=${v%.*}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -102,7 +121,5 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/${{ matrix.component }}:${{ steps.ver.outputs.version }}
-            ghcr.io/${{ github.repository }}/${{ matrix.component }}:${{ steps.ver.outputs.minor }}
-            ghcr.io/${{ github.repository }}/${{ matrix.component }}:latest
           build-args: |
             VERSION=${{ steps.ver.outputs.version }}
