@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/ultimaterex/fireproxy/compare/v0.1.1...v0.1.2) (2026-08-15)
+
+
+### Features
+
+* Firewalla App API control (pairing, LAN, speedtest) ([#8](https://github.com/ultimaterex/fireproxy/issues/8)) ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+
 ## [0.1.1](https://github.com/ultimaterex/fireproxy/compare/v0.1.0...v0.1.1) (2026-08-14)
 
 Public v1 — FireProxy initial open-source release.
