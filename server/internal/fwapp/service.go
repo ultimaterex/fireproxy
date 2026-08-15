@@ -212,12 +212,57 @@ func (s *Service) RunSpeedtest(ctx context.Context, wanUUID, serverID string) (S
 
 // SpeedtestJob is an async LAN speedtest (avoids reverse-proxy timeouts on long POSTs).
 type SpeedtestJob struct {
-	ID       string           `json:"id"`
-	State    string           `json:"state"` // queued|running|done|error
-	WanUUID  string           `json:"wan_uuid,omitempty"`
-	ServerID string           `json:"server_id,omitempty"`
-	Result   *SpeedtestResult `json:"result,omitempty"`
-	Error    string           `json:"error,omitempty"`
+	ID        string           `json:"id"`
+	State     string           `json:"state"` // queued|running|done|error
+	WanUUID   string           `json:"wan_uuid,omitempty"`
+	ServerID  string           `json:"server_id,omitempty"`
+	Result    *SpeedtestResult `json:"result,omitempty"`
+	Error     string           `json:"error,omitempty"`
+	updatedAt time.Time        // for TTL / eviction; not exported
+}
+
+const (
+	speedJobTTL = 30 * time.Minute
+	speedJobMax = 32
+)
+
+// pruneSpeedJobsLocked drops finished jobs past TTL and caps map size. Caller holds s.mu.
+func (s *Service) pruneSpeedJobsLocked(now time.Time) {
+	if s.speedJobs == nil {
+		return
+	}
+	for id, j := range s.speedJobs {
+		if j == nil {
+			delete(s.speedJobs, id)
+			continue
+		}
+		if j.State == "done" || j.State == "error" {
+			if j.updatedAt.IsZero() || now.Sub(j.updatedAt) > speedJobTTL {
+				delete(s.speedJobs, id)
+			}
+		}
+	}
+	for len(s.speedJobs) > speedJobMax {
+		var oldestID string
+		var oldest time.Time
+		for id, j := range s.speedJobs {
+			if j == nil || j.State == "queued" || j.State == "running" {
+				continue
+			}
+			t := j.updatedAt
+			if t.IsZero() {
+				t = now.Add(-speedJobTTL)
+			}
+			if oldestID == "" || t.Before(oldest) {
+				oldestID = id
+				oldest = t
+			}
+		}
+		if oldestID == "" {
+			break
+		}
+		delete(s.speedJobs, oldestID)
+	}
 }
 
 // StartSpeedtest queues a background speedtest and returns immediately.
@@ -240,11 +285,13 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 	serverID = strings.TrimSpace(serverID)
 
 	id := RandomID()
-	job := SpeedtestJob{ID: id, State: "queued", WanUUID: wanUUID, ServerID: serverID}
+	now := time.Now()
+	job := SpeedtestJob{ID: id, State: "queued", WanUUID: wanUUID, ServerID: serverID, updatedAt: now}
 	s.mu.Lock()
 	if s.speedJobs == nil {
 		s.speedJobs = map[string]*SpeedtestJob{}
 	}
+	s.pruneSpeedJobsLocked(now)
 	s.speedJobs[id] = &job
 	s.mu.Unlock()
 
@@ -252,6 +299,7 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 		s.mu.Lock()
 		if j := s.speedJobs[jobID]; j != nil {
 			j.State = "running"
+			j.updatedAt = time.Now()
 		}
 		s.mu.Unlock()
 
@@ -267,6 +315,7 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 			}
 			j.State = "error"
 			j.Error = err.Error()
+			j.updatedAt = time.Now()
 			if errorsIsLocal(err) {
 				s.lastPingOK = false
 				s.state = "lan-down"
@@ -287,6 +336,7 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 		cp := res
 		j.State = "done"
 		j.Result = &cp
+		j.updatedAt = time.Now()
 		s.lastPingOK = true
 		s.lastPingAt = time.Now().UTC()
 		s.state = "lan-ok"
@@ -411,6 +461,7 @@ func (s *Service) enrichResults(ctx context.Context, results []SpeedtestResult) 
 func (s *Service) SpeedtestJobStatus(id string) (SpeedtestJob, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pruneSpeedJobsLocked(time.Now())
 	j := s.speedJobs[id]
 	if j == nil {
 		return SpeedtestJob{}, false
