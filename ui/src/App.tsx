@@ -971,6 +971,26 @@ function App() {
               }
               port={portIndex.get(selectedDevice.mac.toUpperCase())}
               groupLabel={groupNameFor(selectedDevice, labelTag)}
+              unifi={unifiMod}
+              onRenamed={(mac, name) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, name } : d,
+                  ),
+                )
+                setStack((prev) => {
+                  const idx = prev.findIndex(
+                    (f) => f.kind === 'device' && f.mac.toUpperCase() === key,
+                  )
+                  if (idx < 0) return prev
+                  const frame = prev[idx]
+                  if (frame.kind !== 'device') return prev
+                  const next = [...prev]
+                  next[idx] = { ...frame, label: name }
+                  return next
+                })
+              }}
             />
           ) : selectedRegion && tab === 'metrics' ? (
             <RegionDetail

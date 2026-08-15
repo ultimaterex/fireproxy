@@ -90,6 +90,33 @@ func TestFWAppRoutes(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/rename", strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff","name":"Lab Host"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("rename %d %s", rr.Code, rr.Body.String())
+	}
+	var renameBody struct {
+		OK   bool   `json:"ok"`
+		Name string `json:"name"`
+		MAC  string `json:"mac"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&renameBody); err != nil {
+		t.Fatal(err)
+	}
+	if !renameBody.OK || renameBody.Name != "Lab Host" || renameBody.MAC != "AA:BB:CC:DD:EE:FF" {
+		t.Fatalf("%+v", renameBody)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/rename", strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff","name":"  "}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("rename empty %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/speedtest", strings.NewReader(`{"wan_uuid":"wan-abc"}`))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rr, req)
