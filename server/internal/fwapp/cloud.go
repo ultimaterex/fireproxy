@@ -13,16 +13,16 @@ import (
 
 // PairQR is the JSON payload encoded in the Firewalla Additional Pairing QR.
 type PairQR struct {
-	GID         string `json:"gid"`
-	Seed        string `json:"seed"`
-	License     string `json:"license"`
-	Ek          string `json:"ek"`
-	IPAddress   string `json:"ipaddress"`
-	DeviceName  string `json:"deviceName"`
-	RR          string `json:"rr"`
-	Service     string `json:"service"`
-	Type        string `json:"type"`
-	Model       string `json:"model"`
+	GID        string `json:"gid"`
+	Seed       string `json:"seed"`
+	License    string `json:"license"`
+	Ek         string `json:"ek"`
+	IPAddress  string `json:"ipaddress"`
+	DeviceName string `json:"deviceName"`
+	RR         string `json:"rr"`
+	Service    string `json:"service"`
+	Type       string `json:"type"`
+	Model      string `json:"model"`
 }
 
 // PairRequest is the UI/API pairing input.
@@ -47,17 +47,17 @@ func newCloudClient() *cloudClient {
 }
 
 type etokenResp struct {
-	AccessToken string `json:"access_token"`
-	EID         string `json:"eid"`
-	AID         string `json:"aid"`
+	AccessToken string       `json:"access_token"`
+	EID         string       `json:"eid"`
+	AID         string       `json:"aid"`
 	Groups      []cloudGroup `json:"groups"`
 }
 
 type cloudGroup struct {
-	ID            string           `json:"_id"`
-	Name          string           `json:"name"`
-	EID           string           `json:"eid"`
-	AID           string           `json:"aid"`
+	ID            string             `json:"_id"`
+	Name          string             `json:"name"`
+	EID           string             `json:"eid"`
+	AID           string             `json:"aid"`
 	SymmetricKeys []cloudSymKeyEntry `json:"symmetricKeys"`
 }
 

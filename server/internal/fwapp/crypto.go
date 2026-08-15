@@ -28,9 +28,9 @@ const (
 )
 
 var (
-	ErrBadQR       = errors.New("invalid pairing QR JSON")
-	ErrCrypto      = errors.New("crypto failure")
-	ErrNotPaired   = errors.New("firewalla control not paired")
+	ErrBadQR        = errors.New("invalid pairing QR JSON")
+	ErrCrypto       = errors.New("crypto failure")
+	ErrNotPaired    = errors.New("firewalla control not paired")
 	ErrLocalUnreach = errors.New("firewalla box unreachable on LAN")
 )
 
