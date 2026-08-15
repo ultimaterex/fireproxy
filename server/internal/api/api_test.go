@@ -47,7 +47,7 @@ func TestHealthAndLatest(t *testing.T) {
 		Modules []modules.Info `json:"modules"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &mods)
-	if len(mods.Modules) != 3 || mods.Modules[0].ID != "unifi-sync" || !mods.Modules[0].Enabled {
+	if len(mods.Modules) != 4 || mods.Modules[0].ID != "unifi-sync" || !mods.Modules[0].Enabled {
 		t.Fatalf("modules: %+v", mods.Modules)
 	}
 

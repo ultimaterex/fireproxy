@@ -33,6 +33,7 @@ type Reporter interface {
 var catalog = []Info{
 	{ID: "unifi-sync", Label: "UniFi"},
 	{ID: "tplink-sync", Label: "TP-Link"},
+	{ID: "fw-app", Label: "Firewalla control"},
 	{ID: "ha-mqtt", Label: "Home Assistant"},
 }
 
@@ -216,6 +217,7 @@ func DefaultFactories() map[string]func() Module {
 	return map[string]func() Module{
 		"unifi-sync":  func() Module { return &Stub{ModuleName: "unifi-sync"} },
 		"tplink-sync": func() Module { return &Stub{ModuleName: "tplink-sync"} },
+		"fw-app":      func() Module { return &Stub{ModuleName: "fw-app"} },
 		"ha-mqtt":     func() Module { return &Stub{ModuleName: "ha-mqtt"} },
 	}
 }

@@ -146,8 +146,10 @@ func (c *Collector) collectSpeedtest(nets []inventory.NetworkIface, cache map[st
 		if n := len(row.Points); n > 0 {
 			last := row.Points[n-1]
 			row.Down, row.Up, row.Ping = last.Down, last.Up, last.Ping
+			row.ServerID, row.Server, row.Location = last.ServerID, last.Server, last.Location
 		} else if row.Active && (latest.Down > 0 || latest.Up > 0) {
 			row.Down, row.Up, row.Ping, row.Jitter = latest.Down, latest.Up, latest.Ping, latest.jitter
+			row.ServerID, row.Server, row.Location = latest.ServerID, latest.Server, latest.Location
 		}
 		out = append(out, row)
 	}
@@ -289,6 +291,7 @@ func parseSpeedPoint(raw string, score float64) (speedLast, bool) {
 			p.jitter = v
 		}
 	}
+	p.ServerID, p.Server, p.Location = speedtestServerFields(m)
 	if u, ok := m["uuid"].(string); ok {
 		p.uuid = u
 	}
@@ -305,6 +308,37 @@ func parseSpeedPoint(raw string, score float64) (speedLast, bool) {
 		return speedLast{}, false
 	}
 	return p, true
+}
+
+func speedtestServerFields(m map[string]any) (id, sponsor, location string) {
+	srv, _ := m["server"].(map[string]any)
+	if srv == nil {
+		return "", "", ""
+	}
+	id = jsonString(srv, "id", "serverid")
+	sponsor = jsonString(srv, "sponsor")
+	location = jsonString(srv, "location", "name")
+	return id, sponsor, location
+}
+
+func jsonString(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			if s := strings.TrimSpace(t); s != "" {
+				return s
+			}
+		case float64:
+			return strconv.FormatInt(int64(t), 10)
+		case json.Number:
+			return t.String()
+		}
+	}
+	return ""
 }
 
 func jsonFloat(m map[string]any, keys ...string) float64 {

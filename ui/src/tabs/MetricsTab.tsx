@@ -1,12 +1,22 @@
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { Flag } from '@/components/Flag'
 import { Donut } from '@/components/Donut'
 import { RegionMap } from '@/components/RegionMap'
 import { completeHourPoints, DnsChart, SpeedSpark, speedTrend } from '@/components/SpeedSpark'
+import { Toast } from '@/components/Toast'
 import { TransferChart } from '@/components/TransferChart'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Card,
   CardContent,
@@ -22,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { api } from '@/lib/api'
 import { DOWN, UP } from '@/lib/brand'
 import { cpuBusy, cpuTone, fmtBytes, fmtCount, fmtMbps, fmtPlan, fmtRelative, fmtTime } from '@/lib/format'
 import {
@@ -44,6 +55,7 @@ export function MetricsTab({
   onOpenRules,
   onSelectDevice,
   onSelectRegion,
+  onDashboard,
 }: {
   latest: LatestView | null
   persist: PersistInfo
@@ -55,6 +67,7 @@ export function MetricsTab({
   onOpenRules: () => void
   onSelectDevice?: (mac: string, label: string) => void
   onSelectRegion?: (cc: string, label: string) => void
+  onDashboard?: (dash: Dashboard) => void
 }) {
   const [detail, setDetail] = useState<'speed' | null>(null)
   const [heroFrom, setHeroFrom] = useState<HeroRect | null>(null)
@@ -309,9 +322,11 @@ export function MetricsTab({
       {detail === 'speed' ? (
         <SpeedtestDetail
           wans={speed}
+          dashboard={dashboard}
           from={heroFrom}
           onCloseBegin={beginCloseSpeed}
           onClose={closeSpeed}
+          onDashboard={onDashboard}
         />
       ) : null}
 
@@ -410,7 +425,8 @@ export function MetricsTab({
 function IspRow({ wan }: { wan: SpeedtestWAN }) {
   const plan = fmtPlan(wan.plan_down, wan.plan_up)
   const trend = speedTrend(wan.points ?? [])
-  const hint = [wan.active ? 'active' : 'standby', plan || null].filter(Boolean).join(' · ')
+  const server = [wan.server, wan.location].filter(Boolean).join(' · ')
+  const hint = [wan.active ? 'active' : 'standby', plan || null, server || null].filter(Boolean).join(' · ')
   return (
     <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-3">
       <div className="min-w-0 space-y-0.5">
@@ -451,14 +467,18 @@ function prefersReducedMotion() {
 
 function SpeedtestDetail({
   wans,
+  dashboard,
   from,
   onCloseBegin,
   onClose,
+  onDashboard,
 }: {
   wans: SpeedtestWAN[]
+  dashboard: Dashboard | null
   from: HeroRect | null
   onCloseBegin: () => void
   onClose: () => void
+  onDashboard?: (dash: Dashboard) => void
 }) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -466,6 +486,244 @@ function SpeedtestDetail({
   const rows = wans
     .flatMap((w) => (w.points ?? []).map((p) => ({ ...p, name: w.name })))
     .sort((a, b) => b.ts - a.ts)
+
+  const [canRun, setCanRun] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'running'>('idle')
+  const [runError, setRunError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [pickWan, setPickWan] = useState<string | null>(null)
+  const [serverId, setServerId] = useState('auto')
+  const [servers, setServers] = useState<{ id: string; name: string; sponsor: string; distance?: number }[]>([])
+  const [serversErr, setServersErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const [stR, modR] = await Promise.all([api('/v1/fw-app/status'), api('/v1/modules')])
+        if (cancelled) return
+        let lanOk = false
+        if (stR.ok) {
+          const st = (await stR.json()) as { state?: string; paired?: boolean }
+          lanOk = st.state === 'lan-ok'
+        }
+        let enabled = false
+        if (modR.ok) {
+          const body = (await modR.json()) as { modules?: { id: string; enabled?: boolean }[] }
+          enabled = !!body.modules?.find((m) => m.id === 'fw-app')?.enabled
+        }
+        const ok = enabled && lanOk && wans.length > 0
+        setCanRun(ok)
+        if (ok) {
+          try {
+            await api('/v1/fw-app/speedtest/sync', { method: 'POST' })
+            const dashR = await api('/v1/dashboard')
+            if (!cancelled && dashR.ok) {
+              onDashboard?.((await dashR.json()) as Dashboard)
+            }
+          } catch {
+            /* keep current dashboard */
+          }
+        }
+      } catch {
+        if (!cancelled) setCanRun(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [wans.length, onDashboard])
+
+  const loadServers = async () => {
+    setServersErr(null)
+    try {
+      const r = await api('/v1/fw-app/speedtest/servers?limit=20')
+      const body = (await r.json()) as {
+        error?: string
+        servers?: { id: string; name: string; sponsor: string; distance?: number }[]
+      }
+      if (!r.ok) throw new Error(body.error || `servers ${r.status}`)
+      setServers(body.servers ?? [])
+    } catch (e) {
+      setServers([])
+      setServersErr(e instanceof Error ? e.message : 'servers failed')
+    }
+  }
+
+  const dismissToast = useCallback(() => setToast(null), [])
+
+  const applyOptimistic = (
+    wanUUID: string,
+    result: {
+      down?: number
+      up?: number
+      ping?: number
+      ts?: number
+      server_id?: string
+      server?: string
+      location?: string
+    },
+  ) => {
+    if (!onDashboard) return
+    const rawTs = result.ts || Math.floor(Date.now() / 1000)
+    const ts = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs
+    const down = result.down ?? 0
+    const up = result.up ?? 0
+    const ping = result.ping
+    const point = {
+      ts,
+      down,
+      up,
+      ...(ping ? { ping } : {}),
+      ...(result.server_id ? { server_id: result.server_id } : {}),
+      ...(result.server ? { server: result.server } : {}),
+      ...(result.location ? { location: result.location } : {}),
+    }
+    const base = dashboard?.speedtest?.length ? dashboard.speedtest : wans
+    let hit = false
+    const speedtest = base.map((w) => {
+      if (w.uuid !== wanUUID) return w
+      hit = true
+      const pts = [...(w.points ?? [])]
+      if (!pts.some((p) => p.ts === ts)) pts.push(point)
+      return {
+        ...w,
+        down,
+        up,
+        ping,
+        server_id: result.server_id ?? w.server_id,
+        server: result.server ?? w.server,
+        location: result.location ?? w.location,
+        points: pts,
+      }
+    })
+    if (!hit) {
+      speedtest.push({
+        uuid: wanUUID,
+        name: wanUUID,
+        down,
+        up,
+        ping,
+        server_id: result.server_id,
+        server: result.server,
+        location: result.location,
+        points: [point],
+      })
+    }
+    onDashboard({ ...(dashboard ?? ({} as Dashboard)), speedtest })
+  }
+
+  const startRun = async (wanUUID: string, sid: string) => {
+    setPicking(false)
+    setRunError(null)
+    setPhase('running')
+    const picked = sid ? servers.find((s) => s.id === sid) : undefined
+    try {
+      const r = await api('/v1/fw-app/speedtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wan_uuid: wanUUID,
+          ...(sid ? { server_id: sid } : {}),
+        }),
+      })
+      const body = (await r.json()) as {
+        error?: string
+        job?: { id?: string; state?: string }
+      }
+      if (!r.ok) throw new Error(body.error || `speedtest ${r.status}`)
+      const jobId = body.job?.id
+      if (!jobId) throw new Error('no job id')
+
+      const deadline = Date.now() + 180_000
+      let result:
+        | {
+            down?: number
+            up?: number
+            ping?: number
+            ts?: number
+            server_id?: string
+            server?: string
+            location?: string
+          }
+        | undefined
+      while (Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, 1500))
+        const jr = await api(`/v1/fw-app/speedtest/${jobId}`)
+        if (!jr.ok) throw new Error(`job ${jr.status}`)
+        const jb = (await jr.json()) as {
+          job?: {
+            state?: string
+            error?: string
+            result?: {
+              down?: number
+              up?: number
+              ping?: number
+              ts?: number
+              server_id?: string
+              server?: string
+              location?: string
+            }
+          }
+        }
+        const st = jb.job?.state
+        if (st === 'error') throw new Error(jb.job?.error || 'speedtest failed')
+        if (st === 'done') {
+          result = jb.job?.result
+          break
+        }
+      }
+      if (!result) throw new Error('speedtest timed out')
+      if (!result.server_id && sid) result.server_id = sid
+      if (!result.server && picked) result.server = picked.sponsor
+      if (!result.location && picked) result.location = picked.name
+      const down = result.down ?? 0
+      const up = result.up ?? 0
+      const ping = result.ping
+      const bits = [`↓ ${fmtMbps(down)}`, `↑ ${fmtMbps(up)}`]
+      if (ping) bits.push(`${Math.round(ping)} ms`)
+      const serverLabel = [result.server, result.location].filter(Boolean).join(' · ')
+      if (serverLabel) bits.push(serverLabel)
+      applyOptimistic(wanUUID, result)
+      setToast(bits.join(' · '))
+      setPhase('idle')
+      void (async () => {
+        try {
+          const dashR = await api('/v1/dashboard')
+          if (!dashR.ok) return
+          const dash = (await dashR.json()) as Dashboard
+          const rawTs = result.ts || Math.floor(Date.now() / 1000)
+          const ts = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs
+          const w = dash.speedtest?.find((x) => x.uuid === wanUUID)
+          const has = (w?.points ?? []).some((p) => p.ts === ts || p.ts >= ts - 2)
+          if (has) onDashboard?.(dash)
+        } catch {
+          /* keep optimistic */
+        }
+      })()
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : 'speedtest failed')
+      setPhase('idle')
+    }
+  }
+
+  const onRunClick = () => {
+    const preferred = wans.find((w) => w.active)?.uuid ?? wans[0]?.uuid ?? null
+    setPickWan(preferred)
+    setServerId('auto')
+    setPicking(true)
+    void loadServers()
+  }
+
+  const onConfirmRun = () => {
+    const wan = pickWan ?? wans.find((w) => w.active)?.uuid ?? wans[0]?.uuid
+    if (!wan) {
+      setRunError('Pick ISP')
+      return
+    }
+    void startRun(wan, serverId === 'auto' ? '' : serverId)
+  }
 
   useLayoutEffect(() => {
     const backdrop = backdropRef.current
@@ -504,7 +762,7 @@ function SpeedtestDetail({
   }, [from])
 
   const requestClose = () => {
-    if (closingRef.current) return
+    if (closingRef.current || phase === 'running') return
     closingRef.current = true
     onCloseBegin()
     const backdrop = backdropRef.current
@@ -531,6 +789,8 @@ function SpeedtestDetail({
     )
   }
 
+  const busy = phase === 'running'
+
   return (
     <div
       ref={backdropRef}
@@ -542,7 +802,79 @@ function SpeedtestDetail({
         className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border bg-popover shadow-md will-change-transform"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 border-b px-6 py-4 text-base font-medium">Speedtest</div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-6 py-4">
+          <span className="text-base font-medium">Speedtest</span>
+          {canRun ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={onRunClick}
+            >
+              {phase === 'running' ? 'Running…' : 'Run'}
+            </Button>
+          ) : null}
+        </div>
+        {busy ? (
+          <div className="h-1 w-full overflow-hidden bg-muted">
+            <div className="h-full w-1/3 animate-[speedIndeterminate_1.2s_ease-in-out_infinite] bg-foreground/70" />
+          </div>
+        ) : null}
+        {picking ? (
+          <div className="shrink-0 space-y-3 border-b px-6 py-4">
+            {wans.length > 1 ? (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">ISP</p>
+                <div className="flex flex-wrap gap-2">
+                  {wans.map((w) => (
+                    <Button
+                      key={w.uuid}
+                      type="button"
+                      size="sm"
+                      variant={pickWan === w.uuid ? 'default' : 'outline'}
+                      disabled={busy}
+                      onClick={() => setPickWan(w.uuid)}
+                    >
+                      {w.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Server</p>
+              <Select
+                value={serverId || 'auto'}
+                onValueChange={setServerId}
+                disabled={busy}
+              >
+                <SelectTrigger className="w-full max-w-md">
+                  <SelectValue placeholder="Auto" />
+                </SelectTrigger>
+                <SelectContent position="popper" className="z-[70]">
+                  <SelectItem value="auto">Auto</SelectItem>
+                  {servers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.sponsor}
+                      {s.name ? ` · ${s.name}` : ''}
+                      {s.distance != null ? ` · ${Math.round(s.distance)} km` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {serversErr ? <p className="text-sm text-destructive">{serversErr}</p> : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" disabled={busy} onClick={onConfirmRun}>
+                Start
+              </Button>
+              <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPicking(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {runError ? <p className="px-6 pt-3 text-sm text-destructive">{runError}</p> : null}
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
           {wans.map((w) => {
             const trend = speedTrend(w.points ?? [])
@@ -556,6 +888,12 @@ function SpeedtestDetail({
                     </span>
                     {fmtPlan(w.plan_down, w.plan_up) ? (
                       <span className="text-muted-foreground"> · {fmtPlan(w.plan_down, w.plan_up)}</span>
+                    ) : null}
+                    {[w.server, w.location].filter(Boolean).length ? (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {[w.server, w.location].filter(Boolean).join(' · ')}
+                      </span>
                     ) : null}
                   </span>
                   <span className="font-mono tabular-nums text-muted-foreground">
@@ -577,6 +915,7 @@ function SpeedtestDetail({
                 <TableRow>
                   <TableHead>When</TableHead>
                   <TableHead>WAN</TableHead>
+                  <TableHead>Server</TableHead>
                   <TableHead className="text-right">Down</TableHead>
                   <TableHead className="text-right">Up</TableHead>
                   <TableHead className="text-right">Ping</TableHead>
@@ -587,6 +926,9 @@ function SpeedtestDetail({
                   <TableRow key={`${r.name}-${r.ts}`}>
                     <TableCell className="text-muted-foreground">{fmtTime(r.ts)}</TableCell>
                     <TableCell>{r.name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {[r.server, r.location].filter(Boolean).join(' · ') || '—'}
+                    </TableCell>
                     <TableCell className="text-right font-mono tabular-nums" style={{ color: DOWN }}>
                       {fmtMbps(r.down)}
                     </TableCell>
@@ -603,11 +945,25 @@ function SpeedtestDetail({
           ) : null}
         </div>
         <div className="flex shrink-0 justify-end border-t px-6 py-3">
-          <button type="button" className="text-sm font-medium" onClick={requestClose}>
+          <button
+            type="button"
+            className="text-sm font-medium disabled:opacity-50"
+            disabled={phase === 'running'}
+            onClick={requestClose}
+          >
             Close
           </button>
         </div>
       </div>
+      {toast
+        ? createPortal(<Toast message={toast} onDismiss={dismissToast} />, document.body)
+        : null}
+      <style>{`
+@keyframes speedIndeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+`}</style>
     </div>
   )
 }

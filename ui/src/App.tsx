@@ -1056,6 +1056,7 @@ function App() {
               onOpenRules={() => selectTab('rules')}
               onSelectDevice={(mac, label) => openDevice(mac, label)}
               onSelectRegion={(cc, label) => openRegion(cc, label)}
+              onDashboard={setDashboard}
             />
           )}
 

@@ -168,9 +168,9 @@ func TestCollectDashboardSpeedtestAndDNS(t *testing.T) {
 		},
 		zrev: map[string][]ZMember{
 			"internet_speedtest_results": {
-				{Member: `{"uuid":"wan-a","success":true,"timestamp":1700000000,"result":{"download":619,"upload":410,"latency":11}}`, Score: 1700000000},
+				{Member: `{"uuid":"wan-a","success":true,"timestamp":1700000000,"server":{"id":"38427","sponsor":"Telesur","location":"Balona"},"result":{"download":619,"upload":410,"latency":11}}`, Score: 1700000000},
 				{Member: `{"uuid":"wan-b","success":true,"timestamp":1700000000,"result":{"download":28,"upload":6,"latency":24}}`, Score: 1700000000},
-				{Member: `{"uuid":"wan-a","success":true,"timestamp":1699913600,"result":{"download":608,"upload":401,"latency":12}}`, Score: 1699913600},
+				{Member: `{"uuid":"wan-a","success":true,"timestamp":1699913600,"server":{"id":"4175","sponsor":"Digicel","location":"Paramaribo"},"result":{"download":608,"upload":401,"latency":12}}`, Score: 1699913600},
 				{Member: `{"uuid":"wan-a","success":false,"timestamp":1699827200,"result":{"download":1,"upload":1,"latency":99}}`, Score: 1699827200},
 			},
 		},
@@ -194,8 +194,14 @@ func TestCollectDashboardSpeedtestAndDNS(t *testing.T) {
 	if a.Name != "Telesur" || !a.Active || a.PlanDown != 1000 || a.Down != 619 || a.Up != 410 {
 		t.Fatalf("wan a %+v", a)
 	}
+	if a.ServerID != "38427" || a.Server != "Telesur" || a.Location != "Balona" {
+		t.Fatalf("wan a server %+v", a)
+	}
 	if len(a.Points) < 2 {
-		t.Fatalf("wan a history %+v", a.Points)
+		t.Fatalf("wan a points %+v", a.Points)
+	}
+	if a.Points[len(a.Points)-1].ServerID != "38427" {
+		t.Fatalf("latest point server %+v", a.Points[len(a.Points)-1])
 	}
 	if b.Name != "Digicel" || b.Active || b.PlanDown != 30 || b.Down != 28 || b.Up != 6 {
 		t.Fatalf("wan b %+v", b)
@@ -282,9 +288,9 @@ func speedtestRedis(now time.Time) *memRedis {
 		},
 		zrev: map[string][]ZMember{
 			"internet_speedtest_results": {
-				{Member: `{"uuid":"wan-a","success":true,"timestamp":1700000000,"result":{"download":619,"upload":410,"latency":11}}`, Score: 1700000000},
+				{Member: `{"uuid":"wan-a","success":true,"timestamp":1700000000,"server":{"id":"38427","sponsor":"Telesur","location":"Balona"},"result":{"download":619,"upload":410,"latency":11}}`, Score: 1700000000},
 				{Member: `{"uuid":"wan-b","success":true,"timestamp":1700000000,"result":{"download":28,"upload":6,"latency":24}}`, Score: 1700000000},
-				{Member: `{"uuid":"wan-a","success":true,"timestamp":1699913600,"result":{"download":608,"upload":401,"latency":12}}`, Score: 1699913600},
+				{Member: `{"uuid":"wan-a","success":true,"timestamp":1699913600,"server":{"id":"4175","sponsor":"Digicel","location":"Paramaribo"},"result":{"download":608,"upload":401,"latency":12}}`, Score: 1699913600},
 			},
 		},
 	}

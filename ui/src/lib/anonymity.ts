@@ -869,7 +869,14 @@ export function anonymizeDashboard(anon: Anon, dash: Dashboard, cidrs: CidrMap[]
     speedtest: dash.speedtest?.map((s) => ({
       ...s,
       name: anon.fakeISP(s.name),
-      points: s.points?.map((p) => ({ ...p, ts: anon.shiftTS(p.ts) })),
+      server: s.server ? anon.fakeISP(s.server) : s.server,
+      location: s.location ? anon.fakeISP(s.location) : s.location,
+      points: s.points?.map((p) => ({
+        ...p,
+        ts: anon.shiftTS(p.ts),
+        server: p.server ? anon.fakeISP(p.server) : p.server,
+        location: p.location ? anon.fakeISP(p.location) : p.location,
+      })),
     })),
     dns: dash.dns
       ? {
