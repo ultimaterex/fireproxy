@@ -2,9 +2,9 @@
 
 FireProxy is a local companion server for [Firewalla](https://firewalla.com/) firewall and switch devices, with optional support for UniFi and TP Link gear.
 
-It keeps **flows and history locally** for longer than the box exposes by default, while **hindering the Firewalla as little as possible**. You get a **local web UI** (something Firewalla itself doesn’t ship), **better topology** than the usual tools with best-guess accuracy, and a **dynamic inventory** of your network. Custom device names can **sync straight to UniFi** automatically. More features are coming and if something fits this build, please [open a feature request](https://github.com/ultimaterex/fireproxy/issues/new?template=feature_request.yml).
+It keeps **flows and history locally** for longer than the box exposes by default, while **hindering the Firewalla as little as possible**. You get a **local web UI** (something Firewalla itself doesn’t ship), **better topology** than the usual tools with best-guess accuracy, and a **dynamic inventory** of your network. Custom device names can **sync straight to UniFi** automatically. Early **local Firewalla control** is available too (unofficial App API; limited surface today — pair once, then talk to the box on LAN). More features are coming and if something fits this build, please [open a feature request](https://github.com/ultimaterex/fireproxy/issues/new?template=feature_request.yml).
 
-Put simply an on-box **agent** pushes snapshots to an off-box **server** which stores history and hosts sync modules; the **UI** serves MSP-style rollups, topology, wireless, audit, and live logs.
+Put simply an on-box **agent** pushes snapshots to an off-box **server** which stores history and hosts sync/control modules; the **UI** serves MSP-style rollups, topology, wireless, audit, live logs, and Settings for optional modules.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](./LICENSE)
 
@@ -20,6 +20,7 @@ Put simply an on-box **agent** pushes snapshots to an off-box **server** which s
 - **UniFi name sync** — push custom device names to UniFi automatically (optional write)
 - **Audit** — name drift, VLAN/STP issues, unknown/offline gear, with snooze
 - **Live service logs** — unbound / dnsmasq / firerouter via agent WebSocket
+- **Firewalla control (early)** — pair via Settings → Control; LAN App API for ping / WAN speedtest (more coming; unofficial)
 - **Auth by default** — password admin, optional OIDC (e.g. Pocket ID), scoped API keys, per-agent enroll tokens
 - **Anonymity mode** — scrub hostnames/MACs/IPs for screenshots
 - **Lean agent** — `CPUQuota=5%`, `MemoryMax=64M`, no Redis `KEYS`/`SCAN`, dig, or Zeek
@@ -29,7 +30,7 @@ Put simply an on-box **agent** pushes snapshots to an off-box **server** which s
 | Piece | Role |
 |-------|------|
 | **Agent** | Runs on the Firewalla. Reads sysfs + a few Redis keys; POSTs snapshots; optional self-update |
-| **Server** | Ingest, SQLite history, UniFi/TP-Link modules, auth, enroll, API (Docker) |
+| **Server** | Ingest, SQLite history, UniFi/TP-Link/Firewalla-control modules, auth, enroll, API (Docker) |
 | **UI** | Local web UI over the Server API (nginx in Compose) |
 
 ## Run with Docker Compose (recommended)
@@ -114,6 +115,8 @@ Threat model and vulnerability reporting: [`SECURITY.md`](./SECURITY.md).
 
 ## Optional modules
 
+**Firewalla control** — enable in **Settings → Firewalla → Control**. Pair with a fresh Additional Pairing QR + box LAN IP (credentials encrypted with `FIREPROXY_SECRETS_KEY`). After pairing, FireProxy talks to the box on LAN `:8833` (cloud only for the handshake). Early surface: connectivity check and WAN speedtest from Metrics. Unofficial / unsupported by Firewalla; treat writes as privileged.
+
 **UniFi** — set `UNIFI_BASE_URL` + `UNIFI_API_KEY` (UniFi Network API key) in `.env`, or configure in Settings. Reads enrich topology, wireless, and inventory. **Name sync writes** client names to UniFi — treat that as a privileged action.
 
 **TP-Link Easy Smart** — configure switches in Settings; credentials are encrypted at rest with `FIREPROXY_SECRETS_KEY`.
@@ -136,11 +139,13 @@ Threat model and vulnerability reporting: [`SECURITY.md`](./SECURITY.md).
 
 ## Current Agent constraints
 
-- Designed to use as little on box resources as possible.
+The **agent** stays read/observe-only and capped so it barely touches the box. **Control** (when you enable it) is a separate server-side path over the box App API — not via the agent.
+
+- Designed to use as little on-box resources as possible
 - Interval default 60s (floor 30s)
 - No scrape server on the Firewalla
 - No Redis `KEYS`/`SCAN`, dig, Zeek, or product-tree edits
-- set to `Nice=10`, `CPUQuota=5%`, `MemoryMax=64M`
+- `Nice=10`, `CPUQuota=5%`, `MemoryMax=64M`
 
 ## Tested hardware
 
@@ -165,7 +170,7 @@ Developed and verified against this gear (other models may work; open an issue i
 
 ## Contributing & from-source builds
 
-Ideas that fit this project, eg local history, lean on-box agent, topology/inventory, UniFi/TP-Link enrichment — are welcome: [open a feature request](https://github.com/ultimaterex/fireproxy/issues/new?template=feature_request.yml). I can only implement features with the hardware i Have if you would like to create new faceplates for VRACK or support other devices and ecosystems, please open an issue and I help out.
+Ideas that fit this project — local history, lean agent, topology/inventory, UniFi/TP-Link enrichment, expanding Firewalla control — are welcome: [open a feature request](https://github.com/ultimaterex/fireproxy/issues/new?template=feature_request.yml). I can only implement features with the hardware I have; if you want new VRACK faceplates or other ecosystems, open an issue and I’ll help.
 
 Dev builds, tests, and CLA: [`CONTRIBUTING.md`](./CONTRIBUTING.md). To cross-compile the agent yourself:
 
