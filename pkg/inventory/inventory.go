@@ -277,15 +277,21 @@ type SpeedtestWAN struct {
 	Up       float64          `json:"up,omitempty"`
 	Ping     float64          `json:"ping,omitempty"`
 	Jitter   float64          `json:"jitter,omitempty"`
+	ServerID string           `json:"server_id,omitempty"`
+	Server   string           `json:"server,omitempty"`
+	Location string           `json:"location,omitempty"`
 	Points   []SpeedtestPoint `json:"points,omitempty"`
 }
 
 // SpeedtestPoint is one scheduled test.
 type SpeedtestPoint struct {
-	TS   int64   `json:"ts"`
-	Down float64 `json:"down"`
-	Up   float64 `json:"up"`
-	Ping float64 `json:"ping,omitempty"`
+	TS       int64   `json:"ts"`
+	Down     float64 `json:"down"`
+	Up       float64 `json:"up"`
+	Ping     float64 `json:"ping,omitempty"`
+	ServerID string  `json:"server_id,omitempty"`
+	Server   string  `json:"server,omitempty"` // sponsor label
+	Location string  `json:"location,omitempty"`
 }
 
 // DNSHealth is upstream resolver probes + query volume.

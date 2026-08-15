@@ -27,7 +27,7 @@ func TestRegistrySetAndApply(t *testing.T) {
 		t.Fatalf("persist: %v", saved)
 	}
 	list := r.List()
-	if len(list) != 3 || list[0].ID != "unifi-sync" || !list[0].Enabled {
+	if len(list) != 4 || list[0].ID != "unifi-sync" || !list[0].Enabled {
 		t.Fatalf("list: %+v", list)
 	}
 	r2 := NewRegistry(nil, DefaultFactories())

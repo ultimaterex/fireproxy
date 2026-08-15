@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronDown, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import { fmtTime } from '@/lib/format'
 import type { ModuleInfo, NameSyncRow, NameSyncView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { IdentitySettings } from '@/tabs/IdentitySettings'
+import { FWAppSettingsPage } from '@/tabs/FWAppSettings'
 import { TPLinkSettingsPage } from '@/tabs/TPLinkSettings'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -127,6 +128,7 @@ export function SettingsTab({
 
   const unifi = mods?.find((m) => m.id === 'unifi-sync')
   const tplink = mods?.find((m) => m.id === 'tplink-sync')
+  const fwApp = mods?.find((m) => m.id === 'fw-app')
 
   useEffect(() => {
     if (open !== 'unifi-sync' || !unifi) return
@@ -139,6 +141,16 @@ export function SettingsTab({
         mod={tplink}
         onBack={() => setOpen(null)}
         onToggle={(on) => void toggle(tplink.id, on)}
+      />
+    )
+  }
+
+  if (open === 'fw-app' && fwApp) {
+    return (
+      <FWAppSettingsPage
+        mod={fwApp}
+        onBack={() => setOpen(null)}
+        onToggle={(on) => void toggle(fwApp.id, on)}
       />
     )
   }
@@ -436,16 +448,17 @@ export function SettingsTab({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <div className="grid gap-3 sm:grid-cols-2">
+
+      <SettingsSection title="Firewalla">
         <Card
           className="cursor-pointer gap-0 py-0 hover:bg-accent/30"
           onClick={() => setOpen('firewalla')}
         >
           <div className="flex items-center gap-2 px-6 py-5 text-base font-medium">
-            <span className="truncate">Firewalla</span>
+            <span className="truncate">Agent</span>
             <span
               className={cn(
                 'size-2 shrink-0 rounded-full',
@@ -454,6 +467,37 @@ export function SettingsTab({
             />
           </div>
         </Card>
+        {fwApp ? (
+          <ModuleSettingsCard
+            mod={fwApp}
+            label="Control"
+            onOpen={() => setOpen(fwApp.id)}
+            onToggle={(on) => void toggle(fwApp.id, on)}
+          />
+        ) : null}
+      </SettingsSection>
+
+      <SettingsSection title="Integrations">
+        {(mods ?? [])
+          .filter((m) => m.id !== 'fw-app')
+          .map((m) => (
+            <ModuleSettingsCard
+              key={m.id}
+              mod={m}
+              onOpen={
+                m.id === 'unifi-sync' || m.id === 'tplink-sync'
+                  ? () => setOpen(m.id)
+                  : undefined
+              }
+              onToggle={(on) => void toggle(m.id, on)}
+            />
+          ))}
+        {(mods ?? []).filter((m) => m.id !== 'fw-app').length === 0 ? (
+          <p className="text-sm text-muted-foreground sm:col-span-2">No modules</p>
+        ) : null}
+      </SettingsSection>
+
+      <SettingsSection title="Access">
         <Card
           className="cursor-pointer gap-0 py-0 hover:bg-accent/30"
           onClick={() => setOpen('identity')}
@@ -462,60 +506,80 @@ export function SettingsTab({
             <span className="truncate">Identity & Access</span>
           </div>
         </Card>
-        {(mods ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground sm:col-span-1">No modules</p>
-        ) : (
-          (mods ?? []).map((m) => {
-            const clickable = m.id === 'unifi-sync' || m.id === 'tplink-sync'
-            const locked = m.id === 'ha-mqtt'
-            return (
-              <Card
-                key={m.id}
-                className={cn(
-                  'gap-0 py-0',
-                  clickable && 'cursor-pointer hover:bg-accent/30',
-                  locked && 'opacity-60',
-                )}
-                onClick={clickable ? () => setOpen(m.id) : undefined}
-              >
-                <div className="flex items-center justify-between gap-3 px-6 py-5">
-                  <div className="inline-flex min-w-0 items-center gap-2 text-base font-medium">
-                    <span className="truncate">{m.label}</span>
-                    {locked ? (
-                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
-                        Coming soon
-                      </span>
-                    ) : null}
-                    {!locked && m.enabled ? (
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          m.status === 'ok'
-                            ? 'bg-emerald-500'
-                            : m.status === 'ready'
-                              ? 'bg-amber-400'
-                              : 'bg-red-500',
-                        )}
-                      />
-                    ) : null}
-                  </div>
-                  <Switch
-                    checked={locked ? false : m.enabled}
-                    disabled={locked}
-                    onClick={(e) => e.stopPropagation()}
-                    onCheckedChange={(on) => {
-                      if (locked) return
-                      void toggle(m.id, on)
-                    }}
-                  />
-                </div>
-              </Card>
-            )
-          })
-        )}
-      </div>
-      <GeneralSettingsCard />
+      </SettingsSection>
+
+      <SettingsSection title="General">
+        <div className="sm:col-span-2">
+          <GeneralSettingsCard />
+        </div>
+      </SettingsSection>
     </div>
+  )
+}
+
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </section>
+  )
+}
+
+function ModuleSettingsCard({
+  mod,
+  label,
+  onOpen,
+  onToggle,
+}: {
+  mod: ModuleInfo
+  label?: string
+  onOpen?: () => void
+  onToggle: (on: boolean) => void
+}) {
+  const locked = mod.id === 'ha-mqtt'
+  const clickable = !!onOpen && !locked
+  return (
+    <Card
+      className={cn(
+        'gap-0 py-0',
+        clickable && 'cursor-pointer hover:bg-accent/30',
+        locked && 'opacity-60',
+      )}
+      onClick={clickable ? onOpen : undefined}
+    >
+      <div className="flex items-center justify-between gap-3 px-6 py-5">
+        <div className="inline-flex min-w-0 items-center gap-2 text-base font-medium">
+          <span className="truncate">{label ?? mod.label}</span>
+          {locked ? (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+              Coming soon
+            </span>
+          ) : null}
+          {!locked && mod.enabled ? (
+            <span
+              className={cn(
+                'size-2 shrink-0 rounded-full',
+                mod.status === 'ok'
+                  ? 'bg-emerald-500'
+                  : mod.status === 'ready'
+                    ? 'bg-amber-400'
+                    : 'bg-red-500',
+              )}
+            />
+          ) : null}
+        </div>
+        <Switch
+          checked={locked ? false : mod.enabled}
+          disabled={locked}
+          onClick={(e) => e.stopPropagation()}
+          onCheckedChange={(on) => {
+            if (locked) return
+            onToggle(on)
+          }}
+        />
+      </div>
+    </Card>
   )
 }
 

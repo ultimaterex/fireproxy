@@ -27,6 +27,7 @@ type AgentInfo struct {
 	Version    string `json:"version,omitempty"`
 	SelfUpdate bool   `json:"self_update,omitempty"`
 	Arch       string `json:"arch,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
 	LastSeen   int64  `json:"last_seen,omitempty"`
 }
 
@@ -184,15 +185,18 @@ func (h *Hub) onHello(hello *agentws.Hello) {
 		h.info.Version = hello.Version
 		h.info.SelfUpdate = hello.SelfUpdate
 		h.info.Arch = hello.Arch
+		h.info.SHA256 = strings.TrimSpace(strings.ToLower(hello.SHA256))
 	}
 	selfUpdate := h.info.SelfUpdate
 	agentVer := h.info.Version
+	agentSHA := h.info.SHA256
+	arch := h.info.Arch
 	h.mu.Unlock()
 
 	h.recordHelloEvents(agentVer)
 
 	if selfUpdate {
-		h.MaybeAutoUpdate(agentVer)
+		h.MaybeAutoUpdate(agentVer, agentSHA, arch)
 	}
 }
 
@@ -218,12 +222,17 @@ func (h *Hub) recordHelloEvents(helloVer string) {
 	_ = h.Persist.ClearAgentLastOfflineTS()
 }
 
-// MaybeAutoUpdate sends agent.update if package is newer.
-func (h *Hub) MaybeAutoUpdate(agentVer string) {
+// MaybeAutoUpdate sends agent.update when the packaged binary should replace the agent.
+// Uses SHA when the agent reports one (so VERSION=dev rebuilds still update); else semver.
+func (h *Hub) MaybeAutoUpdate(agentVer, agentSHA, arch string) {
 	if h.Package == nil || h.Package.Missing() {
 		return
 	}
-	if !agentpkg.Newer(h.Package.Version, agentVer) {
+	bin, ok := h.Package.Bin(arch)
+	if !ok {
+		return
+	}
+	if !agentpkg.NeedsUpdate(h.Package.Version, agentVer, bin.SHA256, agentSHA) {
 		return
 	}
 	_ = h.SendUpdate()

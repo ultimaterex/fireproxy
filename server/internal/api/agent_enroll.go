@@ -184,8 +184,15 @@ func (s *Server) getAgentSettings(w http.ResponseWriter, r *http.Request) {
 	if s.AgentHub != nil {
 		info := s.AgentHub.Info()
 		out["agent"] = info
-		if info.Online && !pkg.Missing() && agentpkg.Newer(pkg.Version, info.Version) {
-			out["update_available"] = true
+		if info.Online && !pkg.Missing() {
+			bin, ok := pkg.Bin(info.Arch)
+			sha := ""
+			if ok {
+				sha = bin.SHA256
+			}
+			if agentpkg.NeedsUpdate(pkg.Version, info.Version, sha, info.SHA256) {
+				out["update_available"] = true
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -222,7 +229,12 @@ func (s *Server) postAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent package missing", http.StatusConflict)
 		return
 	}
-	if !agentpkg.Newer(pkg.Version, info.Version) {
+	bin, ok := pkg.Bin(info.Arch)
+	if !ok {
+		http.Error(w, "agent package missing arch", http.StatusConflict)
+		return
+	}
+	if !agentpkg.NeedsUpdate(pkg.Version, info.Version, bin.SHA256, info.SHA256) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "up_to_date"})
 		return
 	}

@@ -12,6 +12,7 @@ import (
 	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/agentpkg"
 	"fireproxy/server/internal/enroll"
+	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
 	"fireproxy/server/internal/loghub"
 	"fireproxy/server/internal/modules"
@@ -32,6 +33,7 @@ type Server struct {
 	LogHub            *loghub.Hub
 	Persist           *store.Persist
 	TPLink            *tplink.Store
+	FWApp             *fwapp.Service
 	Enroll            *enroll.CodeStore
 	AgentPackage      *agentpkg.Package
 	InstallScriptPath string
@@ -75,6 +77,14 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tplink/candidates", s.listTPLinkCandidates)
 	mux.HandleFunc("GET /v1/tplink/settings", s.getTPLinkSettings)
 	mux.HandleFunc("PUT /v1/tplink/settings", s.putTPLinkSettings)
+	mux.HandleFunc("GET /v1/fw-app/status", s.getFWAppStatus)
+	mux.HandleFunc("POST /v1/fw-app/pair", s.postFWAppPair)
+	mux.HandleFunc("POST /v1/fw-app/ping", s.postFWAppPing)
+	mux.HandleFunc("POST /v1/fw-app/speedtest", s.postFWAppSpeedtest)
+	mux.HandleFunc("POST /v1/fw-app/speedtest/sync", s.postFWAppSpeedtestSync)
+	mux.HandleFunc("GET /v1/fw-app/speedtest/servers", s.getFWAppSpeedtestServers)
+	mux.HandleFunc("GET /v1/fw-app/speedtest/{id}", s.getFWAppSpeedtest)
+	mux.HandleFunc("DELETE /v1/fw-app/pair", s.deleteFWAppPair)
 	mux.HandleFunc("GET /v1/unifi/name-sync", s.getNameSync)
 	mux.HandleFunc("PUT /v1/unifi/name-sync", s.putNameSync)
 	mux.HandleFunc("POST /v1/unifi/name-sync/apply", s.applyNameSync)

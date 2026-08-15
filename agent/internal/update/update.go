@@ -77,6 +77,36 @@ func SelfPath() (string, error) {
 	return os.Executable()
 }
 
+// FileSHA256 returns the hex SHA-256 of path.
+func FileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// SelfSHA256 hashes the running executable (empty string on failure).
+func SelfSHA256() string {
+	path, err := SelfPath()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	sum, err := FileSHA256(path)
+	if err != nil {
+		return ""
+	}
+	return sum
+}
+
 // DestFromEnv prefers installed path.
 func DestFromEnv() string {
 	if p := os.Getenv("AGENT_BIN_PATH"); p != "" {

@@ -389,7 +389,15 @@ export type WANUsage = {
 
 export type BlockedMix = { blocked: number; allowed: number }
 
-export type SpeedtestPoint = { ts: number; down: number; up: number; ping?: number }
+export type SpeedtestPoint = {
+  ts: number
+  down: number
+  up: number
+  ping?: number
+  server_id?: string
+  server?: string
+  location?: string
+}
 
 export type SpeedtestWAN = {
   uuid: string
@@ -401,6 +409,9 @@ export type SpeedtestWAN = {
   up?: number
   ping?: number
   jitter?: number
+  server_id?: string
+  server?: string
+  location?: string
   points?: SpeedtestPoint[]
 }
 
