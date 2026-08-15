@@ -66,6 +66,16 @@ func TestNormalizeBoxIP(t *testing.T) {
 	}
 }
 
+func TestParseMAC(t *testing.T) {
+	got, err := ParseMAC("aa-bb-cc-dd-ee-ff")
+	if err != nil || got != "AA:BB:CC:DD:EE:FF" {
+		t.Fatalf("%q %v", got, err)
+	}
+	if _, err := ParseMAC("nope"); err == nil {
+		t.Fatal("expected reject")
+	}
+}
+
 func TestParseOoklaServers(t *testing.T) {
 	raw := []byte(`[{"id":"38427","name":"Balona","country":"Suriname","sponsor":"Telesur","host":"balona.speedtest.sr:8080","distance":4},{"id":70519,"sponsor":"Parbonet","name":"Paramaribo"}]`)
 	got, err := parseOoklaServers(raw)

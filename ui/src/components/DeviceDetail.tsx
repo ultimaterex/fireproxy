@@ -1,8 +1,11 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { Flag } from '@/components/Flag'
+import { Toast } from '@/components/Toast'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -12,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { api } from '@/lib/api'
 import {
   dapLabel,
   deviceOnline,
@@ -140,6 +144,48 @@ export function DeviceDetail({
     nowMs,
   )
   const wireless = !!(device.ssid || device.band || device.ap_mac)
+  const [wakeReady, setWakeReady] = useState(false)
+  const [wakeBusy, setWakeBusy] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api('/v1/fw-app/status')
+        if (!r.ok || cancelled) return
+        const st = (await r.json()) as { paired?: boolean; state?: string }
+        if (!cancelled) setWakeReady(!!st.paired && st.state === 'lan-ok')
+      } catch {
+        if (!cancelled) setWakeReady(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function wake() {
+    if (!wakeReady || wakeBusy) return
+    setWakeBusy(true)
+    try {
+      const r = await api('/v1/fw-app/wol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: device.mac }),
+      })
+      const body = (await r.json().catch(() => ({}))) as { error?: string }
+      if (!r.ok) {
+        setToast(body.error || 'Wake failed')
+        return
+      }
+      setToast(`Wake sent · ${device.name}`)
+    } catch {
+      setToast('Wake failed')
+    } finally {
+      setWakeBusy(false)
+    }
+  }
 
   const identity = useMemo(() => {
     const rows: { label: string; value: string }[] = []
@@ -213,12 +259,21 @@ export function DeviceDetail({
               <span className={cn('size-2 rounded-full', online ? 'bg-emerald-500' : 'bg-zinc-500')} />
               {online ? 'Online' : 'Offline'}
             </span>
+            {wakeReady ? (
+              <Button type="button" size="sm" variant="outline" disabled={wakeBusy} onClick={wake}>
+                Wake
+              </Button>
+            ) : null}
             {device.ssid ? <Badge variant="secondary">{device.ssid}</Badge> : null}
             {device.band ? <Badge variant="outline">{device.band} GHz</Badge> : null}
             {device.ap_name ? <Badge variant="outline">{device.ap_name}</Badge> : null}
           </div>
         </CardContent>
       </Card>
+
+      {toast
+        ? createPortal(<Toast message={toast} onDismiss={() => setToast(null)} />, document.body)
+        : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="gap-0 py-0">

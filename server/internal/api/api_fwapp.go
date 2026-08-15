@@ -67,6 +67,36 @@ func (s *Server) postFWAppPing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+func (s *Server) postFWAppWOL(w http.ResponseWriter, r *http.Request) {
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		MAC string `json:"mac"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	st, err := svc.Wake(r.Context(), body.MAC)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, fwapp.ErrNotPaired) {
+			code = http.StatusConflict
+		} else if errors.Is(err, fwapp.ErrLocalUnreach) {
+			code = http.StatusBadGateway
+		}
+		writeJSON(w, code, map[string]any{
+			"error":  err.Error(),
+			"status": st,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": st})
+}
+
 func (s *Server) postFWAppSpeedtest(w http.ResponseWriter, r *http.Request) {
 	svc := s.fwApp()
 	if svc == nil {

@@ -74,6 +74,22 @@ func TestFWAppRoutes(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/wol", strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("wol %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/wol", strings.NewReader(`{"mac":"nope"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("wol bad mac %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/speedtest", strings.NewReader(`{"wan_uuid":"wan-abc"}`))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rr, req)
