@@ -179,6 +179,51 @@ func (s *Service) Wake(ctx context.Context, mac string) (Status, error) {
 	return s.Status(), nil
 }
 
+// RenameHost sets the Firewalla custom name for mac via LAN set/host.
+func (s *Service) RenameHost(ctx context.Context, mac, name string) (Status, error) {
+	mac, err := ParseMAC(mac)
+	if err != nil {
+		return s.Status(), err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return s.Status(), fmt.Errorf("name required")
+	}
+	if len([]rune(name)) > 64 {
+		return s.Status(), fmt.Errorf("name too long")
+	}
+	if !s.secretsReady() {
+		return s.Status(), fmt.Errorf("FIREPROXY_SECRETS_KEY required")
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil {
+		return s.Status(), err
+	}
+	if !ok || c.SymKey == "" {
+		return s.Status(), ErrNotPaired
+	}
+	_, err = s.lan.SendTo(ctx, c, MTypeSet, map[string]any{
+		"item":  "host",
+		"value": map[string]any{"name": name},
+	}, mac)
+	if err != nil {
+		s.mu.Lock()
+		s.lastPingOK = false
+		s.lastPingAt = time.Now().UTC()
+		s.state = "lan-down"
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		return s.Status(), err
+	}
+	s.mu.Lock()
+	s.lastPingOK = true
+	s.lastPingAt = time.Now().UTC()
+	s.state = "lan-ok"
+	s.lastErr = ""
+	s.mu.Unlock()
+	return s.Status(), nil
+}
+
 // Ping verifies LAN-only control (never cloud).
 func (s *Service) Ping(ctx context.Context) (Status, error) {
 	if !s.secretsReady() {

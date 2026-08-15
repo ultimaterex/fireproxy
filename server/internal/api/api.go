@@ -81,6 +81,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/fw-app/pair", s.postFWAppPair)
 	mux.HandleFunc("POST /v1/fw-app/ping", s.postFWAppPing)
 	mux.HandleFunc("POST /v1/fw-app/wol", s.postFWAppWOL)
+	mux.HandleFunc("POST /v1/fw-app/hosts/rename", s.postFWAppHostRename)
 	mux.HandleFunc("POST /v1/fw-app/speedtest", s.postFWAppSpeedtest)
 	mux.HandleFunc("POST /v1/fw-app/speedtest/sync", s.postFWAppSpeedtestSync)
 	mux.HandleFunc("GET /v1/fw-app/speedtest/servers", s.getFWAppSpeedtestServers)

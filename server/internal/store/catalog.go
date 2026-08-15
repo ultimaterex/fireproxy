@@ -71,6 +71,32 @@ func (s *CatalogStore) Get() (inventory.Catalog, bool) {
 	return *s.cat, true
 }
 
+// PatchDeviceName updates one device's display name in the cached catalog.
+func (s *CatalogStore) PatchDeviceName(mac, name string) bool {
+	mac = strings.TrimSpace(mac)
+	name = strings.TrimSpace(name)
+	if mac == "" || name == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cat == nil {
+		return false
+	}
+	for i := range s.cat.Devices {
+		if strings.EqualFold(s.cat.Devices[i].MAC, mac) {
+			s.cat.Devices[i].Name = name
+			if s.persist != nil {
+				if err := s.persist.SaveCatalog(*s.cat); err != nil {
+					log.Printf("persist catalog: %v", err)
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
 // MergeSpeedtest upserts LAN/App API speedtest points into the cached dashboard.
 // Dedupes by (wan uuid, ts). Updates last Down/Up/Ping when a newer point arrives.
 func (s *CatalogStore) MergeSpeedtest(points []inventory.SpeedtestPoint, wanUUID string) {

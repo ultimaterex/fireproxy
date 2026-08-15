@@ -7,6 +7,8 @@ import { Toast } from '@/components/Toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Switch as Toggle } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -25,7 +27,7 @@ import {
   preferredName,
 } from '@/lib/format'
 import type { PortLoc } from '@/lib/switch-port'
-import type { Device, NetIface, RankedFlow, WirelessClient } from '@/lib/types'
+import type { Device, ModuleInfo, NetIface, RankedFlow, WirelessClient } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -132,21 +134,39 @@ export function DeviceDetail({
   lan,
   port,
   groupLabel,
+  unifi,
+  onRenamed,
 }: {
   device: DeviceDetailModel
   nowMs: number
   lan?: NetIface
   port?: PortLoc
   groupLabel?: string
+  unifi?: ModuleInfo | null
+  onRenamed?: (name: string) => void
 }) {
   const online = deviceOnline(
     { mac: device.mac, name: device.name, last_active_ts: device.last_active_ts },
     nowMs,
   )
   const wireless = !!(device.ssid || device.band || device.ap_mac)
-  const [wakeReady, setWakeReady] = useState(false)
+  const [controlReady, setControlReady] = useState(false)
   const [wakeBusy, setWakeBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [displayName, setDisplayName] = useState(device.name)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(device.name)
+  const [pushUnifi, setPushUnifi] = useState(false)
+  const [renameBusy, setRenameBusy] = useState(false)
+
+  const unifiPushAvailable =
+    !!unifi?.enabled && unifi.status === 'ok' && !!unifi.name_sync_enabled
+
+  useEffect(() => {
+    setDisplayName(device.name)
+    setDraftName(device.name)
+    setRenaming(false)
+  }, [device.name, device.mac])
 
   useEffect(() => {
     let cancelled = false
@@ -155,9 +175,9 @@ export function DeviceDetail({
         const r = await api('/v1/fw-app/status')
         if (!r.ok || cancelled) return
         const st = (await r.json()) as { paired?: boolean; state?: string }
-        if (!cancelled) setWakeReady(!!st.paired && st.state === 'lan-ok')
+        if (!cancelled) setControlReady(!!st.paired && st.state === 'lan-ok')
       } catch {
-        if (!cancelled) setWakeReady(false)
+        if (!cancelled) setControlReady(false)
       }
     })()
     return () => {
@@ -165,8 +185,14 @@ export function DeviceDetail({
     }
   }, [])
 
+  function startRename() {
+    setDraftName(displayName)
+    setPushUnifi(unifiPushAvailable && !!unifi?.name_sync_auto)
+    setRenaming(true)
+  }
+
   async function wake() {
-    if (!wakeReady || wakeBusy) return
+    if (!controlReady || wakeBusy) return
     setWakeBusy(true)
     try {
       const r = await api('/v1/fw-app/wol', {
@@ -179,7 +205,7 @@ export function DeviceDetail({
         setToast(body.error || 'Wake failed')
         return
       }
-      setToast(`Wake sent · ${device.name}`)
+      setToast(`Wake sent · ${displayName}`)
     } catch {
       setToast('Wake failed')
     } finally {
@@ -187,9 +213,49 @@ export function DeviceDetail({
     }
   }
 
+  async function saveRename() {
+    if (!controlReady || renameBusy) return
+    const name = draftName.trim()
+    if (!name) {
+      setToast('Name required')
+      return
+    }
+    setRenameBusy(true)
+    try {
+      const r = await api('/v1/fw-app/hosts/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mac: device.mac,
+          name,
+          push_unifi: unifiPushAvailable ? pushUnifi : false,
+        }),
+      })
+      const body = (await r.json().catch(() => ({}))) as {
+        error?: string
+        name?: string
+        unifi_warning?: string
+        unifi_pushed?: boolean
+      }
+      if (!r.ok) {
+        setToast(body.error || 'Rename failed')
+        return
+      }
+      const next = body.name || name
+      setDisplayName(next)
+      setRenaming(false)
+      onRenamed?.(next)
+      setToast(body.unifi_warning ? `Renamed · ${body.unifi_warning}` : 'Renamed')
+    } catch {
+      setToast('Rename failed')
+    } finally {
+      setRenameBusy(false)
+    }
+  }
+
   const identity = useMemo(() => {
     const rows: { label: string; value: string }[] = []
-    if (device.hostname && device.hostname !== device.name) {
+    if (device.hostname && device.hostname !== displayName) {
       rows.push({ label: 'Hostname', value: device.hostname })
     }
     if (device.local_domain) rows.push({ label: 'Domain', value: device.local_domain })
@@ -208,7 +274,7 @@ export function DeviceDetail({
       })
     }
     return rows
-  }, [device, groupLabel])
+  }, [device, groupLabel, displayName])
 
   const link = useMemo(() => {
     const rows: { label: string; value: string }[] = []
@@ -248,7 +314,7 @@ export function DeviceDetail({
             <DeviceIcon type={device.type || (wireless ? 'phone' : undefined)} className="size-6 text-[#027BFF]" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-lg font-semibold tracking-tight">{device.name}</div>
+            <div className="truncate text-lg font-semibold tracking-tight">{displayName}</div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <span className="font-mono">{device.mac}</span>
               {device.ip ? <span className="font-mono">{device.ip}</span> : null}
@@ -259,16 +325,56 @@ export function DeviceDetail({
               <span className={cn('size-2 rounded-full', online ? 'bg-emerald-500' : 'bg-zinc-500')} />
               {online ? 'Online' : 'Offline'}
             </span>
-            {wakeReady ? (
-              <Button type="button" size="sm" variant="outline" disabled={wakeBusy} onClick={wake}>
-                Wake
-              </Button>
+            {controlReady ? (
+              <>
+                <Button type="button" size="sm" variant="outline" disabled={renaming} onClick={startRename}>
+                  Rename
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={wakeBusy} onClick={wake}>
+                  Wake
+                </Button>
+              </>
             ) : null}
             {device.ssid ? <Badge variant="secondary">{device.ssid}</Badge> : null}
             {device.band ? <Badge variant="outline">{device.band} GHz</Badge> : null}
             {device.ap_name ? <Badge variant="outline">{device.ap_name}</Badge> : null}
           </div>
         </CardContent>
+        {renaming ? (
+          <div className="space-y-3 border-t px-6 py-4">
+            <Input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              maxLength={64}
+              autoFocus
+              disabled={renameBusy}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveRename()
+                if (e.key === 'Escape') setRenaming(false)
+              }}
+            />
+            {unifiPushAvailable ? (
+              <label className="flex items-center gap-2 text-sm">
+                <Toggle checked={pushUnifi} onCheckedChange={setPushUnifi} disabled={renameBusy} />
+                Also update UniFi
+              </label>
+            ) : null}
+            <div className="flex gap-2">
+              <Button type="button" size="sm" disabled={renameBusy} onClick={() => void saveRename()}>
+                Save
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={renameBusy}
+                onClick={() => setRenaming(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {toast
