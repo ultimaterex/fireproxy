@@ -4,10 +4,11 @@ name: Release Please
 # "release PR" that bumps the version + CHANGELOG from Conventional Commits.
 # Merging that PR creates the tag + GitHub Release, and — in the same run — the
 # verify → binaries/images stages below build and publish the artifacts.
+# workflow_dispatch: re-run after editing a merged PR's BEGIN_COMMIT_OVERRIDE, etc.
 on:
   push:
     branches: [main, master]
-
+  workflow_dispatch:
 permissions:
   contents: read
 
