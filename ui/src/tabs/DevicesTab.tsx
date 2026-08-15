@@ -530,7 +530,7 @@ function DeviceGroup({
                   <ContextMenu.Content className="z-50 min-w-36 rounded-lg border bg-popover py-1 shadow-md">
                     <ContextMenu.Item
                       className="cursor-pointer px-3 py-1.5 text-sm outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent"
-                      disabled={wakeBusy === row.d.mac}
+                      disabled={wakeBusy != null}
                       onSelect={() => onWake(row.d)}
                     >
                       Wake

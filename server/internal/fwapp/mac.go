@@ -29,7 +29,14 @@ func NormalizeMAC(s string) string {
 }
 
 // ParseMAC normalizes and requires a 6-octet address.
+// Only hex digits and common separators (whitespace, :, -, .) are allowed.
 func ParseMAC(s string) (string, error) {
+	for _, r := range s {
+		if unicode.Is(unicode.ASCII_Hex_Digit, r) || unicode.IsSpace(r) || r == ':' || r == '-' || r == '.' {
+			continue
+		}
+		return "", fmt.Errorf("invalid mac")
+	}
 	n := NormalizeMAC(s)
 	if len(strings.ReplaceAll(n, ":", "")) != 12 || strings.Count(n, ":") != 5 {
 		return "", fmt.Errorf("invalid mac")

@@ -71,8 +71,17 @@ func TestParseMAC(t *testing.T) {
 	if err != nil || got != "AA:BB:CC:DD:EE:FF" {
 		t.Fatalf("%q %v", got, err)
 	}
+	if _, err := ParseMAC("aa:bb:cc:dd:ee:ff"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseMAC("aabb.ccdd.eeff"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ParseMAC("nope"); err == nil {
 		t.Fatal("expected reject")
+	}
+	if _, err := ParseMAC("aa-bb-cc-dd-ee-ff;foo"); err == nil {
+		t.Fatal("expected reject trailing junk")
 	}
 }
 
