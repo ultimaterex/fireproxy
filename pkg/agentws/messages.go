@@ -36,6 +36,7 @@ type Hello struct {
 	Version    string `json:"version,omitempty"`
 	SelfUpdate bool   `json:"self_update,omitempty"`
 	Arch       string `json:"arch,omitempty"` // GOARCH: arm64 | amd64 (self-update binary selection)
+	SHA256     string `json:"sha256,omitempty"` // running binary digest (dev builds / equal versions)
 }
 
 type AgentUpdate struct {

@@ -90,6 +90,10 @@ func Open(dir string) (*Package, error) {
 		p.Path = def.Path
 		p.SHA256 = def.SHA256
 	}
+	// Bare "dev" collides under semver compare; stamp with binary digest so rebuilds are detectable.
+	if p.Version == "dev" && p.SHA256 != "" {
+		p.Version = "dev-" + p.SHA256[:12]
+	}
 	return p, nil
 }
 
@@ -150,6 +154,26 @@ func (p *Package) Info() map[string]string {
 // Newer reports whether packaged version is semver-greater than agentVer.
 func Newer(packaged, agentVer string) bool {
 	return cmpSemver(packaged, agentVer) > 0
+}
+
+// NeedsUpdate reports whether the packaged agent should replace the running one.
+// Prefer SHA mismatch when the agent reports a digest (covers equal-version rebuilds).
+// Else semver Newer, else raw version string inequality (covers VERSION=dev stamps).
+func NeedsUpdate(packagedVer, agentVer, packagedSHA, agentSHA string) bool {
+	packagedSHA = strings.TrimSpace(strings.ToLower(packagedSHA))
+	agentSHA = strings.TrimSpace(strings.ToLower(agentSHA))
+	if packagedSHA != "" && agentSHA != "" {
+		return packagedSHA != agentSHA
+	}
+	pv := strings.TrimSpace(packagedVer)
+	av := strings.TrimSpace(agentVer)
+	if Newer(pv, av) {
+		return true
+	}
+	if pv != "" && av != "" && pv != av {
+		return true
+	}
+	return false
 }
 
 func cmpSemver(a, b string) int {
