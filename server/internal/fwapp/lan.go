@@ -78,7 +78,13 @@ func boxLANURLHost(ipStr string) string {
 }
 
 // Send posts an encrypted NetBot message to http://{boxIP}:8833/v1/encipher/message/{gid}.
+// Target defaults to 0.0.0.0 (box-wide). Host-scoped cmds (e.g. WoL) pass a MAC.
 func (c *LANClient) Send(ctx context.Context, creds Creds, mtype string, data map[string]any) (json.RawMessage, error) {
+	return c.SendTo(ctx, creds, mtype, data, "0.0.0.0")
+}
+
+// SendTo is Send with an explicit NetBot target (MAC or 0.0.0.0).
+func (c *LANClient) SendTo(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
 	if strings.TrimSpace(creds.BoxIP) == "" || strings.TrimSpace(creds.Gid) == "" || strings.TrimSpace(creds.SymKey) == "" {
 		return nil, ErrNotPaired
 	}
@@ -88,6 +94,10 @@ func (c *LANClient) Send(ctx context.Context, creds Creds, mtype string, data ma
 	}
 	if data == nil {
 		data = map[string]any{}
+	}
+	target = strings.TrimSpace(target)
+	if target == "" {
+		target = "0.0.0.0"
 	}
 	deviceName := strings.TrimSpace(creds.DeviceName)
 	if deviceName == "" {
@@ -102,7 +112,7 @@ func (c *LANClient) Send(ctx context.Context, creds Creds, mtype string, data ma
 			"id":     RandomID(),
 			"data":   data,
 			"type":   "jsonmsg",
-			"target": "0.0.0.0",
+			"target": target,
 		},
 		"appInfo": map[string]any{
 			"deviceName": deviceName,

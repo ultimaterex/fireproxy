@@ -144,6 +144,41 @@ func (s *Service) Pair(ctx context.Context, req PairRequest) (Status, error) {
 	return s.Status(), nil
 }
 
+// Wake sends Wake-on-LAN for mac via LAN cmd wol:wake (target = MAC).
+func (s *Service) Wake(ctx context.Context, mac string) (Status, error) {
+	mac, err := ParseMAC(mac)
+	if err != nil {
+		return s.Status(), err
+	}
+	if !s.secretsReady() {
+		return s.Status(), fmt.Errorf("FIREPROXY_SECRETS_KEY required")
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil {
+		return s.Status(), err
+	}
+	if !ok || c.SymKey == "" {
+		return s.Status(), ErrNotPaired
+	}
+	_, err = s.lan.SendTo(ctx, c, MTypeCmd, map[string]any{"item": "wol:wake"}, mac)
+	if err != nil {
+		s.mu.Lock()
+		s.lastPingOK = false
+		s.lastPingAt = time.Now().UTC()
+		s.state = "lan-down"
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		return s.Status(), err
+	}
+	s.mu.Lock()
+	s.lastPingOK = true
+	s.lastPingAt = time.Now().UTC()
+	s.state = "lan-ok"
+	s.lastErr = ""
+	s.mu.Unlock()
+	return s.Status(), nil
+}
+
 // Ping verifies LAN-only control (never cloud).
 func (s *Service) Ping(ctx context.Context) (Status, error) {
 	if !s.secretsReady() {
