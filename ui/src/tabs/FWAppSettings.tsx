@@ -59,14 +59,17 @@ export function FWAppSettingsPage({
   const [deviceName, setDeviceName] = useState('FireProxy')
   const pingInFlight = useRef(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<FWAppStatus | null> => {
     try {
       const r = await api('/v1/fw-app/status')
       if (!r.ok) throw new Error(`status ${r.status}`)
-      setStatus((await r.json()) as FWAppStatus)
+      const st = (await r.json()) as FWAppStatus
+      setStatus(st)
       setError(null)
+      return st
     } catch (e) {
       setError(e instanceof Error ? e.message : 'load failed')
+      return null
     }
   }, [])
 
@@ -95,12 +98,8 @@ export function FWAppSettingsPage({
     if (!mod.enabled || step !== 'overview') return
     let cancelled = false
     void (async () => {
-      await load()
-      if (cancelled) return
-      const r = await api('/v1/fw-app/status')
-      if (cancelled || !r.ok) return
-      const st = (await r.json()) as FWAppStatus
-      setStatus(st)
+      const st = await load()
+      if (cancelled || !st) return
       if (st.paired && st.secrets_ready) void probe()
     })()
     const id = window.setInterval(() => {
