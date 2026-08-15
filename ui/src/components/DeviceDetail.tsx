@@ -143,7 +143,7 @@ export function DeviceDetail({
   port?: PortLoc
   groupLabel?: string
   unifi?: ModuleInfo | null
-  onRenamed?: (name: string) => void
+  onRenamed?: (mac: string, name: string) => void
 }) {
   const online = deviceOnline(
     { mac: device.mac, name: device.name, last_active_ts: device.last_active_ts },
@@ -244,7 +244,7 @@ export function DeviceDetail({
       const next = body.name || name
       setDisplayName(next)
       setRenaming(false)
-      onRenamed?.(next)
+      onRenamed?.(device.mac, next)
       setToast(body.unifi_warning ? `Renamed · ${body.unifi_warning}` : 'Renamed')
     } catch {
       setToast('Rename failed')

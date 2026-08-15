@@ -79,22 +79,35 @@ func (s *CatalogStore) PatchDeviceName(mac, name string) bool {
 		return false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cat == nil {
+		s.mu.Unlock()
 		return false
 	}
+	found := false
 	for i := range s.cat.Devices {
 		if strings.EqualFold(s.cat.Devices[i].MAC, mac) {
 			s.cat.Devices[i].Name = name
-			if s.persist != nil {
-				if err := s.persist.SaveCatalog(*s.cat); err != nil {
-					log.Printf("persist catalog: %v", err)
-				}
-			}
-			return true
+			found = true
+			break
 		}
 	}
-	return false
+	if !found {
+		s.mu.Unlock()
+		return false
+	}
+	p := s.persist
+	var snap inventory.Catalog
+	if p != nil {
+		snap = *s.cat
+		snap.Devices = append([]inventory.Device(nil), s.cat.Devices...)
+	}
+	s.mu.Unlock()
+	if p != nil {
+		if err := p.SaveCatalog(snap); err != nil {
+			log.Printf("persist catalog: %v", err)
+		}
+	}
+	return true
 }
 
 // MergeSpeedtest upserts LAN/App API speedtest points into the cached dashboard.
