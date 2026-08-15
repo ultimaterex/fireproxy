@@ -156,8 +156,9 @@ func PairWithCloud(ctx context.Context, req PairRequest) (Creds, error) {
 	if boxIP == "" {
 		boxIP = strings.TrimSpace(qr.IPAddress)
 	}
-	if boxIP == "" {
-		return zero, fmt.Errorf("boxIP required")
+	boxIP, err = NormalizeBoxIP(boxIP)
+	if err != nil {
+		return zero, err
 	}
 	email := strings.TrimSpace(req.Email)
 	if email == "" {

@@ -40,10 +40,51 @@ func NewLANClient() *LANClient {
 	}
 }
 
+// NormalizeBoxIP strips schemes/paths/ports and requires a literal IP (no hostnames / userinfo).
+// Returns the canonical IP string (IPv6 without brackets).
+func NormalizeBoxIP(raw string) (string, error) {
+	host := strings.TrimSpace(raw)
+	if host == "" {
+		return "", fmt.Errorf("box_ip required")
+	}
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.TrimSpace(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	} else {
+		host = strings.Trim(host, "[]")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return "", fmt.Errorf("box_ip must be an IP address")
+	}
+	return ip.String(), nil
+}
+
+// boxLANURLHost formats an IP for use in http://{host}:8833/... (brackets for IPv6).
+func boxLANURLHost(ipStr string) string {
+	ip := net.ParseIP(strings.TrimSpace(ipStr))
+	if ip == nil {
+		return strings.TrimSpace(ipStr)
+	}
+	if ip.To4() == nil {
+		return "[" + ip.String() + "]"
+	}
+	return ip.String()
+}
+
 // Send posts an encrypted NetBot message to http://{boxIP}:8833/v1/encipher/message/{gid}.
 func (c *LANClient) Send(ctx context.Context, creds Creds, mtype string, data map[string]any) (json.RawMessage, error) {
 	if strings.TrimSpace(creds.BoxIP) == "" || strings.TrimSpace(creds.Gid) == "" || strings.TrimSpace(creds.SymKey) == "" {
 		return nil, ErrNotPaired
+	}
+	boxIP, err := NormalizeBoxIP(creds.BoxIP)
+	if err != nil {
+		return nil, err
 	}
 	if data == nil {
 		data = map[string]any{}
@@ -97,13 +138,7 @@ func (c *LANClient) Send(ctx context.Context, creds Creds, mtype string, data ma
 		bodyMap["rkeyts"] = creds.RKeyTS
 	}
 	body, _ := json.Marshal(bodyMap)
-	host := strings.TrimSpace(creds.BoxIP)
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimPrefix(host, "https://")
-	if i := strings.Index(host, "/"); i >= 0 {
-		host = host[:i]
-	}
-	url := fmt.Sprintf("http://%s:8833/v1/encipher/message/%s", host, creds.Gid)
+	url := fmt.Sprintf("http://%s:8833/v1/encipher/message/%s", boxLANURLHost(boxIP), creds.Gid)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

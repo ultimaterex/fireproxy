@@ -3,6 +3,7 @@ package fwapp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,58 @@ import (
 
 	"fireproxy/server/internal/tplink"
 )
+
+func TestPruneSpeedJobs(t *testing.T) {
+	svc := &Service{speedJobs: map[string]*SpeedtestJob{}}
+	now := time.Now()
+	svc.speedJobs["old"] = &SpeedtestJob{ID: "old", State: "done", updatedAt: now.Add(-2 * speedJobTTL)}
+	svc.speedJobs["fresh"] = &SpeedtestJob{ID: "fresh", State: "done", updatedAt: now}
+	svc.speedJobs["run"] = &SpeedtestJob{ID: "run", State: "running", updatedAt: now.Add(-2 * speedJobTTL)}
+	svc.pruneSpeedJobsLocked(now)
+	if _, ok := svc.speedJobs["old"]; ok {
+		t.Fatal("old done job should be pruned")
+	}
+	if _, ok := svc.speedJobs["fresh"]; !ok {
+		t.Fatal("fresh done job kept")
+	}
+	if _, ok := svc.speedJobs["run"]; !ok {
+		t.Fatal("running job kept despite age")
+	}
+	for i := 0; i < speedJobMax+5; i++ {
+		id := fmt.Sprintf("x%d", i)
+		svc.speedJobs[id] = &SpeedtestJob{ID: id, State: "error", updatedAt: now.Add(-time.Duration(i) * time.Second)}
+	}
+	svc.pruneSpeedJobsLocked(now)
+	if len(svc.speedJobs) > speedJobMax {
+		t.Fatalf("len=%d want <= %d", len(svc.speedJobs), speedJobMax)
+	}
+	if _, ok := svc.speedJobs["run"]; !ok {
+		t.Fatal("running job must survive max prune")
+	}
+}
+
+func TestNormalizeBoxIP(t *testing.T) {
+	ok, err := NormalizeBoxIP("http://192.168.1.1/foo")
+	if err != nil || ok != "192.168.1.1" {
+		t.Fatalf("%q %v", ok, err)
+	}
+	ok, err = NormalizeBoxIP("[2001:db8::1]:8833")
+	if err != nil || ok != "2001:db8::1" {
+		t.Fatalf("%q %v", ok, err)
+	}
+	if _, err := NormalizeBoxIP("127.0.0.1@evil.com"); err == nil {
+		t.Fatal("expected reject userinfo host")
+	}
+	if _, err := NormalizeBoxIP("firewalla.lan"); err == nil {
+		t.Fatal("expected reject hostname")
+	}
+	if boxLANURLHost("2001:db8::1") != "[2001:db8::1]" {
+		t.Fatal("ipv6 brackets")
+	}
+	if boxLANURLHost("192.168.1.1") != "192.168.1.1" {
+		t.Fatal("ipv4 plain")
+	}
+}
 
 func TestParseOoklaServers(t *testing.T) {
 	raw := []byte(`[{"id":"38427","name":"Balona","country":"Suriname","sponsor":"Telesur","host":"balona.speedtest.sr:8080","distance":4},{"id":70519,"sponsor":"Parbonet","name":"Paramaribo"}]`)
