@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"fireproxy/pkg/inventory"
@@ -34,6 +35,9 @@ type Server struct {
 	LogHub            *loghub.Hub
 	Persist           *store.Persist
 	ControlHist       controlhist.Recorder
+	AuthDisabled      bool // when true, History actors resolve as user/admin
+	speedtestActors   *sync.Map
+	speedtestHookMu   sync.Mutex
 	TPLink            *tplink.Store
 	FWApp             *fwapp.Service
 	Enroll            *enroll.CodeStore

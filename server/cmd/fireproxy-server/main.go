@@ -240,6 +240,7 @@ func main() {
 		TPLinkPrefs:       tpPrefs,
 		Persist:           mem.Persist(),
 		ControlHist:       controlHist,
+		AuthDisabled:      authCfg.Disabled,
 		TPLink:            tplinkStore,
 		FWApp:             fwAppSvc,
 		Enroll:            &enroll.CodeStore{},
