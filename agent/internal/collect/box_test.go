@@ -26,7 +26,11 @@ func TestCollectBoxFromRedisAndRelease(t *testing.T) {
 				"eth2":     `{"name":"eth2","mac":"02:00:00:00:00:02","type":"wan","uuid":"w2"}`,
 			},
 		},
-		gets: map[string]string{"mode": "router", "groupName": "HomeLab"},
+		gets: map[string]string{
+			"mode":                "router",
+			"groupName":           "HomeLab",
+			"local:domain:suffix": "LAN",
+		},
 	}
 	// SysfsRoot points at the (interface-free) tempdir so the sysfs MAC branch
 	// yields nothing and the redis sys:network:info fallback is exercised.
@@ -46,6 +50,9 @@ func TestCollectBoxFromRedisAndRelease(t *testing.T) {
 	}
 	if b.Timezone != "UTC" || b.Mode != "router" {
 		t.Fatalf("%+v", b)
+	}
+	if b.LocalDomainSuffix != "lan" {
+		t.Fatalf("local_domain_suffix %+v", b.LocalDomainSuffix)
 	}
 	if b.Version != "1.983" || b.License != "Firewalla Gold SE" {
 		t.Fatalf("%+v", b)

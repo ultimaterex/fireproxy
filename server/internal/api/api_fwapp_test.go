@@ -117,6 +117,32 @@ func TestFWAppRoutes(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/dns", strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff","hostname":"Lab.Host"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("dns %d %s", rr.Code, rr.Body.String())
+	}
+	var dnsBody struct {
+		OK       bool   `json:"ok"`
+		Hostname string `json:"hostname"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&dnsBody); err != nil {
+		t.Fatal(err)
+	}
+	if !dnsBody.OK || dnsBody.Hostname != "lab.host" {
+		t.Fatalf("%+v", dnsBody)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/dns", strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff","hostname":"bad host!"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("dns bad %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/speedtest", strings.NewReader(`{"wan_uuid":"wan-abc"}`))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rr, req)

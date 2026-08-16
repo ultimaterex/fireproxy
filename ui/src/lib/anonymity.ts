@@ -787,6 +787,9 @@ export function anonymizeBox(anon: Anon, box: BoxInfo): BoxInfo {
     timezone: g.tz,
     country: g.cc,
     region: g.city,
+    local_domain_suffix: box.local_domain_suffix
+      ? anon.fakeDest(box.local_domain_suffix).domain
+      : box.local_domain_suffix,
     macs: box.macs?.map((m) =>
       typeof m === 'string' ? anon.fakeMAC(m) : { name: m.name, mac: anon.fakeMAC(m.mac) },
     ),

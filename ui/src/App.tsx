@@ -972,6 +972,7 @@ function App() {
               port={portIndex.get(selectedDevice.mac.toUpperCase())}
               groupLabel={groupNameFor(selectedDevice, labelTag)}
               unifi={unifiMod}
+              domainSuffix={showBox?.local_domain_suffix}
               onRenamed={(mac, name) => {
                 const key = mac.toUpperCase()
                 setDevices((prev) =>
@@ -990,6 +991,14 @@ function App() {
                   next[idx] = { ...frame, label: name }
                   return next
                 })
+              }}
+              onDNSUpdated={(mac, hostname) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, local_domain: hostname || undefined } : d,
+                  ),
+                )
               }}
             />
           ) : selectedRegion && tab === 'metrics' ? (

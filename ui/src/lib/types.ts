@@ -369,6 +369,7 @@ export type BoxInfo = {
   country?: string
   region?: string
   wan_type?: string
+  local_domain_suffix?: string
 }
 export type ViewMode = 'visual' | 'list'
 

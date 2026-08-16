@@ -34,6 +34,12 @@ func (c *Collector) collectBox(cache, info map[string]string) *inventory.Box {
 		if bt, err := c.Redis.Get("sys:bt:mac"); err == nil {
 			btMac = strings.TrimSpace(unquoteJSON(bt))
 		}
+		// Firewalla Constants.REDIS_KEY_LOCAL_DOMAIN_SUFFIX.
+		if suf, err := c.Redis.Get("local:domain:suffix"); err == nil {
+			if s := strings.ToLower(strings.TrimSpace(unquoteJSON(suf))); s != "" {
+				b.LocalDomainSuffix = s
+			}
+		}
 		if fields == nil {
 			if all, err := c.Redis.HGetAll("sys:network:info"); err == nil {
 				fields = all
