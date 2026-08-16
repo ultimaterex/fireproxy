@@ -11,6 +11,7 @@ import (
 	"fireproxy/pkg/inventory"
 	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/agentpkg"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/enroll"
 	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
@@ -32,6 +33,7 @@ type Server struct {
 	AgentHub          *agenthub.Hub
 	LogHub            *loghub.Hub
 	Persist           *store.Persist
+	ControlHist       controlhist.Recorder
 	TPLink            *tplink.Store
 	FWApp             *fwapp.Service
 	Enroll            *enroll.CodeStore
@@ -96,6 +98,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/logs/fetch", s.postLogsFetch)
 	mux.HandleFunc("GET /v1/settings/logs", s.getLogsSettings)
 	mux.HandleFunc("PUT /v1/settings/logs", s.putLogsSettings)
+	mux.HandleFunc("GET /v1/history", s.getControlHistory)
+	mux.HandleFunc("GET /v1/settings/history", s.getHistorySettings)
+	mux.HandleFunc("PUT /v1/settings/history", s.putHistorySettings)
 	s.registerAgentRoutes(mux)
 	s.registerIAMRoutes(mux)
 	if s.AgentHub != nil {

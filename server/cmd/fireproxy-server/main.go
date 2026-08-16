@@ -18,6 +18,7 @@ import (
 	"fireproxy/server/internal/api"
 	"fireproxy/server/internal/auth"
 	"fireproxy/server/internal/config"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/enroll"
 	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
@@ -229,6 +230,7 @@ func main() {
 		}
 		go up.Loop(geoCtx)
 	}
+	controlHist := controlhist.New(mem.Persist())
 	apiServer := &api.Server{
 		Store:             mem,
 		CatalogStore:      catalog,
@@ -237,6 +239,7 @@ func main() {
 		NameSync:          ns,
 		TPLinkPrefs:       tpPrefs,
 		Persist:           mem.Persist(),
+		ControlHist:       controlHist,
 		TPLink:            tplinkStore,
 		FWApp:             fwAppSvc,
 		Enroll:            &enroll.CodeStore{},
