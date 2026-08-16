@@ -17,8 +17,10 @@ import (
 	"fireproxy/server/internal/api"
 	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/fwapp"
+	"fireproxy/server/internal/modules"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/tplink"
+	"fireproxy/server/internal/unifi"
 )
 
 func TestFWAppRoutes(t *testing.T) {
@@ -433,5 +435,76 @@ func TestFWAppControlHistorySpeedtestJobAndSync(t *testing.T) {
 	}
 	if len(afterSync) != len(beforeSync) {
 		t.Fatalf("sync must not record: before=%d after=%d", len(beforeSync), len(afterSync))
+	}
+}
+
+func TestFWAppRenamePushUniFiHistory(t *testing.T) {
+	svc := fwAppTestPair(t, nil)
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u1", MAC: "AA:BB:CC:DD:EE:FF", Name: "old-unifi"},
+		},
+	}
+	reg := modules.NewRegistry(nil, map[string]func() modules.Module{
+		"unifi-sync": func() modules.Module { return mod },
+		"ha-mqtt":    func() modules.Module { return &modules.Stub{ModuleName: "ha-mqtt"} },
+	})
+	if err := reg.Set("unifi-sync", true); err != nil {
+		t.Fatal(err)
+	}
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		Devices: []inventory.Device{{Device: device.Device{MAC: "AA:BB:CC:DD:EE:FF", Name: "OldName"}}},
+	})
+	ns := &unifi.PrefsStore{}
+	ns.Set(unifi.Prefs{Enabled: true})
+	_, mux, p := fwAppHistServer(t, svc, cat)
+	// Re-bind server fields after helper constructed routes — rebuild with UniFi.
+	s := &api.Server{
+		FWApp:        svc,
+		CatalogStore: cat,
+		Modules:      reg,
+		NameSync:     ns,
+		Persist:      p,
+		ControlHist:  controlhist.New(p),
+		AuthDisabled: true,
+	}
+	mux = http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/rename",
+		strings.NewReader(`{"mac":"aa-bb-cc-dd-ee-ff","name":"Lab Host","push_unifi":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("rename %d %s", rr.Code, rr.Body.String())
+	}
+
+	fwRows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "firewalla", Action: "host.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fwRows) != 1 {
+		t.Fatalf("firewalla rows: %+v", fwRows)
+	}
+	uniRows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uniRows) != 1 {
+		t.Fatalf("unifi rows: %+v", uniRows)
+	}
+	ev := uniRows[0]
+	if ev.Target != "AA:BB:CC:DD:EE:FF" || ev.Result != "ok" || ev.ActorKind != "user" {
+		t.Fatalf("%+v", ev)
+	}
+	if ev.AfterJSON != `{"name":"Lab Host"}` {
+		t.Fatalf("after=%q", ev.AfterJSON)
+	}
+	if len(mod.applied) != 1 || mod.applied[0].Firewalla != "Lab Host" {
+		t.Fatalf("applied: %+v", mod.applied)
 	}
 }

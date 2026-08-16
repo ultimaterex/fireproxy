@@ -108,6 +108,8 @@ func main() {
 		})
 	}
 
+	controlHist := controlhist.New(mem.Persist())
+
 	facts := modules.DefaultFactories()
 	var reg *modules.Registry
 	var tplinkStore *tplink.Store
@@ -165,7 +167,12 @@ func main() {
 					}
 					return users, unifi.HostsFromCatalog(inventory.ActiveDevices(cat.Devices), m.ClientIPs()), m.HardwareMACs(), nil
 				}
-				unifi.AutoFillEmpty(ns, fetch, m.ApplyRows)
+				apply := func(rows []unifi.NameRow) []unifi.ApplyResult {
+					results := m.ApplyRows(rows)
+					api.RecordUniFiRenames(controlHist, controlhist.ActorSystem, "name-sync", rows, results)
+					return results
+				}
+				unifi.AutoFillEmpty(ns, fetch, apply)
 				in := unifi.ReportInput{}
 				if cat, ok := catalog.Get(); ok {
 					hw := m.HardwareMACs()
@@ -230,7 +237,6 @@ func main() {
 		}
 		go up.Loop(geoCtx)
 	}
-	controlHist := controlhist.New(mem.Persist())
 	apiServer := &api.Server{
 		Store:             mem,
 		CatalogStore:      catalog,

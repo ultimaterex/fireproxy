@@ -700,6 +700,8 @@ func (s *Server) applyNameSync(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []unifi.ApplyResult{}
 	}
+	kind, actor := s.controlActor(r)
+	RecordUniFiRenames(s.controlHist(), kind, actor, rows, results)
 	// Recount after apply for badge.
 	all2 := unifi.Diff(unifi.DiffInput{
 		Firewalla: unifi.HostsFromCatalog(fw, m.ClientIPs()),

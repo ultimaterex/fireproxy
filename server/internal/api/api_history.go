@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/store"
+	"fireproxy/server/internal/unifi"
 )
 
 func (s *Server) controlHist() controlhist.Recorder {
@@ -14,6 +17,59 @@ func (s *Server) controlHist() controlhist.Recorder {
 		return s.ControlHist
 	}
 	return controlhist.New(nil)
+}
+
+// RecordUniFiRenames writes one History row per ApplyResult (client.rename).
+func RecordUniFiRenames(rec controlhist.Recorder, actorKind, actor string, rows []unifi.NameRow, results []unifi.ApplyResult) {
+	if rec == nil || len(results) == 0 {
+		return
+	}
+	byMAC := make(map[string]unifi.NameRow, len(rows))
+	for _, r := range rows {
+		byMAC[unifi.NormalizeMAC(r.MAC)] = r
+	}
+	for _, res := range results {
+		mac := unifi.NormalizeMAC(res.MAC)
+		row, ok := byMAC[mac]
+		var before, after map[string]any
+		if ok {
+			if name := strings.TrimSpace(row.UniFi); name != "" {
+				before = map[string]any{"name": name}
+			}
+			if res.OK {
+				if name := strings.TrimSpace(row.Firewalla); name != "" {
+					after = map[string]any{"name": name}
+				}
+			}
+		}
+		var err error
+		if !res.OK {
+			msg := strings.TrimSpace(res.Error)
+			if msg == "" {
+				msg = "UniFi rename failed"
+			}
+			err = errors.New(msg)
+		}
+		summary := ""
+		if after != nil {
+			if n, _ := after["name"].(string); n != "" {
+				summary = n
+			}
+		} else if ok {
+			summary = strings.TrimSpace(row.Firewalla)
+		}
+		rec.Record(controlhist.Outcome{
+			Scheme:    controlhist.SchemeUnifi,
+			Action:    controlhist.ActionClientRename,
+			Target:    mac,
+			Summary:   summary,
+			ActorKind: actorKind,
+			Actor:     actor,
+			Before:    before,
+			After:     after,
+			Err:       err,
+		})
+	}
 }
 
 func (s *Server) getControlHistory(w http.ResponseWriter, r *http.Request) {

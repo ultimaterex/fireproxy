@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"fireproxy/pkg/inventory"
 	"fireproxy/pkg/snapshot"
 	"fireproxy/server/internal/api"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/modules"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/unifi"
@@ -636,6 +638,7 @@ type nameSyncMod struct {
 	ips      map[string]string
 	fetchErr error
 	applied  []unifi.NameRow
+	failMAC  map[string]string // MAC → error message
 	sta      map[string]unifi.Station
 	snap     unifi.Snapshot
 	snapOK   bool
@@ -657,12 +660,22 @@ func (m *nameSyncMod) ApplyRows(rows []unifi.NameRow) []unifi.ApplyResult {
 	m.applied = append([]unifi.NameRow(nil), rows...)
 	out := make([]unifi.ApplyResult, len(rows))
 	for i, r := range rows {
+		if msg, ok := m.failMAC[r.MAC]; ok {
+			out[i] = unifi.ApplyResult{MAC: r.MAC, Error: msg}
+			continue
+		}
 		out[i] = unifi.ApplyResult{MAC: r.MAC, OK: true}
 	}
 	return out
 }
 
 func nameSyncTestServer(t *testing.T, mod *nameSyncMod, enabled bool) (*api.Server, *http.ServeMux, *unifi.PrefsStore) {
+	t.Helper()
+	s, mux, ns, _ := nameSyncHistServer(t, mod, enabled, false)
+	return s, mux, ns
+}
+
+func nameSyncHistServer(t *testing.T, mod *nameSyncMod, enabled, withHist bool) (*api.Server, *http.ServeMux, *unifi.PrefsStore, *store.Persist) {
 	t.Helper()
 	reg := modules.NewRegistry(nil, map[string]func() modules.Module{
 		"unifi-sync": func() modules.Module { return mod },
@@ -681,10 +694,21 @@ func nameSyncTestServer(t *testing.T, mod *nameSyncMod, enabled bool) (*api.Serv
 		},
 	})
 	ns := &unifi.PrefsStore{}
-	s := &api.Server{CatalogStore: cat, Modules: reg, NameSync: ns}
+	s := &api.Server{CatalogStore: cat, Modules: reg, NameSync: ns, AuthDisabled: true}
+	var p *store.Persist
+	if withHist {
+		var err error
+		p, err = store.OpenPersist(filepath.Join(t.TempDir(), "fp.db"), 90)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Close() })
+		s.Persist = p
+		s.ControlHist = controlhist.New(p)
+	}
 	mux := http.NewServeMux()
 	s.Routes(mux)
-	return s, mux, ns
+	return s, mux, ns, p
 }
 
 func TestNameSyncModuleOff404(t *testing.T) {
@@ -906,5 +930,126 @@ func TestAuditEmptyWhenModuleOff(t *testing.T) {
 	}
 	if body.Names.Rows == nil || body.VLAN.Count != 0 || body.STP.Count != 0 {
 		t.Fatalf("%+v", body)
+	}
+}
+
+func TestNameSyncApplyHistoryTwoMACs(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %+v", rows)
+	}
+	byMAC := map[string]store.ControlEvent{}
+	for _, ev := range rows {
+		byMAC[ev.Target] = ev
+	}
+	nas := byMAC["02:00:00:00:00:02"]
+	if nas.ActorKind != "user" || nas.Actor != "admin" || nas.Result != "ok" {
+		t.Fatalf("nas: %+v", nas)
+	}
+	if nas.BeforeJSON != `{"name":"old-nas"}` || nas.AfterJSON != `{"name":"NAS"}` {
+		t.Fatalf("nas snapshots: before=%q after=%q", nas.BeforeJSON, nas.AfterJSON)
+	}
+	phone := byMAC["02:00:00:00:00:03"]
+	if phone.Result != "ok" || phone.BeforeJSON != `{"name":"android-xx"}` || phone.AfterJSON != `{"name":"phone"}` {
+		t.Fatalf("phone: %+v", phone)
+	}
+}
+
+func TestNameSyncApplyHistoryMixed(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		},
+		failMAC: map[string]string{"02:00:00:00:00:03": "not in UniFi user db"},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %+v", rows)
+	}
+	byMAC := map[string]store.ControlEvent{}
+	for _, ev := range rows {
+		byMAC[ev.Target] = ev
+	}
+	if byMAC["02:00:00:00:00:02"].Result != "ok" || byMAC["02:00:00:00:00:02"].AfterJSON == "" {
+		t.Fatalf("ok row: %+v", byMAC["02:00:00:00:00:02"])
+	}
+	fail := byMAC["02:00:00:00:00:03"]
+	if fail.Result != "error" || fail.AfterJSON != "" || fail.BeforeJSON != `{"name":"android-xx"}` {
+		t.Fatalf("fail row: %+v", fail)
+	}
+	if fail.Error == "" {
+		t.Fatalf("want error text: %+v", fail)
+	}
+}
+
+func TestRecordUniFiRenamesSystemActor(t *testing.T) {
+	p, err := store.OpenPersist(filepath.Join(t.TempDir(), "fp.db"), 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	rec := controlhist.New(p)
+	rows := []unifi.NameRow{
+		{MAC: "02:00:00:00:00:02", Firewalla: "NAS", UniFi: "old-nas"},
+	}
+	results := []unifi.ApplyResult{{MAC: "02:00:00:00:00:02", OK: true}}
+	api.RecordUniFiRenames(rec, controlhist.ActorSystem, "name-sync", rows, results)
+	evs, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("%+v", evs)
+	}
+	if evs[0].ActorKind != "system" || evs[0].Actor != "name-sync" || evs[0].Action != "client.rename" {
+		t.Fatalf("%+v", evs[0])
+	}
+}
+
+func TestNameSyncApplyModuleOffNoHistory(t *testing.T) {
+	mod := &nameSyncMod{Stub: modules.Stub{ModuleName: "unifi-sync"}, status: "ok"}
+	_, mux, _, p := nameSyncHistServer(t, mod, false, true)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404 got %d", rr.Code)
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("module off must not record: %+v", rows)
 	}
 }

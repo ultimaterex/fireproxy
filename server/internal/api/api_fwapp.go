@@ -257,7 +257,7 @@ func (s *Server) postFWAppHostRename(w http.ResponseWriter, r *http.Request) {
 		"status": st,
 	}
 	if body.PushUniFi != nil && *body.PushUniFi {
-		if warn := s.tryPushUniFiName(mac, name); warn != "" {
+		if warn := s.tryPushUniFiName(mac, name, kind, actor); warn != "" {
 			out["unifi_warning"] = warn
 		} else {
 			out["unifi_pushed"] = true
@@ -332,7 +332,7 @@ func (s *Server) postFWAppHostDNS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) tryPushUniFiName(mac, name string) string {
+func (s *Server) tryPushUniFiName(mac, name, actorKind, actor string) string {
 	if !s.unifiModuleEnabled() {
 		return "UniFi module off"
 	}
@@ -351,7 +351,23 @@ func (s *Server) tryPushUniFiName(mac, name string) string {
 		}
 		return detail
 	}
-	results := m.ApplyRows([]unifi.NameRow{{MAC: mac, Firewalla: name}})
+	beforeName := ""
+	if users, err := m.FetchUsers(); err == nil {
+		for _, u := range users {
+			if unifi.NormalizeMAC(u.MAC) != unifi.NormalizeMAC(mac) {
+				continue
+			}
+			if n := strings.TrimSpace(u.Name); n != "" {
+				beforeName = n
+			} else if n := strings.TrimSpace(u.Hostname); n != "" {
+				beforeName = n
+			}
+			break
+		}
+	}
+	row := unifi.NameRow{MAC: mac, Firewalla: name, UniFi: beforeName}
+	results := m.ApplyRows([]unifi.NameRow{row})
+	RecordUniFiRenames(s.controlHist(), actorKind, actor, []unifi.NameRow{row}, results)
 	if len(results) == 0 {
 		return "UniFi push skipped"
 	}
