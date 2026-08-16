@@ -957,15 +957,18 @@ function GeneralSettingsCard() {
   }
 
   async function saveHistoryDays(n: number) {
+    const clamped = clampHistoryDays(n)
     setErr(null)
-    setHistoryDays(n)
+    setHistoryDays(clamped)
     try {
       const r = await api('/v1/settings/history', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ retention_days: n }),
+        body: JSON.stringify({ retention_days: clamped }),
       })
       if (!r.ok) throw new Error(`save ${r.status}`)
+      const body = (await r.json()) as { retention_days?: number }
+      if (typeof body.retention_days === 'number') setHistoryDays(body.retention_days)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'save failed')
     }
@@ -1021,7 +1024,7 @@ function GeneralSettingsCard() {
               max={3650}
               className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm"
               value={historyDays}
-              onChange={(e) => setHistoryDays(Number(e.target.value) || 365)}
+              onChange={(e) => setHistoryDays(clampHistoryDays(Number(e.target.value)))}
               onBlur={() => void saveHistoryDays(historyDays)}
             />
             <span className="text-muted-foreground">days</span>
@@ -1031,6 +1034,11 @@ function GeneralSettingsCard() {
       </CardContent>
     </Card>
   )
+}
+
+function clampHistoryDays(n: number): number {
+  if (!Number.isFinite(n)) return 365
+  return Math.min(3650, Math.max(1, Math.trunc(n)))
 }
 
 function Meta({ label, value }: { label: string; value: string }) {

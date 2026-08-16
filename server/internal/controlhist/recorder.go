@@ -40,14 +40,14 @@ func (r *persistRecorder) Record(o Outcome) {
 	beforeJSON, err := marshalSnapshot(o.Before)
 	if err != nil {
 		log.Printf("controlhist: marshal before: %v", err)
-		return
+		beforeJSON = ""
 	}
 	afterJSON := ""
 	if o.Err == nil {
 		afterJSON, err = marshalSnapshot(o.After)
 		if err != nil {
 			log.Printf("controlhist: marshal after: %v", err)
-			return
+			afterJSON = ""
 		}
 	}
 	errMsg := ""

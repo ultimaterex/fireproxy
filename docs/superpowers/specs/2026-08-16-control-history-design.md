@@ -28,7 +28,7 @@ Table name: `control_events` (avoid clash with existing metrics `InsertHistory`)
 
 | Column | Type / notes |
 |---|---|
-| `id` | opaque string |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT |
 | `ts` | unix milliseconds |
 | `scheme` | `firewalla` \| `unifi` (extensible) |
 | `action` | scheme-local verb, e.g. `host.dns` — uniqueness is `(scheme, action)` |

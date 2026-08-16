@@ -103,6 +103,41 @@ func TestRecordSystemNameSync(t *testing.T) {
 	}
 }
 
+func TestRecordMarshalFailStillInserts(t *testing.T) {
+	r := &memRecorder{}
+	rec := New(r)
+	rec.Record(Outcome{
+		Scheme: SchemeFirewalla, Action: ActionHostDNS, Target: "aa:bb",
+		ActorKind: ActorUser, Actor: "admin",
+		Before: map[string]any{"bad": make(chan int)},
+		After:  map[string]any{"hostname": "b"},
+	})
+	if r.n != 1 {
+		t.Fatal("expected insert despite before marshal fail")
+	}
+	if r.last.BeforeJSON != "" {
+		t.Fatalf("before should be omitted: %q", r.last.BeforeJSON)
+	}
+	if r.last.AfterJSON == "" || r.last.Result != ResultOK {
+		t.Fatalf("%+v", r.last)
+	}
+
+	r2 := &memRecorder{}
+	rec2 := New(r2)
+	rec2.Record(Outcome{
+		Scheme: SchemeFirewalla, Action: ActionHostDNS, Target: "aa:bb",
+		ActorKind: ActorUser, Actor: "admin",
+		Before: map[string]any{"hostname": "a"},
+		After:  map[string]any{"bad": make(chan int)},
+	})
+	if r2.n != 1 {
+		t.Fatal("expected insert despite after marshal fail")
+	}
+	if r2.last.BeforeJSON == "" || r2.last.AfterJSON != "" {
+		t.Fatalf("%+v", r2.last)
+	}
+}
+
 func TestSkipModuleDisabled(t *testing.T) {
 	r := &memRecorder{}
 	rec := New(r)
