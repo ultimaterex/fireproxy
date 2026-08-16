@@ -251,6 +251,30 @@ func (p *Persist) ListAPIKeys() ([]AuthAPIKey, error) {
 	return out, rows.Err()
 }
 
+// GetAPIKeyByID looks up an API key by id.
+func (p *Persist) GetAPIKeyByID(id string) (AuthAPIKey, bool, error) {
+	if p == nil {
+		return AuthAPIKey{}, false, nil
+	}
+	var k AuthAPIKey
+	var last sql.NullInt64
+	err := p.db.QueryRow(
+		`SELECT id, name, hash, scopes, created_at, last_used_at FROM auth_api_keys WHERE id=?`,
+		id,
+	).Scan(&k.ID, &k.Name, &k.Hash, &k.Scopes, &k.CreatedAt, &last)
+	if err == sql.ErrNoRows {
+		return AuthAPIKey{}, false, nil
+	}
+	if err != nil {
+		return AuthAPIKey{}, false, err
+	}
+	if last.Valid {
+		v := last.Int64
+		k.LastUsedAt = &v
+	}
+	return k, true, nil
+}
+
 // GetAPIKeyByHash looks up an API key by its stored hash.
 func (p *Persist) GetAPIKeyByHash(hash string) (AuthAPIKey, bool, error) {
 	if p == nil {
