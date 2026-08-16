@@ -139,19 +139,20 @@ func (l *BoxMACList) UnmarshalJSON(b []byte) error {
 
 // Box is on-box identity (no MSP / license secrets).
 type Box struct {
-	Name     string     `json:"name"`
-	PublicIP string     `json:"public_ip,omitempty"`
-	DDNS     string     `json:"ddns,omitempty"`
-	MACs     BoxMACList `json:"macs,omitempty"`
-	Version  string     `json:"version,omitempty"`
-	Model    string     `json:"model,omitempty"`
-	License  string     `json:"license,omitempty"`
-	EID      string     `json:"eid,omitempty"`
-	Mode     string     `json:"mode,omitempty"`
-	Timezone string     `json:"timezone,omitempty"`
-	Country  string     `json:"country,omitempty"`
-	Region   string     `json:"region,omitempty"`
-	WanType  string     `json:"wan_type,omitempty"` // failover | load_balance | single
+	Name              string     `json:"name"`
+	PublicIP          string     `json:"public_ip,omitempty"`
+	DDNS              string     `json:"ddns,omitempty"`
+	MACs              BoxMACList `json:"macs,omitempty"`
+	Version           string     `json:"version,omitempty"`
+	Model             string     `json:"model,omitempty"`
+	License           string     `json:"license,omitempty"`
+	EID               string     `json:"eid,omitempty"`
+	Mode              string     `json:"mode,omitempty"`
+	Timezone          string     `json:"timezone,omitempty"`
+	Country           string     `json:"country,omitempty"`
+	Region            string     `json:"region,omitempty"`
+	WanType           string     `json:"wan_type,omitempty"`            // failover | load_balance | single
+	LocalDomainSuffix string     `json:"local_domain_suffix,omitempty"` // Redis local:domain:suffix when set
 }
 
 // Switch is a managed PoE switch attached to the box.

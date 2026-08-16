@@ -149,6 +149,47 @@ func (s *Server) postFWAppHostRename(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) postFWAppHostDNS(w http.ResponseWriter, r *http.Request) {
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		MAC      string `json:"mac"`
+		Hostname string `json:"hostname"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	st, err := svc.SetHostDNS(r.Context(), body.MAC, body.Hostname)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, fwapp.ErrNotPaired) {
+			code = http.StatusConflict
+		} else if errors.Is(err, fwapp.ErrLocalUnreach) {
+			code = http.StatusBadGateway
+		}
+		writeJSON(w, code, map[string]any{
+			"error":  err.Error(),
+			"status": st,
+		})
+		return
+	}
+	hostname, _ := fwapp.NormalizeHostDNS(body.Hostname)
+	mac, _ := fwapp.ParseMAC(body.MAC)
+	if s.CatalogStore != nil {
+		s.CatalogStore.PatchDeviceLocalDomain(mac, hostname)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"mac":      mac,
+		"hostname": hostname,
+		"status":   st,
+	})
+}
+
 func (s *Server) tryPushUniFiName(mac, name string) string {
 	if !s.unifiModuleEnabled() {
 		return "UniFi module off"

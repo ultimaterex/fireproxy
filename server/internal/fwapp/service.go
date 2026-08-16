@@ -224,6 +224,49 @@ func (s *Service) RenameHost(ctx context.Context, mac, name string) (Status, err
 	return s.Status(), nil
 }
 
+// SetHostDNS sets the Firewalla local DNS hostname (customizeDomainName) for mac.
+// Empty hostname clears the override.
+func (s *Service) SetHostDNS(ctx context.Context, mac, hostname string) (Status, error) {
+	mac, err := ParseMAC(mac)
+	if err != nil {
+		return s.Status(), err
+	}
+	hostname, err = NormalizeHostDNS(hostname)
+	if err != nil {
+		return s.Status(), err
+	}
+	if !s.secretsReady() {
+		return s.Status(), fmt.Errorf("FIREPROXY_SECRETS_KEY required")
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil {
+		return s.Status(), err
+	}
+	if !ok || c.SymKey == "" {
+		return s.Status(), ErrNotPaired
+	}
+	_, err = s.lan.SendTo(ctx, c, MTypeSet, map[string]any{
+		"item":  "hostDomain",
+		"value": map[string]any{"customizeDomainName": hostname},
+	}, mac)
+	if err != nil {
+		s.mu.Lock()
+		s.lastPingOK = false
+		s.lastPingAt = time.Now().UTC()
+		s.state = "lan-down"
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		return s.Status(), err
+	}
+	s.mu.Lock()
+	s.lastPingOK = true
+	s.lastPingAt = time.Now().UTC()
+	s.state = "lan-ok"
+	s.lastErr = ""
+	s.mu.Unlock()
+	return s.Status(), nil
+}
+
 // Ping verifies LAN-only control (never cloud).
 func (s *Service) Ping(ctx context.Context) (Status, error) {
 	if !s.secretsReady() {

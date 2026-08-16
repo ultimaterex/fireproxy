@@ -34,6 +34,31 @@ const SECTION_HEADER = 'px-6 pt-6 pb-4'
 const SECTION_TITLE = 'text-xl font-normal leading-8 text-muted-foreground'
 const ROW = 'grid grid-cols-[8rem_minmax(0,1fr)] gap-4 px-6 py-3 text-sm'
 
+/** Redis local:domain:suffix when known — empty if unset (no invented default). */
+export function normalizeDomainSuffix(suffix?: string | null): string {
+  return (suffix ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase()
+}
+
+/** Hostname label only — strip a trailing known suffix if present. */
+export function dnsHostnameLabel(host: string, suffix: string): string {
+  const h = host.trim()
+  const s = normalizeDomainSuffix(suffix)
+  if (!h || !s) return h
+  const lower = h.toLowerCase()
+  const tail = '.' + s
+  if (lower.endsWith(tail) && lower.length > tail.length) {
+    return h.slice(0, h.length - tail.length)
+  }
+  return h
+}
+
+export function formatLocalFQDN(host: string, suffix?: string | null): string {
+  const s = normalizeDomainSuffix(suffix)
+  const label = dnsHostnameLabel(host, s)
+  if (!label) return ''
+  return s ? `${label}.${s}` : label
+}
+
 export type DeviceDetailModel = {
   mac: string
   name: string
@@ -114,8 +139,10 @@ function fmtRate(kbps?: number): string {
   return `${kbps} kbps`
 }
 
-function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
-  if (rows.length === 0) return <p className="px-6 py-6 text-sm text-muted-foreground">—</p>
+function FactRows({ rows, empty = true }: { rows: { label: string; value: string }[]; empty?: boolean }) {
+  if (rows.length === 0) {
+    return empty ? <p className="px-6 py-6 text-sm text-muted-foreground">—</p> : null
+  }
   return (
     <>
       {rows.map((r) => (
@@ -135,7 +162,9 @@ export function DeviceDetail({
   port,
   groupLabel,
   unifi,
+  domainSuffix,
   onRenamed,
+  onDNSUpdated,
 }: {
   device: DeviceDetailModel
   nowMs: number
@@ -143,30 +172,43 @@ export function DeviceDetail({
   port?: PortLoc
   groupLabel?: string
   unifi?: ModuleInfo | null
+  domainSuffix?: string | null
   onRenamed?: (mac: string, name: string) => void
+  onDNSUpdated?: (mac: string, hostname: string) => void
 }) {
   const online = deviceOnline(
     { mac: device.mac, name: device.name, last_active_ts: device.last_active_ts },
     nowMs,
   )
   const wireless = !!(device.ssid || device.band || device.ap_mac)
+  const suffix = normalizeDomainSuffix(domainSuffix)
   const [controlReady, setControlReady] = useState(false)
   const [wakeBusy, setWakeBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState(device.name)
+  const [displayDomain, setDisplayDomain] = useState(
+    () => dnsHostnameLabel(device.local_domain ?? '', suffix),
+  )
   const [renaming, setRenaming] = useState(false)
+  const [editingDNS, setEditingDNS] = useState(false)
   const [draftName, setDraftName] = useState(device.name)
+  const [draftDNS, setDraftDNS] = useState(() => dnsHostnameLabel(device.local_domain ?? '', suffix))
   const [pushUnifi, setPushUnifi] = useState(false)
   const [renameBusy, setRenameBusy] = useState(false)
+  const [dnsBusy, setDnsBusy] = useState(false)
 
   const unifiPushAvailable =
     !!unifi?.enabled && unifi.status === 'ok' && !!unifi.name_sync_enabled
 
   useEffect(() => {
+    const label = dnsHostnameLabel(device.local_domain ?? '', suffix)
     setDisplayName(device.name)
     setDraftName(device.name)
+    setDisplayDomain(label)
+    setDraftDNS(label)
     setRenaming(false)
-  }, [device.name, device.mac])
+    setEditingDNS(false)
+  }, [device.name, device.local_domain, device.mac, suffix])
 
   useEffect(() => {
     let cancelled = false
@@ -186,9 +228,16 @@ export function DeviceDetail({
   }, [])
 
   function startRename() {
+    setEditingDNS(false)
     setDraftName(displayName)
     setPushUnifi(unifiPushAvailable && !!unifi?.name_sync_auto)
     setRenaming(true)
+  }
+
+  function startDNS() {
+    setRenaming(false)
+    setDraftDNS(displayDomain)
+    setEditingDNS(true)
   }
 
   async function wake() {
@@ -253,12 +302,41 @@ export function DeviceDetail({
     }
   }
 
+  async function saveDNS() {
+    if (!controlReady || dnsBusy) return
+    const hostname = dnsHostnameLabel(draftDNS, suffix)
+    setDnsBusy(true)
+    try {
+      const r = await api('/v1/fw-app/hosts/dns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: device.mac, hostname }),
+      })
+      const body = (await r.json().catch(() => ({}))) as {
+        error?: string
+        hostname?: string
+      }
+      if (!r.ok) {
+        setToast(body.error || 'DNS update failed')
+        return
+      }
+      const next = dnsHostnameLabel(body.hostname ?? hostname, suffix)
+      setDisplayDomain(next)
+      setEditingDNS(false)
+      onDNSUpdated?.(device.mac, next)
+      setToast('Saved')
+    } catch {
+      setToast('DNS update failed')
+    } finally {
+      setDnsBusy(false)
+    }
+  }
+
   const identity = useMemo(() => {
     const rows: { label: string; value: string }[] = []
     if (device.hostname && device.hostname !== displayName) {
       rows.push({ label: 'Hostname', value: device.hostname })
     }
-    if (device.local_domain) rows.push({ label: 'Domain', value: device.local_domain })
     if (device.vendor) rows.push({ label: 'Manufacturer', value: device.vendor })
     if (device.type) rows.push({ label: 'Type', value: device.type })
     if (device.os) rows.push({ label: 'OS', value: device.os })
@@ -275,6 +353,8 @@ export function DeviceDetail({
     }
     return rows
   }, [device, groupLabel, displayName])
+
+  const showDomainRow = controlReady || !!displayDomain
 
   const link = useMemo(() => {
     const rows: { label: string; value: string }[] = []
@@ -387,7 +467,59 @@ export function DeviceDetail({
             <CardTitle className={SECTION_TITLE}>Identity</CardTitle>
           </CardHeader>
           <CardContent className="divide-y px-0">
-            <FactRows rows={identity} />
+            {showDomainRow ? (
+              <div className={ROW}>
+                <div className="text-muted-foreground">Domain</div>
+                <div className="min-w-0">
+                  {controlReady && editingDNS ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 max-w-xs items-center gap-0.5 font-mono text-sm">
+                        <Input
+                          className="h-8 min-w-0 flex-1"
+                          value={draftDNS}
+                          onChange={(e) => setDraftDNS(e.target.value)}
+                          maxLength={63}
+                          autoFocus
+                          disabled={dnsBusy}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void saveDNS()
+                            if (e.key === 'Escape') setEditingDNS(false)
+                          }}
+                        />
+                        {suffix ? (
+                          <span className="shrink-0 text-muted-foreground">.{suffix}</span>
+                        ) : null}
+                      </div>
+                      <Button type="button" size="xs" disabled={dnsBusy} onClick={() => void saveDNS()}>
+                        Save
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        disabled={dnsBusy}
+                        onClick={() => setEditingDNS(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : controlReady ? (
+                    <button
+                      type="button"
+                      className="break-all text-left font-medium hover:text-[#027BFF]"
+                      onClick={startDNS}
+                    >
+                      {displayDomain ? formatLocalFQDN(displayDomain, suffix) : '—'}
+                    </button>
+                  ) : (
+                    <div className="break-all font-medium">
+                      {displayDomain ? formatLocalFQDN(displayDomain, suffix) : displayDomain}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+            <FactRows rows={identity} empty={!showDomainRow} />
           </CardContent>
         </Card>
 
