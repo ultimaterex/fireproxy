@@ -36,8 +36,8 @@ func TestRecordLANFail(t *testing.T) {
 	rec.Record(Outcome{
 		Scheme: SchemeFirewalla, Action: ActionHostDNS, Target: "aa:bb",
 		ActorKind: ActorUser, Actor: "admin",
-		Before:    map[string]any{"hostname": "a"},
-		Err:       fwapp.ErrLocalUnreach,
+		Before: map[string]any{"hostname": "a"},
+		Err:    fwapp.ErrLocalUnreach,
 	})
 	if r.n != 1 || r.last.Result != Result502 || r.last.AfterJSON != "" {
 		t.Fatalf("%+v", r.last)
@@ -57,8 +57,8 @@ func TestRecordOKSetsAfter(t *testing.T) {
 	rec.Record(Outcome{
 		Scheme: SchemeFirewalla, Action: ActionHostDNS, Target: "aa:bb",
 		ActorKind: ActorUser, Actor: "admin",
-		Before:    map[string]any{"hostname": "a"},
-		After:     map[string]any{"hostname": "b"},
+		Before: map[string]any{"hostname": "a"},
+		After:  map[string]any{"hostname": "b"},
 	})
 	if r.n != 1 || r.last.Result != ResultOK {
 		t.Fatalf("%+v", r.last)
@@ -74,9 +74,9 @@ func TestRecordFailKeepsBefore(t *testing.T) {
 	rec.Record(Outcome{
 		Scheme: SchemeFirewalla, Action: ActionHostRename, Target: "aa:bb",
 		ActorKind: ActorUser, Actor: "admin",
-		Before:    map[string]any{"name": "old"},
-		After:     map[string]any{"name": "new"},
-		Err:       errors.New("name conflict"),
+		Before: map[string]any{"name": "old"},
+		After:  map[string]any{"name": "new"},
+		Err:    errors.New("name conflict"),
 	})
 	if r.n != 1 || r.last.Result != Result409 || r.last.AfterJSON != "" {
 		t.Fatalf("%+v", r.last)
@@ -92,8 +92,8 @@ func TestRecordSystemNameSync(t *testing.T) {
 	rec.Record(Outcome{
 		Scheme: SchemeUnifi, Action: ActionClientRename, Target: "aa:bb",
 		ActorKind: ActorSystem, Actor: "name-sync",
-		Before:    map[string]any{"name": "old"},
-		After:     map[string]any{"name": "new"},
+		Before: map[string]any{"name": "old"},
+		After:  map[string]any{"name": "new"},
 	})
 	if r.n != 1 || r.last.ActorKind != ActorSystem || r.last.Actor != "name-sync" {
 		t.Fatalf("%+v", r.last)
