@@ -36,7 +36,7 @@ const ROW = 'grid grid-cols-[8rem_minmax(0,1fr)] gap-4 px-6 py-3 text-sm'
 
 /** Redis local:domain:suffix when known — empty if unset (no invented default). */
 export function normalizeDomainSuffix(suffix?: string | null): string {
-  return (suffix ?? '').trim().replace(/^\.+/, '').toLowerCase()
+  return (suffix ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase()
 }
 
 /** Hostname label only — strip a trailing known suffix if present. */
@@ -519,7 +519,7 @@ export function DeviceDetail({
                 </div>
               </div>
             ) : null}
-            <FactRows rows={identity} empty={false} />
+            <FactRows rows={identity} empty={!showDomainRow} />
           </CardContent>
         </Card>
 
