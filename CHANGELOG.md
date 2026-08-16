@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.0](https://github.com/ultimaterex/fireproxy/compare/v0.1.1...v0.2.0) (2026-08-16)
+
+
+### Features
+
+* Firewalla App API control (pairing, LAN, speedtest) ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+* rename Firewalla hosts via App API control ([f704e4c](https://github.com/ultimaterex/fireproxy/commit/f704e4c9a261a745c0124471685999b6650dcdeb))
+* rename Firewalla hosts via App API control ([#14](https://github.com/ultimaterex/fireproxy/issues/14)) ([f704e4c](https://github.com/ultimaterex/fireproxy/commit/f704e4c9a261a745c0124471685999b6650dcdeb))
+* set Firewalla local DNS hostnames via App API ([bcb6dda](https://github.com/ultimaterex/fireproxy/commit/bcb6ddaf37bd45641cc03f73514aea137ec45721))
+* set Firewalla local DNS hostnames via App API ([#15](https://github.com/ultimaterex/fireproxy/issues/15)) ([bcb6dda](https://github.com/ultimaterex/fireproxy/commit/bcb6ddaf37bd45641cc03f73514aea137ec45721))
+* Wake-on-LAN via Firewalla App API control ([#13](https://github.com/ultimaterex/fireproxy/issues/13)) ([d83a6d9](https://github.com/ultimaterex/fireproxy/commit/d83a6d92b19a0e31e063f38f46b4cff1be02f63c))
+
+
+### Bug Fixes
+
+* detect agent updates for VERSION=dev via package SHA ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+* **fw-app:** prune finished speedtest jobs by TTL and cap ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+* **fw-app:** require box_ip to be a literal IP ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+* persist catalog rename off lock; match breadcrumb by MAC ([f704e4c](https://github.com/ultimaterex/fireproxy/commit/f704e4c9a261a745c0124471685999b6650dcdeb))
+* **ui:** avoid duplicate fw-app status fetch on Control mount ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+
+
+### Documentation
+
+* document early Firewalla control in README ([27b3492](https://github.com/ultimaterex/fireproxy/commit/27b349298d216f2d7dd14c2307b25c71b8c1b038))
+
 ## [0.1.1](https://github.com/ultimaterex/fireproxy/compare/v0.1.0...v0.1.1) (2026-08-14)
 
 Public v1 — FireProxy initial open-source release.
