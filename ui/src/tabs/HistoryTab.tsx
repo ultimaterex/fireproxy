@@ -54,6 +54,8 @@ export function HistoryTab() {
     if (action && !actionOptions.includes(action)) setAction('')
   }, [action, actionOptions])
 
+  const serverQ = anonOn ? '' : q.trim()
+
   const fetchPage = useCallback(
     async (beforeId: number) => {
       const params = new URLSearchParams({ limit: String(PAGE) })
@@ -61,7 +63,7 @@ export function HistoryTab() {
       if (action) params.set('action', action)
       if (actorKind) params.set('actor_kind', actorKind)
       if (result) params.set('result', result)
-      if (!anonOn && q.trim()) params.set('q', q.trim())
+      if (serverQ) params.set('q', serverQ)
       if (beforeId > 0) params.set('before_id', String(beforeId))
       const r = await api(`/v1/history?${params}`)
       if (!r.ok) throw new Error(`history ${r.status}`)
@@ -72,7 +74,7 @@ export function HistoryTab() {
       if (body.actions) setActionsByScheme(body.actions)
       return body.events ?? []
     },
-    [scheme, action, actorKind, result, q, anonOn],
+    [scheme, action, actorKind, result, serverQ],
   )
 
   const load = useCallback(async () => {
