@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   anonymizeAudit,
   anonymizeBox,
+  anonymizeControlEvents,
   anonymizeDevices,
   anonymizeLogLines,
   anonymizeNameSync,
@@ -240,6 +241,36 @@ describe('name pools + walkers', () => {
     const names = tags.map((t) => t.name)
     expect(names.every((n) => (GROUP_NAMES as readonly string[]).includes(n))).toBe(true)
     expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('anonymizeControlEvents', () => {
+  it('fakes MAC target, summary, before/after; shifts ms ts', () => {
+    const a = A()
+    const ts = 1_700_000_000_000
+    const [out] = anonymizeControlEvents(a, [
+      {
+        id: 1,
+        ts,
+        scheme: 'firewalla',
+        action: 'host.rename',
+        actor_kind: 'user',
+        actor: 'admin',
+        target: 'aa:bb:cc:dd:ee:ff',
+        summary: 'Kitchen TV',
+        result: 'ok',
+        before: { name: 'Kitchen TV' },
+        after: { name: 'Living Room TV' },
+      },
+    ])
+    expect(out!.ts).toBe(ts + a.offsetSec * 1000)
+    expect(out!.target).toBe(a.fakeMAC('aa:bb:cc:dd:ee:ff'))
+    expect(out!.target).not.toMatch(/aa:bb:cc:dd:ee:ff/i)
+    expect(out!.summary).not.toBe('Kitchen TV')
+    expect((out!.before as { name: string }).name).not.toBe('Kitchen TV')
+    expect((out!.after as { name: string }).name).not.toBe('Living Room TV')
+    expect(out!.actor).toBe('admin')
+    expect(out!.scheme).toBe('firewalla')
   })
 })
 

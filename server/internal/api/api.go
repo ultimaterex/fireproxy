@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"fireproxy/pkg/inventory"
 	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/agentpkg"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/enroll"
 	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
@@ -32,6 +34,10 @@ type Server struct {
 	AgentHub          *agenthub.Hub
 	LogHub            *loghub.Hub
 	Persist           *store.Persist
+	ControlHist       controlhist.Recorder
+	AuthDisabled      bool // when true, History actors resolve as user/admin
+	speedtestActors   *sync.Map
+	speedtestHookMu   sync.Mutex
 	TPLink            *tplink.Store
 	FWApp             *fwapp.Service
 	Enroll            *enroll.CodeStore
@@ -96,6 +102,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/logs/fetch", s.postLogsFetch)
 	mux.HandleFunc("GET /v1/settings/logs", s.getLogsSettings)
 	mux.HandleFunc("PUT /v1/settings/logs", s.putLogsSettings)
+	mux.HandleFunc("GET /v1/history", s.getControlHistory)
+	mux.HandleFunc("GET /v1/settings/history", s.getHistorySettings)
+	mux.HandleFunc("PUT /v1/settings/history", s.putHistorySettings)
 	s.registerAgentRoutes(mux)
 	s.registerIAMRoutes(mux)
 	if s.AgentHub != nil {
@@ -691,6 +700,8 @@ func (s *Server) applyNameSync(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []unifi.ApplyResult{}
 	}
+	kind, actor := s.controlActor(r)
+	RecordUniFiRenames(s.controlHist(), kind, actor, rows, results)
 	// Recount after apply for badge.
 	all2 := unifi.Diff(unifi.DiffInput{
 		Firewalla: unifi.HostsFromCatalog(fw, m.ClientIPs()),

@@ -27,6 +27,10 @@ type Service struct {
 	speedJobs map[string]*SpeedtestJob
 	// IndexSpeedtest merges LAN history into the server catalog (optional).
 	IndexSpeedtest func(results []SpeedtestResult)
+	// OnSpeedtestQueued runs synchronously after a job is registered, before the worker starts.
+	OnSpeedtestQueued func(jobID string)
+	// OnSpeedtestDone is called when a StartSpeedtest job reaches done or error (optional).
+	OnSpeedtestDone func(job SpeedtestJob)
 }
 
 // NewService builds a Service using persist KV and FIREPROXY_SECRETS_KEY.
@@ -416,7 +420,11 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 	}
 	s.pruneSpeedJobsLocked(now)
 	s.speedJobs[id] = &job
+	queued := s.OnSpeedtestQueued
 	s.mu.Unlock()
+	if queued != nil {
+		queued(id)
+	}
 
 	go func(creds Creds, jobID, wan, server string) {
 		s.mu.Lock()
@@ -430,40 +438,50 @@ func (s *Service) StartSpeedtest(wanUUID, serverID string) (SpeedtestJob, Status
 		defer cancel()
 		res, err := s.lan.RunSpeedtest(ctx, creds, wan, server)
 		if err != nil {
+			var done SpeedtestJob
 			s.mu.Lock()
-			defer s.mu.Unlock()
 			j := s.speedJobs[jobID]
-			if j == nil {
-				return
+			if j != nil {
+				j.State = "error"
+				j.Error = err.Error()
+				j.updatedAt = time.Now()
+				done = *j
 			}
-			j.State = "error"
-			j.Error = err.Error()
-			j.updatedAt = time.Now()
 			if errorsIsLocal(err) {
 				s.lastPingOK = false
 				s.state = "lan-down"
 				s.lastErr = err.Error()
 				s.lastPingAt = time.Now().UTC()
 			}
+			cb := s.OnSpeedtestDone
+			s.mu.Unlock()
+			if j != nil && cb != nil {
+				cb(done)
+			}
 			return
 		}
 
 		s.indexAfterRun(creds, &res, server)
 
+		var done SpeedtestJob
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		j := s.speedJobs[jobID]
-		if j == nil {
-			return
+		if j != nil {
+			cp := res
+			j.State = "done"
+			j.Result = &cp
+			j.updatedAt = time.Now()
+			done = *j
 		}
-		cp := res
-		j.State = "done"
-		j.Result = &cp
-		j.updatedAt = time.Now()
 		s.lastPingOK = true
 		s.lastPingAt = time.Now().UTC()
 		s.state = "lan-ok"
 		s.lastErr = ""
+		cb := s.OnSpeedtestDone
+		s.mu.Unlock()
+		if j != nil && cb != nil {
+			cb(done)
+		}
 	}(c, id, wanUUID, serverID)
 
 	return job, s.Status(), nil

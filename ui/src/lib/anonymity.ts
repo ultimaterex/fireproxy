@@ -1,6 +1,7 @@
 import type {
   AuditView,
   BoxInfo,
+  ControlEvent,
   Dashboard,
   Device,
   HistoryPoint,
@@ -1054,6 +1055,50 @@ export function anonymizeEnrollCmd(anon: Anon, cmd: string): string {
 
 export function anonymizeAgentEvents(anon: Anon, events: AnonAgentEvent[]): AnonAgentEvent[] {
   return events.map((e) => ({ ...e, ts: anon.shiftTS(e.ts) }))
+}
+
+function anonymizeControlSnapshot(anon: Anon, v: unknown, cidrs: CidrMap[]): unknown {
+  if (v == null) return v
+  if (typeof v === 'string') return anon.rewriteText(v, cidrs)
+  if (typeof v === 'number' || typeof v === 'boolean') return v
+  if (Array.isArray(v)) return v.map((x) => anonymizeControlSnapshot(anon, x, cidrs))
+  if (typeof v === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === 'string' && /^(name|hostname|dns)$/i.test(k)) {
+        out[k] = anon.fakeName('device', val)
+      } else {
+        out[k] = anonymizeControlSnapshot(anon, val, cidrs)
+      }
+    }
+    return out
+  }
+  return v
+}
+
+/** Anonymize control-plane History rows (not metrics HistoryPoint). */
+export function anonymizeControlEvents(
+  anon: Anon,
+  events: ControlEvent[],
+  cidrs: CidrMap[] = [],
+): ControlEvent[] {
+  return events.map((e) => ({
+    ...e,
+    ts: e.ts ? e.ts + anon.offsetSec * 1000 : e.ts,
+    target: e.target
+      ? looksLikeMAC(e.target)
+        ? anon.fakeMAC(e.target)
+        : anon.rewriteText(e.target, cidrs)
+      : e.target,
+    summary: e.summary
+      ? looksLikeMAC(e.summary)
+        ? anon.fakeMAC(e.summary)
+        : anon.fakeName('device', e.summary)
+      : e.summary,
+    error: e.error ? anon.rewriteText(e.error, cidrs) : e.error,
+    before: anonymizeControlSnapshot(anon, e.before, cidrs),
+    after: anonymizeControlSnapshot(anon, e.after, cidrs),
+  }))
 }
 
 export function anonymizeModules(anon: Anon, mods: ModuleInfo[]): ModuleInfo[] {

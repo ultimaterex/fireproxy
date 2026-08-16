@@ -889,15 +889,17 @@ function GeneralSettingsCard() {
   const [publicURL, setPublicURL] = useState(() => window.location.origin)
   const [urlDirty, setUrlDirty] = useState(false)
   const [days, setDays] = useState(7)
+  const [historyDays, setHistoryDays] = useState(365)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [agentR, logsR] = await Promise.all([
+        const [agentR, logsR, historyR] = await Promise.all([
           api('/v1/settings/agent'),
           api('/v1/settings/logs'),
+          api('/v1/settings/history'),
         ])
         if (agentR.ok) {
           const body = (await agentR.json()) as { public_base_url?: string }
@@ -908,6 +910,10 @@ function GeneralSettingsCard() {
         if (logsR.ok) {
           const body = (await logsR.json()) as { retention_days?: number }
           if (!cancelled && body.retention_days) setDays(body.retention_days)
+        }
+        if (historyR.ok) {
+          const body = (await historyR.json()) as { retention_days?: number }
+          if (!cancelled && body.retention_days) setHistoryDays(body.retention_days)
         }
       } catch {
         /* ignore */
@@ -945,6 +951,24 @@ function GeneralSettingsCard() {
         body: JSON.stringify({ retention_days: n }),
       })
       if (!r.ok) throw new Error(`save ${r.status}`)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'save failed')
+    }
+  }
+
+  async function saveHistoryDays(n: number) {
+    const clamped = clampHistoryDays(n)
+    setErr(null)
+    setHistoryDays(clamped)
+    try {
+      const r = await api('/v1/settings/history', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retention_days: clamped }),
+      })
+      if (!r.ok) throw new Error(`save ${r.status}`)
+      const body = (await r.json()) as { retention_days?: number }
+      if (typeof body.retention_days === 'number') setHistoryDays(body.retention_days)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'save failed')
     }
@@ -991,10 +1015,30 @@ function GeneralSettingsCard() {
             <span className="text-muted-foreground">days</span>
           </div>
         </div>
+        <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 px-6 py-3 text-sm">
+          <div className="text-muted-foreground">History retention</div>
+          <div className="flex items-center justify-end gap-2">
+            <input
+              type="number"
+              min={1}
+              max={3650}
+              className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm"
+              value={historyDays}
+              onChange={(e) => setHistoryDays(clampHistoryDays(Number(e.target.value)))}
+              onBlur={() => void saveHistoryDays(historyDays)}
+            />
+            <span className="text-muted-foreground">days</span>
+          </div>
+        </div>
         {err ? <p className="px-6 py-3 text-sm text-destructive">{err}</p> : null}
       </CardContent>
     </Card>
   )
+}
+
+function clampHistoryDays(n: number): number {
+  if (!Number.isFinite(n)) return 365
+  return Math.min(3650, Math.max(1, Math.trunc(n)))
 }
 
 function Meta({ label, value }: { label: string; value: string }) {

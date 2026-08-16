@@ -7,6 +7,7 @@ import {
   Bug,
   Cable,
   ClipboardList,
+  History,
   MonitorSmartphone,
   Network,
   PanelLeftClose,
@@ -102,6 +103,7 @@ import { SettingsTab } from '@/tabs/SettingsTab'
 import { TopologyTab } from '@/tabs/TopologyTab'
 import { WirelessTab, WirelessAPDetail, WirelessNetworkDetail, apLabel, netKey, clientLabel } from '@/tabs/WirelessTab'
 import { AuditTab, type AuditFocus, type AuditSectionId } from '@/tabs/AuditTab'
+import { HistoryTab } from '@/tabs/HistoryTab'
 import { LogsTab } from '@/tabs/LogsTab'
 import {
   countUnsnoozedOffline,
@@ -115,6 +117,7 @@ const NAV: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: 'topology', label: 'Topology', icon: Network },
   { id: 'wireless', label: 'Wireless', icon: Wifi },
   { id: 'audit', label: 'Audit', icon: ClipboardList },
+  { id: 'history', label: 'History', icon: History },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'rules', label: 'Rules', icon: Shield },
   { id: 'groups', label: 'Groups', icon: Users },
@@ -1221,6 +1224,8 @@ function App() {
               onPending={() => { setSettingsOpen('unifi-sync'); selectTab('settings') }}
             />
           )}
+
+          {tab === 'history' && <HistoryTab />}
 
           {tab === 'logs' && <LogsTab />}
 
