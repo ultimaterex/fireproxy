@@ -889,15 +889,17 @@ function GeneralSettingsCard() {
   const [publicURL, setPublicURL] = useState(() => window.location.origin)
   const [urlDirty, setUrlDirty] = useState(false)
   const [days, setDays] = useState(7)
+  const [historyDays, setHistoryDays] = useState(365)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [agentR, logsR] = await Promise.all([
+        const [agentR, logsR, historyR] = await Promise.all([
           api('/v1/settings/agent'),
           api('/v1/settings/logs'),
+          api('/v1/settings/history'),
         ])
         if (agentR.ok) {
           const body = (await agentR.json()) as { public_base_url?: string }
@@ -908,6 +910,10 @@ function GeneralSettingsCard() {
         if (logsR.ok) {
           const body = (await logsR.json()) as { retention_days?: number }
           if (!cancelled && body.retention_days) setDays(body.retention_days)
+        }
+        if (historyR.ok) {
+          const body = (await historyR.json()) as { retention_days?: number }
+          if (!cancelled && body.retention_days) setHistoryDays(body.retention_days)
         }
       } catch {
         /* ignore */
@@ -940,6 +946,21 @@ function GeneralSettingsCard() {
     setDays(n)
     try {
       const r = await api('/v1/settings/logs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retention_days: n }),
+      })
+      if (!r.ok) throw new Error(`save ${r.status}`)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'save failed')
+    }
+  }
+
+  async function saveHistoryDays(n: number) {
+    setErr(null)
+    setHistoryDays(n)
+    try {
+      const r = await api('/v1/settings/history', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ retention_days: n }),
@@ -987,6 +1008,21 @@ function GeneralSettingsCard() {
               value={days}
               onChange={(e) => setDays(Number(e.target.value) || 7)}
               onBlur={() => void saveDays(days)}
+            />
+            <span className="text-muted-foreground">days</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 px-6 py-3 text-sm">
+          <div className="text-muted-foreground">History retention</div>
+          <div className="flex items-center justify-end gap-2">
+            <input
+              type="number"
+              min={1}
+              max={3650}
+              className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm"
+              value={historyDays}
+              onChange={(e) => setHistoryDays(Number(e.target.value) || 365)}
+              onBlur={() => void saveHistoryDays(historyDays)}
             />
             <span className="text-muted-foreground">days</span>
           </div>

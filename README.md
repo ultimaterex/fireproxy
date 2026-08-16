@@ -21,6 +21,7 @@ Put simply an on-box **agent** pushes snapshots to an off-box **server** which s
 - **Audit** — name drift, VLAN/STP issues, unknown/offline gear, with snooze
 - **Live service logs** — unbound / dnsmasq / firerouter via agent WebSocket
 - **Firewalla control (early)** — pair via Settings → Control; LAN App API for ping, WAN speedtest, Wake-on-LAN, host rename, and local DNS hostname (more coming; unofficial)
+- **Control history** — local audit log of control actions (History tab); retention in Settings
 - **Auth by default** — password admin, optional OIDC (e.g. Pocket ID), scoped API keys, per-agent enroll tokens
 - **Anonymity mode** — scrub hostnames/MACs/IPs for screenshots
 - **Lean agent** — `CPUQuota=5%`, `MemoryMax=64M`, no Redis `KEYS`/`SCAN`, dig, or Zeek
