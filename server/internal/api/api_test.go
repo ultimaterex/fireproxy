@@ -1037,6 +1037,34 @@ func TestRecordUniFiRenamesSystemActor(t *testing.T) {
 	}
 }
 
+func TestNameSyncApplyHistoryEmptyBefore(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u3", MAC: "02:00:00:00:00:03"},
+		},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{"macs":["02:00:00:00:00:03"]}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %+v", rows)
+	}
+	ev := rows[0]
+	if ev.Result != "ok" || ev.BeforeJSON != `{"name":""}` || ev.AfterJSON != `{"name":"phone"}` {
+		t.Fatalf("empty→named snapshots: %+v", ev)
+	}
+}
+
 func TestNameSyncApplyModuleOffNoHistory(t *testing.T) {
 	mod := &nameSyncMod{Stub: modules.Stub{ModuleName: "unifi-sync"}, status: "ok"}
 	_, mux, _, p := nameSyncHistServer(t, mod, false, true)

@@ -33,9 +33,7 @@ func RecordUniFiRenames(rec controlhist.Recorder, actorKind, actor string, rows 
 		row, ok := byMAC[mac]
 		var before, after map[string]any
 		if ok {
-			if name := strings.TrimSpace(row.UniFi); name != "" {
-				before = map[string]any{"name": name}
-			}
+			before = map[string]any{"name": strings.TrimSpace(row.UniFi)}
 			if res.OK {
 				if name := strings.TrimSpace(row.Firewalla); name != "" {
 					after = map[string]any{"name": name}
