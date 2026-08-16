@@ -338,6 +338,26 @@ export type WirelessView = {
   clients: WirelessClient[]
 }
 
+export type ControlEvent = {
+  id: number
+  ts: number
+  scheme: string
+  action: string
+  actor_kind: string
+  actor: string
+  target: string
+  summary?: string
+  result: string
+  error?: string
+  before?: unknown
+  after?: unknown
+}
+
+export type ControlHistoryView = {
+  events: ControlEvent[]
+  actions: Record<string, string[]>
+}
+
 export type Tab =
   | 'metrics'
   | 'inventory'
@@ -345,6 +365,7 @@ export type Tab =
   | 'topology'
   | 'wireless'
   | 'audit'
+  | 'history'
   | 'devices'
   | 'rules'
   | 'groups'
