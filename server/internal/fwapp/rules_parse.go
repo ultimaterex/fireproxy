@@ -285,7 +285,7 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 		Count: allCount,
 	}}
 
-	// Prefer hosts list order for device chips; include unlabeled MACs seen on rules.
+	// Prefer hosts list order; only chips with ≥1 matching rule (skip empty noise).
 	seenHost := map[string]struct{}{}
 	for _, h := range hosts {
 		mac := NormalizeMAC(h.MAC)
@@ -293,6 +293,10 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 			continue
 		}
 		seenHost[mac] = struct{}{}
+		n := deviceCounts[mac]
+		if n == 0 {
+			continue
+		}
 		label := hostLabels[mac]
 		if label == "" {
 			label = mac
@@ -301,10 +305,13 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 			ID:    mac,
 			Kind:  ScopeChipDevice,
 			Label: label,
-			Count: deviceCounts[mac],
+			Count: n,
 		})
 	}
 	for mac, n := range deviceCounts {
+		if n == 0 {
+			continue
+		}
 		if _, ok := seenHost[mac]; ok {
 			continue
 		}
@@ -330,6 +337,10 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 			continue
 		}
 		emittedTag[uid] = struct{}{}
+		n := tagCounts[uid]
+		if n == 0 {
+			continue
+		}
 		label := tagLabels[uid]
 		if label == "" {
 			label = strings.TrimSpace(tag.Name)
@@ -341,10 +352,13 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 			ID:    "tag:" + uid,
 			Kind:  ScopeChipTag,
 			Label: label,
-			Count: tagCounts[uid],
+			Count: n,
 		})
 	}
 	for id, n := range tagCounts {
+		if n == 0 {
+			continue
+		}
 		if _, ok := emittedTag[id]; ok {
 			continue
 		}

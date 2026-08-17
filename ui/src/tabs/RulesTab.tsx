@@ -203,7 +203,10 @@ export function RulesTab({
     return anon ? anonymizeFwAppRules(anon, data) : data
   }, [anon, data])
 
-  const scopes = useMemo(() => show?.scopes ?? [], [show?.scopes])
+  const scopes = useMemo(() => {
+    const all = show?.scopes ?? []
+    return all.filter((s) => s.kind === 'all' || s.count > 0)
+  }, [show?.scopes])
   const activeChip = scopes.find((s) => s.id === scopeId) ?? scopes[0]
 
   useEffect(() => {
@@ -234,9 +237,11 @@ export function RulesTab({
   const caps = show?.capabilities ?? {}
   const hub = show?.hub
   const exceptions = show?.exceptions ?? []
-  const hitTotal = Math.max(1, (hub?.allowHits ?? 0) + (hub?.blockHits ?? 0))
-  const allowPct = hub ? ((hub.allowHits / hitTotal) * 100) : 0
-  const blockPct = hub ? ((hub.blockHits / hitTotal) * 100) : 0
+  const hitDenom = (hub?.allowHits ?? 0) + (hub?.blockHits ?? 0)
+  const allowPct = hitDenom > 0 ? Math.round(((hub?.allowHits ?? 0) / hitDenom) * 100) : 0
+  const blockPct = hitDenom > 0 ? 100 - allowPct : 0
+  const allowBar = hitDenom > 0 ? ((hub?.allowHits ?? 0) / hitDenom) * 100 : 0
+  const blockBar = hitDenom > 0 ? ((hub?.blockHits ?? 0) / hitDenom) * 100 : 0
 
   if (!canLoad && !busy) {
     return (
@@ -366,12 +371,12 @@ export function RulesTab({
             <Badge variant="secondary">{hub?.allowCount ?? 0} allow</Badge>
             <Badge variant="destructive">{hub?.blockCount ?? 0} block</Badge>
             <span className="font-mono tabular-nums text-muted-foreground">
-              {fmtHits(hub?.allowHits ?? 0)} / {fmtHits(hub?.blockHits ?? 0)}
+              {fmtHits(hub?.allowHits ?? 0)} ({allowPct}%) / {fmtHits(hub?.blockHits ?? 0)} ({blockPct}%)
             </span>
           </div>
           <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-foreground/60" style={{ width: `${allowPct}%` }} />
-            <div className="h-full bg-destructive/80" style={{ width: `${blockPct}%` }} />
+            <div className="h-full bg-foreground/60" style={{ width: `${allowBar}%` }} />
+            <div className="h-full bg-destructive/80" style={{ width: `${blockBar}%` }} />
           </div>
           {exceptions.length > 0 ? (
             <div className="border-t pt-3">
@@ -391,15 +396,17 @@ export function RulesTab({
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {scopes.map((s) => (
-          <Chip key={s.id} active={scopeId === s.id} onClick={() => setScopeId(s.id)}>
-            {s.label}
-            <span className="ml-1 font-mono tabular-nums opacity-70">{s.count}</span>
-          </Chip>
-        ))}
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {scopes.map((s) => (
+            <Chip key={s.id} active={scopeId === s.id} onClick={() => setScopeId(s.id)}>
+              {s.label}
+              <span className="ml-1 font-mono tabular-nums opacity-70">{s.count}</span>
+            </Chip>
+          ))}
+        </div>
         <Input
-          className="ml-auto h-8 min-w-[10rem] max-w-xs"
+          className="h-8 w-36 shrink-0 sm:w-44"
           placeholder="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -719,7 +726,7 @@ function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        'rounded-md px-2 py-0.5 text-xs',
+        'shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-xs',
         active ? 'bg-[#3f3f44] text-white' : 'border border-border text-muted-foreground',
       )}
     >
