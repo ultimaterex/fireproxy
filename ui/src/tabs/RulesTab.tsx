@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Plus, RefreshCw, Settings2, Shield } from 'lucide-react'
+import {
+  ChevronRight,
+  MonitorSmartphone,
+  Plus,
+  RefreshCw,
+  Settings2,
+  Shield,
+  Users,
+} from 'lucide-react'
 
+import { Breadcrumb } from '@/components/Breadcrumb'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -113,11 +122,21 @@ export function RulesTab({
   const [data, setData] = useState<FwAppRulesView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [scopeId, setScopeId] = useState('all')
+  /** null = scope picker; otherwise drilled into that scope’s rules */
+  const [scopeId, setScopeId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [sheet, setSheet] = useState<Sheet>(null)
   const [exceptionsOpen, setExceptionsOpen] = useState(false)
   const [addAction, setAddAction] = useState<(typeof CREATE_ACTIONS)[number]['id']>('allow')
+
+  const openScope = (id: string) => {
+    setQuery('')
+    setScopeId(id)
+  }
+  const backToScopes = () => {
+    setQuery('')
+    setScopeId(null)
+  }
 
   const canLoad =
     !!status?.paired && status.state !== 'lan-down' && status.state !== 'error' && status.state !== 'unpaired'
@@ -207,22 +226,41 @@ export function RulesTab({
     const all = show?.scopes ?? []
     return all.filter((s) => s.kind === 'all' || s.count > 0)
   }, [show?.scopes])
-  const activeChip = scopes.find((s) => s.id === scopeId) ?? scopes[0]
+
+  const allScope = scopes.find((s) => s.kind === 'all')
+  const groupScopes = useMemo(
+    () =>
+      scopes
+        .filter((s) => s.kind === 'tag' || s.kind === 'group')
+        .slice()
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    [scopes],
+  )
+  const deviceScopes = useMemo(
+    () =>
+      scopes
+        .filter((s) => s.kind === 'device')
+        .slice()
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    [scopes],
+  )
+
+  const activeScope = scopeId ? scopes.find((s) => s.id === scopeId) : undefined
 
   useEffect(() => {
-    if (!scopes.length) return
-    if (!scopes.some((s) => s.id === scopeId)) setScopeId('all')
+    if (scopeId == null) return
+    if (!scopes.some((s) => s.id === scopeId)) setScopeId(null)
   }, [scopes, scopeId])
 
   const filtered = useMemo(() => {
-    if (!show) return []
+    if (!show || !activeScope) return []
     const q = query.trim().toLowerCase()
     return show.rules.filter((r) => {
-      if (!ruleMatchesScope(r, activeChip)) return false
+      if (!ruleMatchesScope(r, activeScope)) return false
       if (!q) return true
       return ruleHaystack(r).includes(q)
     })
-  }, [show, activeChip, query])
+  }, [show, activeScope, query])
 
   const bySection = useMemo(() => {
     const m = new Map<FwAppRuleSection, FwAppRule[]>()
@@ -233,6 +271,22 @@ export function RulesTab({
     }
     return m
   }, [filtered])
+
+  const scopeQuery = query.trim().toLowerCase()
+  const filteredGroups = useMemo(
+    () =>
+      scopeQuery
+        ? groupScopes.filter((s) => s.label.toLowerCase().includes(scopeQuery))
+        : groupScopes,
+    [groupScopes, scopeQuery],
+  )
+  const filteredDevices = useMemo(
+    () =>
+      scopeQuery
+        ? deviceScopes.filter((s) => s.label.toLowerCase().includes(scopeQuery))
+        : deviceScopes,
+    [deviceScopes, scopeQuery],
+  )
 
   const caps = show?.capabilities ?? {}
   const hub = show?.hub
@@ -396,29 +450,95 @@ export function RulesTab({
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {scopes.map((s) => (
-            <Chip key={s.id} active={scopeId === s.id} onClick={() => setScopeId(s.id)}>
-              {s.label}
-              <span className="ml-1 font-mono tabular-nums opacity-70">{s.count}</span>
-            </Chip>
-          ))}
+      {activeScope ? (
+        <div className="space-y-4">
+          <Breadcrumb
+            items={[
+              { label: 'Rules', onClick: backToScopes },
+              { label: activeScope.label },
+            ]}
+            trailing={
+              <Input
+                className="h-8 w-36 sm:w-44"
+                placeholder="Search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            }
+          />
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
+          ) : mode === 'list' ? (
+            <RulesTable bySection={bySection} />
+          ) : (
+            <RulesCompact bySection={bySection} />
+          )}
         </div>
-        <Input
-          className="h-8 w-36 shrink-0 sm:w-44"
-          placeholder="Search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-
-      {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
-      ) : mode === 'list' ? (
-        <RulesTable bySection={bySection} />
       ) : (
-        <RulesCompact bySection={bySection} />
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Input
+              className="h-8 max-w-xs"
+              placeholder="Search scopes"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+
+          {!allScope && filteredGroups.length === 0 && filteredDevices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No scopes</p>
+          ) : (
+            <Card className="gap-0 py-0">
+              <CardContent className="divide-y p-0">
+                {allScope && (!scopeQuery || 'all devices'.includes(scopeQuery)) ? (
+                  <ScopeRow
+                    icon={<Shield className="size-4 text-muted-foreground" />}
+                    label={allScope.label}
+                    count={allScope.count}
+                    onClick={() => openScope(allScope.id)}
+                    flush
+                  />
+                ) : null}
+
+                {filteredGroups.length > 0 ? (
+                  <>
+                    <div className="bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
+                      Groups
+                    </div>
+                    {filteredGroups.map((s) => (
+                      <ScopeRow
+                        key={s.id}
+                        icon={<Users className="size-4 text-muted-foreground" />}
+                        label={s.label}
+                        count={s.count}
+                        onClick={() => openScope(s.id)}
+                        flush
+                      />
+                    ))}
+                  </>
+                ) : null}
+
+                {filteredDevices.length > 0 ? (
+                  <>
+                    <div className="bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
+                      Devices
+                    </div>
+                    {filteredDevices.map((s) => (
+                      <ScopeRow
+                        key={s.id}
+                        icon={<MonitorSmartphone className="size-4 text-muted-foreground" />}
+                        label={s.label}
+                        count={s.count}
+                        onClick={() => openScope(s.id)}
+                        flush
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {sheet === 'add' ? (
@@ -660,6 +780,38 @@ function AddRuleSheet({
   )
 }
 
+function ScopeRow({
+  icon,
+  label,
+  count,
+  onClick,
+  flush = false,
+}: {
+  icon: ReactNode
+  label: string
+  count: number
+  onClick: () => void
+  flush?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-3 text-left transition-colors hover:bg-muted/50',
+        flush ? 'px-4 py-3' : 'rounded-lg border px-4 py-3',
+      )}
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{label}</span>
+      <span className="font-mono text-sm tabular-nums text-muted-foreground">{count}</span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+    </button>
+  )
+}
+
 function OptionsSheet({
   caps,
   exceptions,
@@ -712,25 +864,4 @@ function OptionsSheet({
   )
 }
 
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-xs',
-        active ? 'bg-[#3f3f44] text-white' : 'border border-border text-muted-foreground',
-      )}
-    >
-      {children}
-    </button>
-  )
 }
