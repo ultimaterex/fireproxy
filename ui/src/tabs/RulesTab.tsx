@@ -863,5 +863,3 @@ function OptionsSheet({
     </SheetShell>
   )
 }
-
-}
