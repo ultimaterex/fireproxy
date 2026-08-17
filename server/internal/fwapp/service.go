@@ -2,6 +2,7 @@ package fwapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,11 +19,15 @@ type Service struct {
 	vault  *CredentialVault
 	lan    *LANClient
 	pairFn func(ctx context.Context, req PairRequest) (Creds, error) // test hook; nil = PairWithCloud
+	// fetchInitFn overrides LAN FetchInit (tests).
+	fetchInitFn func(ctx context.Context, creds Creds) (json.RawMessage, error)
 
 	lastPingOK bool
 	lastPingAt time.Time
 	lastErr    string
 	state      string // unpaired | ready | lan-ok | lan-down | error
+
+	rules RulesCache
 
 	speedJobs map[string]*SpeedtestJob
 	// IndexSpeedtest merges LAN history into the server catalog (optional).
@@ -301,6 +306,56 @@ func (s *Service) Ping(ctx context.Context) (Status, error) {
 	s.lastErr = ""
 	s.mu.Unlock()
 	return s.Status(), nil
+}
+
+// RefreshRules fetches fw-app init, parses Rules, and updates the in-memory cache.
+func (s *Service) RefreshRules(ctx context.Context) (RulesSnapshot, error) {
+	var zero RulesSnapshot
+	if !s.secretsReady() {
+		return zero, fmt.Errorf("FIREPROXY_SECRETS_KEY required")
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil {
+		return zero, err
+	}
+	if !ok || c.SymKey == "" {
+		return zero, ErrNotPaired
+	}
+	raw, err := s.fetchInit(ctx, c)
+	if err != nil {
+		s.mu.Lock()
+		s.lastPingOK = false
+		s.lastPingAt = time.Now().UTC()
+		s.state = "lan-down"
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		return zero, err
+	}
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		return zero, err
+	}
+	at := time.Now().UTC()
+	s.rules.Set(snap, at)
+	s.mu.Lock()
+	s.lastPingOK = true
+	s.lastPingAt = at
+	s.state = "lan-ok"
+	s.lastErr = ""
+	s.mu.Unlock()
+	return cloneRulesSnapshot(snap), nil
+}
+
+// RulesSnapshot returns the cached Rules read model. ok is false when empty or never refreshed.
+func (s *Service) RulesSnapshot() (RulesSnapshot, time.Time, bool) {
+	return s.rules.Get()
+}
+
+func (s *Service) fetchInit(ctx context.Context, creds Creds) (json.RawMessage, error) {
+	if s.fetchInitFn != nil {
+		return s.fetchInitFn(ctx, creds)
+	}
+	return s.lan.FetchInit(ctx, creds)
 }
 
 // RunSpeedtest runs an internet speedtest on the given WAN via LAN only.
@@ -627,6 +682,7 @@ func (s *Service) Unpair() error {
 	if err := s.vault.Clear(); err != nil {
 		return err
 	}
+	s.rules.Clear()
 	s.mu.Lock()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
@@ -639,6 +695,11 @@ func (s *Service) Unpair() error {
 // SetPairFn overrides cloud pairing (tests).
 func (s *Service) SetPairFn(fn func(ctx context.Context, req PairRequest) (Creds, error)) {
 	s.pairFn = fn
+}
+
+// SetFetchInit overrides LAN init fetch (tests).
+func (s *Service) SetFetchInit(fn func(ctx context.Context, creds Creds) (json.RawMessage, error)) {
+	s.fetchInitFn = fn
 }
 
 // SetLAN overrides the LAN client (tests).

@@ -195,6 +195,14 @@ func (c *LANClient) SendTo(ctx context.Context, creds Creds, mtype string, data 
 	return json.RawMessage(dec), nil
 }
 
+// FetchInit loads the fw-app init payload (rules + hosts + tags).
+func (c *LANClient) FetchInit(ctx context.Context, creds Creds) (json.RawMessage, error) {
+	return c.Send(ctx, creds, MTypeInit, map[string]any{
+		"get":             "0.0.0.0",
+		"COMMAND_TIMEOUT": 15,
+	})
+}
+
 // PingInit verifies LAN control with a lightweight cmd/ping (then init fallback).
 func (c *LANClient) PingInit(ctx context.Context, creds Creds) error {
 	return c.pingOnce(ctx, creds)
