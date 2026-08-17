@@ -22,7 +22,7 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 
 	hostLabels := map[string]string{}
 	for _, h := range root.Hosts {
-		mac := strings.ToUpper(strings.TrimSpace(h.MAC))
+		mac := NormalizeMAC(h.MAC)
 		if mac == "" {
 			continue
 		}
@@ -53,22 +53,6 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 		tagLabels[id] = name
 	}
 
-	groupLabels := map[string]string{}
-	for _, g := range root.RuleGroups {
-		id := strings.TrimSpace(g.UID)
-		if id == "" {
-			id = strings.TrimSpace(g.ID)
-		}
-		if id == "" {
-			continue
-		}
-		name := strings.TrimSpace(g.Name)
-		if name == "" {
-			name = id
-		}
-		groupLabels[id] = name
-	}
-
 	rules := make([]Rule, 0, len(root.PolicyRules)+len(root.ScreentimeRules))
 	for _, pr := range root.PolicyRules {
 		rules = append(rules, normalizePolicyRule(pr, hostLabels, tagLabels))
@@ -83,7 +67,8 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 	}
 
 	hub := buildHub(rules)
-	scopes := buildScopeChips(rules, root.Hosts, root.Tags, hostLabels, tagLabels, groupLabels)
+	// ruleGroup chips deferred until lab shows membership / counts.
+	scopes := buildScopeChips(rules, root.Hosts, root.Tags, hostLabels, tagLabels)
 
 	return RulesSnapshot{
 		Hub:        hub,
@@ -178,7 +163,14 @@ func normalizeScreentimeRule(pr rawPolicyRule, hosts, tags map[string]string) Ru
 }
 
 func finalizeRule(pr rawPolicyRule, section RuleSection, hosts, tags map[string]string) Rule {
-	scope := append([]string(nil), pr.Scope...)
+	scope := make([]string, 0, len(pr.Scope))
+	for _, mac := range pr.Scope {
+		mac = NormalizeMAC(mac)
+		if mac == "" {
+			continue
+		}
+		scope = append(scope, mac)
+	}
 	tagRefs := append([]string(nil), pr.Tag...)
 	r := Rule{
 		ID:               strings.TrimSpace(string(pr.PID)),
@@ -255,17 +247,16 @@ func buildHub(rules []Rule) RulesHub {
 	return hub
 }
 
-func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, hostLabels, tagLabels, groupLabels map[string]string) []ScopeChip {
+func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, hostLabels, tagLabels map[string]string) []ScopeChip {
 	deviceCounts := map[string]int{}
 	tagCounts := map[string]int{}
-	groupCounts := map[string]int{}
 	allCount := len(rules)
 
 	for _, r := range rules {
 		seenDev := map[string]struct{}{}
 		seenTag := map[string]struct{}{}
 		for _, mac := range r.Scope {
-			mac = strings.ToUpper(strings.TrimSpace(mac))
+			mac = NormalizeMAC(mac)
 			if mac == "" {
 				continue
 			}
@@ -297,7 +288,7 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 	// Prefer hosts list order for device chips; include unlabeled MACs seen on rules.
 	seenHost := map[string]struct{}{}
 	for _, h := range hosts {
-		mac := strings.ToUpper(strings.TrimSpace(h.MAC))
+		mac := NormalizeMAC(h.MAC)
 		if mac == "" {
 			continue
 		}
@@ -365,22 +356,13 @@ func buildScopeChips(rules []Rule, hosts []rawHost, tags map[string]rawTag, host
 		})
 	}
 
-	for id, label := range groupLabels {
-		chips = append(chips, ScopeChip{
-			ID:    "group:" + id,
-			Kind:  ScopeChipGroup,
-			Label: label,
-			Count: groupCounts[id],
-		})
-	}
-
 	return chips
 }
 
 func scopeLabel(scope, tagRefs []string, hosts, tags map[string]string) string {
 	parts := make([]string, 0, len(scope)+len(tagRefs))
 	for _, mac := range scope {
-		mac = strings.ToUpper(strings.TrimSpace(mac))
+		mac = NormalizeMAC(mac)
 		if mac == "" {
 			continue
 		}

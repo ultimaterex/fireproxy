@@ -49,11 +49,36 @@ func TestParseInitRules(t *testing.T) {
 	if r, ok := byID["1004"]; !ok || r.Section != RuleSectionDisturb || !r.Disabled {
 		t.Fatalf("disturb: %+v ok=%v", r, ok)
 	}
+	if r, ok := byID["2001"]; !ok || r.Section != RuleSectionTimelimit {
+		t.Fatalf("screentime → timelimit: %+v ok=%v", r, ok)
+	}
+	if r, ok := byID["1001"]; !ok || r.ScopeLabel != "Lab Phone" {
+		t.Fatalf("scoped rule ScopeLabel: %+v ok=%v", r, ok)
+	}
 	if snap.Hub.AllowHits != 12 || snap.Hub.BlockHits != 3 {
 		t.Fatalf("hub hits allow=%d block=%d total=%d", snap.Hub.AllowHits, snap.Hub.BlockHits, snap.Hub.TotalHits)
 	}
 	if len(snap.Scopes) < 1 {
 		t.Fatal("expected scope chips")
+	}
+	var sawDevice, sawTag bool
+	for _, c := range snap.Scopes {
+		switch c.Kind {
+		case ScopeChipDevice:
+			if c.ID == "AA:BB:CC:DD:EE:01" && c.Label == "Lab Phone" && c.Count >= 1 {
+				sawDevice = true
+			}
+		case ScopeChipTag:
+			if c.ID == "tag:10" && c.Label == "Kids" && c.Count >= 1 {
+				sawTag = true
+			}
+		}
+	}
+	if !sawDevice {
+		t.Fatalf("expected device ScopeChip for Lab Phone; scopes=%+v", snap.Scopes)
+	}
+	if !sawTag {
+		t.Fatalf("expected tag ScopeChip for Kids; scopes=%+v", snap.Scopes)
 	}
 }
 

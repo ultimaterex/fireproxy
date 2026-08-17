@@ -66,7 +66,20 @@
       "timestamp": 1700000040.0
     }
   ],
-  "screentimeRules": [],
+  "screentimeRules": [
+    {
+      "pid": "2001",
+      "action": "block",
+      "type": "category",
+      "target": "social",
+      "direction": "outbound",
+      "disabled": "0",
+      "scope": ["AA:BB:CC:DD:EE:01"],
+      "hitCount": "0",
+      "timestamp": "1700000050.0",
+      "_name": "Kids social limit"
+    }
+  ],
   "ruleGroups": [
     {
       "uid": "rg1",
