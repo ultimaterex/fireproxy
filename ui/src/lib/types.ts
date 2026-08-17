@@ -247,6 +247,16 @@ export type FwAppRulesHub = {
 
 export type FwAppRulesCapabilities = Record<string, boolean>
 
+export type FwAppCreateRuleRequest = {
+  action: 'allow' | 'block' | 'timelimit' | 'disturb'
+  type?: string
+  target: string
+  scope: string[]
+  direction?: string
+  notes?: string
+  name?: string
+}
+
 export type FwAppRulesView = {
   hub: FwAppRulesHub
   rules: FwAppRule[]

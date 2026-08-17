@@ -12,6 +12,9 @@ const (
 	ActionHostDNS      = "host.dns"
 	ActionHostWOL      = "host.wol"
 	ActionSpeedtestRun = "speedtest.run"
+	ActionRuleCreate   = "rule.create"
+	ActionRulePause    = "rule.pause"
+	ActionRuleDelete   = "rule.delete"
 	ActionClientRename = "client.rename"
 )
 

@@ -115,6 +115,9 @@ func (s *Server) getControlHistory(w http.ResponseWriter, r *http.Request) {
 				controlhist.ActionHostDNS,
 				controlhist.ActionHostWOL,
 				controlhist.ActionSpeedtestRun,
+				controlhist.ActionRuleCreate,
+				controlhist.ActionRulePause,
+				controlhist.ActionRuleDelete,
 			},
 			controlhist.SchemeUnifi: {
 				controlhist.ActionClientRename,

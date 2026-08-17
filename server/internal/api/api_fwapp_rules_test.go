@@ -14,6 +14,7 @@ import (
 
 	"fireproxy/server/internal/api"
 	"fireproxy/server/internal/fwapp"
+	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/tplink"
 )
 
@@ -113,11 +114,22 @@ func TestFWAppRulesGETFromCache(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339, body.Refreshed); err != nil {
 		t.Fatalf("refreshed_at %q: %v", body.Refreshed, err)
 	}
-	wantCaps := []string{
-		"rule.create.allow", "rule.create.block", "rule.create.timelimit", "rule.create.disturb",
-		"rule.pause", "rule.delete", "rule.reset_hits", "rule.emergency", "rule.diagnose",
+	wantCapsOn := map[string]bool{
+		"rule.create.allow": true,
+		"rule.create.block": true,
+		"rule.pause":        true,
+		"rule.delete":       true,
 	}
-	for _, k := range wantCaps {
+	wantCapsOff := []string{
+		"rule.create.timelimit", "rule.create.disturb",
+		"rule.reset_hits", "rule.emergency", "rule.diagnose",
+	}
+	for k, want := range wantCapsOn {
+		if body.Caps[k] != want {
+			t.Fatalf("cap %q = %v want %v", k, body.Caps[k], want)
+		}
+	}
+	for _, k := range wantCapsOff {
 		if body.Caps[k] {
 			t.Fatalf("cap %q should be false", k)
 		}
@@ -198,9 +210,6 @@ func TestFWAppRulesMutationsNotImplemented(t *testing.T) {
 	cases := []struct {
 		method, path, body string
 	}{
-		{http.MethodPost, "/v1/fw-app/rules", `{"action":"allow"}`},
-		{http.MethodPost, "/v1/fw-app/rules/1001/pause", `{}`},
-		{http.MethodDelete, "/v1/fw-app/rules/1001", ""},
 		{http.MethodPost, "/v1/fw-app/rules/reset-hits", `{}`},
 		{http.MethodPost, "/v1/fw-app/rules/emergency", `{"enabled":true}`},
 		{http.MethodPost, "/v1/fw-app/rules/diagnose", `{"target":"x"}`},
@@ -221,6 +230,82 @@ func TestFWAppRulesMutationsNotImplemented(t *testing.T) {
 	}
 }
 
+func TestFWAppRulesCreatePauseDelete(t *testing.T) {
+	svc := fwAppTestPair(t, nil)
+	initRaw := readFWAppRulesFixture(t)
+	allowResp := readFWAppCmdFixture(t, "create_allow.cmd.json")
+	disableResp := readFWAppCmdFixture(t, "disable.cmd.json")
+	deleteResp := readFWAppCmdFixture(t, "delete.cmd.json")
+
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	svc.SetSendFn(func(ctx context.Context, creds fwapp.Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		item, _ := data["item"].(string)
+		switch item {
+		case "policy:create":
+			return allowResp, nil
+		case "policy:disable":
+			return disableResp, nil
+		case "policy:delete":
+			return deleteResp, nil
+		default:
+			t.Fatalf("item %q", item)
+			return nil, nil
+		}
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, mux, p := fwAppHistServer(t, svc, nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fw-app/rules", strings.NewReader(`{
+		"action":"allow","type":"dns","target":"fireproxy-lab-allow.example",
+		"scope":["50:BA:02:CA:D4:8A"],"direction":"outbound","name":"FP lab allow"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var createBody struct {
+		Rule fwapp.Rule `json:"rule"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&createBody); err != nil {
+		t.Fatal(err)
+	}
+	if createBody.Rule.ID != "1076" {
+		t.Fatalf("%+v", createBody.Rule)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/rules/1075/pause", strings.NewReader(`{"disabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("pause %d %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/v1/fw-app/rules/1076", nil)
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("delete %d %s", rr.Code, rr.Body.String())
+	}
+
+	for _, action := range []string{"rule.create", "rule.pause", "rule.delete"} {
+		rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "firewalla", Action: action, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 || rows[0].Result != "ok" {
+			t.Fatalf("%s rows=%+v", action, rows)
+		}
+	}
+}
+
 func readFWAppRulesFixture(t *testing.T) []byte {
 	t.Helper()
 	p := filepath.Join("..", "fwapp", "testdata", "init_rules_min.json")
@@ -229,4 +314,19 @@ func readFWAppRulesFixture(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func readFWAppCmdFixture(t *testing.T, name string) json.RawMessage {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "fwapp", "testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Response json.RawMessage `json:"response"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	return env.Response
 }

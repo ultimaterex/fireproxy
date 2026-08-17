@@ -34,6 +34,7 @@ import { api } from '@/lib/api'
 import { preferredName } from '@/lib/format'
 import type {
   Device,
+  FwAppCreateRuleRequest,
   FwAppExceptionRule,
   FwAppRule,
   FwAppRuleSection,
@@ -632,7 +633,19 @@ export function RulesTab({
           action={addAction}
           onAction={setAddAction}
           caps={caps}
+          devices={deviceScopes}
+          scopeLabel={resolveScopeLabel}
+          defaultMac={
+            activeScope?.kind === 'device' ? activeScope.id : undefined
+          }
+          busy={busy}
           onClose={() => setSheet(null)}
+          onCreated={async (mac) => {
+            setSheet(null)
+            await load()
+            if (mac) openScope(mac.toUpperCase())
+            flash('Created')
+          }}
         />
       ) : null}
       {sheet === 'exceptions' ? (
@@ -649,7 +662,12 @@ export function RulesTab({
           rule={selectedRule}
           onLabel={displayOn(selectedRule)}
           caps={caps}
+          busy={busy}
           onClose={() => setSelectedRule(null)}
+          onMutated={async () => {
+            setSelectedRule(null)
+            await load()
+          }}
         />
       ) : null}
     </div>
@@ -918,21 +936,78 @@ function RuleDetailSheet({
   rule,
   onLabel,
   caps,
+  busy,
   onClose,
+  onMutated,
 }: {
   rule: FwAppRule
   onLabel: string
   caps: Record<string, boolean>
+  busy: boolean
   onClose: () => void
+  onMutated: () => Promise<void>
 }) {
   const created = fmtTs(rule.timestamp)
   const activated = fmtTs(rule.activatedTime)
+  const [err, setErr] = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
+  const canPause = !!caps['rule.pause'] && !rule.readOnly
+  const canDelete = !!caps['rule.delete'] && !rule.readOnly
+
+  const pause = async () => {
+    if (!canPause || working || busy) return
+    setWorking(true)
+    setErr(null)
+    try {
+      const r = await api(`/v1/fw-app/rules/${encodeURIComponent(rule.id)}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ disabled: !rule.disabled }),
+      })
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error || `pause ${r.status}`)
+      }
+      await onMutated()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!canDelete || working || busy) return
+    if (!window.confirm('Delete this rule?')) return
+    setWorking(true)
+    setErr(null)
+    try {
+      const r = await api(`/v1/fw-app/rules/${encodeURIComponent(rule.id)}`, {
+        method: 'DELETE',
+      })
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error || `delete ${r.status}`)
+      }
+      await onMutated()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setWorking(false)
+    }
+  }
+
   return (
     <SheetShell title="Rule Details" onClose={onClose}>
       <div className="space-y-4">
         {rule.readOnly ? (
           <div className="rounded-md bg-amber-600/90 px-3 py-2 text-sm text-white">
             This rule is read-only.
+          </div>
+        ) : null}
+        {rule.disabled ? (
+          <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+            Paused
           </div>
         ) : null}
         <Field label="Action">
@@ -949,10 +1024,31 @@ function RuleDetailSheet({
           {activated ? <p>Activated: {activated}</p> : null}
           <p className="font-mono">Rule ID: {rule.id}</p>
         </div>
-        <div className="flex justify-between gap-2 pt-1">
-          <Button type="button" size="sm" variant="outline" className="text-destructive" disabled>
-            {caps['rule.delete'] && !rule.readOnly ? 'Delete' : 'Delete · soon'}
-          </Button>
+        {err ? <p className="text-sm text-destructive">{err}</p> : null}
+        <div className="flex flex-wrap justify-between gap-2 pt-1">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="text-destructive"
+              disabled={!canDelete || working || busy}
+              onClick={() => void remove()}
+            >
+              {canDelete ? 'Delete' : 'Delete · soon'}
+            </Button>
+            {canPause ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={working || busy}
+                onClick={() => void pause()}
+              >
+                {rule.disabled ? 'Resume' : 'Pause'}
+              </Button>
+            ) : null}
+          </div>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>
             Close
           </Button>
@@ -966,15 +1062,79 @@ function AddRuleSheet({
   action,
   onAction,
   caps,
+  devices,
+  scopeLabel,
+  defaultMac,
+  busy,
   onClose,
+  onCreated,
 }: {
   action: (typeof CREATE_ACTIONS)[number]['id']
   onAction: (id: (typeof CREATE_ACTIONS)[number]['id']) => void
   caps: Record<string, boolean>
+  devices: FwAppScopeChip[]
+  scopeLabel: (s: FwAppScopeChip) => string
+  defaultMac?: string
+  busy: boolean
   onClose: () => void
+  onCreated: (mac?: string) => Promise<void>
 }) {
   const selected = CREATE_ACTIONS.find((a) => a.id === action)!
   const ready = !!caps[selected.cap]
+  const [name, setName] = useState('')
+  const [target, setTarget] = useState('')
+  const [mac, setMac] = useState(defaultMac ?? '')
+  const [customMac, setCustomMac] = useState('')
+  const [notes, setNotes] = useState('')
+  const [direction, setDirection] = useState(
+    action === 'allow' ? 'outbound' : 'bidirection',
+  )
+  const [err, setErr] = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
+
+  useEffect(() => {
+    setDirection(action === 'allow' ? 'outbound' : 'bidirection')
+  }, [action])
+
+  const scopeMac = (mac === '__custom__' ? customMac : mac).trim()
+  const canSubmit =
+    ready &&
+    (action === 'allow' || action === 'block') &&
+    !!target.trim() &&
+    !!scopeMac &&
+    !working &&
+    !busy
+
+  const submit = async () => {
+    if (!canSubmit) return
+    setWorking(true)
+    setErr(null)
+    const body: FwAppCreateRuleRequest = {
+      action: action as 'allow' | 'block',
+      type: 'dns',
+      target: target.trim(),
+      scope: [scopeMac],
+      direction,
+      notes: notes.trim() || undefined,
+      name: name.trim() || undefined,
+    }
+    try {
+      const r = await api('/v1/fw-app/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const res = (await r.json().catch(() => ({}))) as { error?: string }
+        throw new Error(res.error || `create ${r.status}`)
+      }
+      await onCreated(scopeMac)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setWorking(false)
+    }
+  }
 
   return (
     <SheetShell title="Add Rule" onClose={onClose}>
@@ -997,15 +1157,60 @@ function AddRuleSheet({
         </div>
         <label className="block space-y-1.5 text-sm">
           <span className="text-muted-foreground">Name</span>
-          <Input disabled placeholder="Optional" />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!ready}
+            placeholder="Optional"
+          />
         </label>
         <label className="block space-y-1.5 text-sm">
           <span className="text-muted-foreground">Matching</span>
-          <Input disabled placeholder="Target" />
+          <Input
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            disabled={!ready}
+            placeholder="DNS domain"
+          />
         </label>
         <label className="block space-y-1.5 text-sm">
           <span className="text-muted-foreground">On</span>
-          <Input disabled placeholder="Device / group" />
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50"
+            value={mac}
+            disabled={!ready}
+            onChange={(e) => setMac(e.target.value)}
+          >
+            <option value="">Device MAC…</option>
+            {devices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {scopeLabel(d)}
+              </option>
+            ))}
+            <option value="__custom__">Other MAC…</option>
+          </select>
+          {mac === '__custom__' ? (
+            <Input
+              className="mt-2 font-mono"
+              value={customMac}
+              onChange={(e) => setCustomMac(e.target.value)}
+              disabled={!ready}
+              placeholder="AA:BB:CC:DD:EE:FF"
+            />
+          ) : null}
+        </label>
+        <label className="block space-y-1.5 text-sm">
+          <span className="text-muted-foreground">Direction</span>
+          <select
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50"
+            value={direction}
+            disabled={!ready}
+            onChange={(e) => setDirection(e.target.value)}
+          >
+            <option value="outbound">Outbound only</option>
+            <option value="inbound">Inbound only</option>
+            <option value="bidirection">Both directions</option>
+          </select>
         </label>
         <label className="block space-y-1.5 text-sm">
           <span className="text-muted-foreground">Schedule</span>
@@ -1013,14 +1218,24 @@ function AddRuleSheet({
         </label>
         <label className="block space-y-1.5 text-sm">
           <span className="text-muted-foreground">Notes</span>
-          <Input disabled />
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            disabled={!ready}
+          />
         </label>
+        {err ? <p className="text-sm text-destructive">{err}</p> : null}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" size="sm" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" size="sm" disabled>
-            {ready ? 'Create' : 'Coming soon'}
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+          >
+            {ready ? (working ? '…' : 'Create') : 'Coming soon'}
           </Button>
         </div>
       </div>

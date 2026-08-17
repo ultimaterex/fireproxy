@@ -21,6 +21,8 @@ type Service struct {
 	pairFn func(ctx context.Context, req PairRequest) (Creds, error) // test hook; nil = PairWithCloud
 	// fetchInitFn overrides LAN FetchInit (tests).
 	fetchInitFn func(ctx context.Context, creds Creds) (json.RawMessage, error)
+	// sendFn overrides lan.SendTo (tests).
+	sendFn func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error)
 
 	lastPingOK bool
 	lastPingAt time.Time
@@ -722,4 +724,9 @@ func (s *Service) SetFetchInit(fn func(ctx context.Context, creds Creds) (json.R
 // SetLAN overrides the LAN client (tests).
 func (s *Service) SetLAN(lan *LANClient) {
 	s.lan = lan
+}
+
+// SetSendFn overrides LAN SendTo (tests).
+func (s *Service) SetSendFn(fn func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error)) {
+	s.sendFn = fn
 }
