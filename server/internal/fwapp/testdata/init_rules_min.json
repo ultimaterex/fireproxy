@@ -1,0 +1,98 @@
+{
+  "policyRules": [
+    {
+      "pid": "1001",
+      "action": "allow",
+      "type": "dns",
+      "target": "cdn.example.test",
+      "direction": "outbound",
+      "disabled": "0",
+      "scope": ["AA:BB:CC:DD:EE:01"],
+      "hitCount": "12",
+      "lastHitTs": "1700000100.5",
+      "activatedTime": "1700000000.1",
+      "lastActivatedTime": "1700000000.1",
+      "timestamp": "1699999999.0",
+      "_name": "Allow CDN"
+    },
+    {
+      "pid": "1002",
+      "action": "block",
+      "type": "ip",
+      "target": "203.0.113.50",
+      "direction": "bidirection",
+      "disabled": "0",
+      "tag": ["tag:10"],
+      "hitCount": "3",
+      "lastHitTs": "1700000200.0",
+      "activatedTime": "1700000010.0",
+      "timestamp": "1700000005.0",
+      "notes": "lab block"
+    },
+    {
+      "pid": "1003",
+      "action": "qos",
+      "type": "mac",
+      "target": "TAG",
+      "direction": "bidirection",
+      "trafficDirection": "download",
+      "disabled": "0",
+      "scope": ["AA:BB:CC:DD:EE:02"],
+      "priority": 2,
+      "qdisc": "fq_codel",
+      "rateLimit": "",
+      "timestamp": "1700000020.0"
+    },
+    {
+      "pid": "1004",
+      "action": "disturb",
+      "type": "category",
+      "target": "games",
+      "direction": "outbound",
+      "disabled": "1",
+      "timestamp": "1700000030.0"
+    }
+  ],
+  "exceptionRules": [
+    {
+      "eid": "9",
+      "type": "ALARM_INTEL",
+      "alarm_type": "ALARM_INTEL",
+      "if.type": "dns",
+      "if.target": "safe.example.test",
+      "p.dest.name": "*.safe.example.test",
+      "target_name": "*.safe.example.test",
+      "matchCount": "2",
+      "timestamp": 1700000040.0
+    }
+  ],
+  "screentimeRules": [],
+  "ruleGroups": [
+    {
+      "uid": "rg1",
+      "name": "Lab Group"
+    }
+  ],
+  "hosts": [
+    {
+      "mac": "AA:BB:CC:DD:EE:01",
+      "name": "Lab Phone",
+      "bname": "lab-phone",
+      "ip": "192.0.2.10",
+      "tags": ["10"]
+    },
+    {
+      "mac": "AA:BB:CC:DD:EE:02",
+      "name": "Lab Laptop",
+      "bname": "lab-laptop",
+      "ip": "192.0.2.11",
+      "tags": []
+    }
+  ],
+  "tags": {
+    "10": {
+      "uid": "10",
+      "name": "Kids"
+    }
+  }
+}
