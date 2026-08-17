@@ -242,28 +242,24 @@ export function RulesTab({
     void load()
   }, [load])
 
-  const refresh = async (force = false) => {
+  const sync = async () => {
     if (!canLoad || busy) return
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      if (force) {
-        const r = await api('/v1/fw-app/rules/refresh', { method: 'POST' })
-        if (!r.ok) {
-          const body = (await r.json().catch(() => ({}))) as {
-            error?: string
-            status?: FwAppStatus
-          }
-          if (body.status) setStatus(body.status)
-          throw new Error(body.error || `refresh ${r.status}`)
+      const r = await api('/v1/fw-app/rules/refresh', { method: 'POST' })
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as {
+          error?: string
+          status?: FwAppStatus
         }
-        setData((await r.json()) as FwAppRulesView)
-        flash('Synced from Firewalla')
-      } else {
-        setData(await loadRules())
-        flash('Loaded from cache')
+        if (body.status) setStatus(body.status)
+        throw new Error(body.error || `sync ${r.status}`)
       }
+      setData((await r.json()) as FwAppRulesView)
       setStatus(await loadStatus())
+      flash('Synced')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
     } finally {
@@ -436,9 +432,7 @@ export function RulesTab({
       caps={caps}
       exceptionCount={exceptions.length}
       dapCount={dapRules.length}
-      busy={busy}
       onAdd={() => setSheet('add')}
-      onSync={() => void refresh(true)}
       onExceptions={() => setSheet('exceptions')}
       onActiveProtect={() => openScope(DAP_SCOPE_ID)}
     />
@@ -505,9 +499,9 @@ export function RulesTab({
         <Card className="gap-0 py-0">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 px-6 py-8">
             <p className="text-sm text-muted-foreground">No rules loaded</p>
-            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void sync()}>
               <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
-              Retry
+              Sync
             </Button>
           </CardContent>
         </Card>
@@ -578,10 +572,10 @@ export function RulesTab({
             size="sm"
             variant="secondary"
             disabled={busy}
-            onClick={() => void refresh(false)}
+            onClick={() => void sync()}
           >
             <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
-            Refresh
+            Sync
           </Button>
         </CardHeader>
         <CardContent className="space-y-3 px-6 py-4">
@@ -666,18 +660,14 @@ function ActionsMenu({
   caps,
   exceptionCount,
   dapCount,
-  busy,
   onAdd,
-  onSync,
   onExceptions,
   onActiveProtect,
 }: {
   caps: Record<string, boolean>
   exceptionCount: number
   dapCount: number
-  busy: boolean
   onAdd: () => void
-  onSync: () => void
   onExceptions: () => void
   onActiveProtect: () => void
 }) {
@@ -704,13 +694,6 @@ function ActionsMenu({
             sideOffset={6}
             className="z-50 min-w-48 rounded-md border bg-popover p-1 text-sm shadow-md"
           >
-            <DropdownMenu.Item
-              className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
-              disabled={busy}
-              onSelect={onSync}
-            >
-              Sync from Firewalla
-            </DropdownMenu.Item>
             <DropdownMenu.Item
               className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
               onSelect={onExceptions}
