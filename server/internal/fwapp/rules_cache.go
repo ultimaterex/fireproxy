@@ -17,7 +17,7 @@ type RulesCache struct {
 func (c *RulesCache) Set(snap RulesSnapshot, at time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.snap = snap
+	c.snap = cloneRulesSnapshot(snap)
 	c.refreshedAt = at
 	c.ok = true
 }
@@ -44,13 +44,27 @@ func (c *RulesCache) Clear() {
 func cloneRulesSnapshot(in RulesSnapshot) RulesSnapshot {
 	out := in
 	if in.Rules != nil {
-		out.Rules = append([]Rule(nil), in.Rules...)
+		out.Rules = make([]Rule, len(in.Rules))
+		for i, r := range in.Rules {
+			out.Rules[i] = cloneRule(r)
+		}
 	}
 	if in.Exceptions != nil {
 		out.Exceptions = append([]ExceptionRule(nil), in.Exceptions...)
 	}
 	if in.Scopes != nil {
 		out.Scopes = append([]ScopeChip(nil), in.Scopes...)
+	}
+	return out
+}
+
+func cloneRule(r Rule) Rule {
+	out := r
+	if r.Scope != nil {
+		out.Scope = append([]string(nil), r.Scope...)
+	}
+	if r.Tags != nil {
+		out.Tags = append([]string(nil), r.Tags...)
 	}
 	return out
 }

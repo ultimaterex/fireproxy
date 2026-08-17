@@ -80,3 +80,97 @@ func TestRefreshRulesRequiresPair(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestUnpairClearsRulesCache(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("ef", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readTestdata(t, "init_rules_min.json")
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := svc.RulesSnapshot(); !ok {
+		t.Fatal("expected cache before unpair")
+	}
+	if err := svc.Unpair(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := svc.RulesSnapshot(); ok {
+		t.Fatal("expected empty cache after unpair")
+	}
+}
+
+func TestRulesSnapshotScopeMutationIsolated(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("12", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readTestdata(t, "init_rules_min.json")
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	first, _, ok := svc.RulesSnapshot()
+	if !ok {
+		t.Fatal("expected cache")
+	}
+	var scoped *Rule
+	for i := range first.Rules {
+		if len(first.Rules[i].Scope) > 0 {
+			scoped = &first.Rules[i]
+			break
+		}
+	}
+	if scoped == nil {
+		t.Fatal("fixture needs a rule with scope")
+	}
+	orig := scoped.Scope[0]
+	scoped.Scope[0] = "MUTATED"
+
+	second, _, ok := svc.RulesSnapshot()
+	if !ok {
+		t.Fatal("expected cache on second read")
+	}
+	var scoped2 *Rule
+	for i := range second.Rules {
+		if second.Rules[i].ID == scoped.ID {
+			scoped2 = &second.Rules[i]
+			break
+		}
+	}
+	if scoped2 == nil || len(scoped2.Scope) < 1 {
+		t.Fatal("missing scoped rule on second read")
+	}
+	if scoped2.Scope[0] != orig {
+		t.Fatalf("scope leaked mutation: got %q want %q", scoped2.Scope[0], orig)
+	}
+}

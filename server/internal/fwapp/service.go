@@ -336,8 +336,19 @@ func (s *Service) RefreshRules(ctx context.Context) (RulesSnapshot, error) {
 		return zero, err
 	}
 	at := time.Now().UTC()
-	s.rules.Set(snap, at)
+	// Re-check pairing under the same lock Unpair uses so a concurrent
+	// Unpair cannot Clear then lose to a late Set.
 	s.mu.Lock()
+	c2, ok2, err2 := s.vault.Load()
+	if err2 != nil {
+		s.mu.Unlock()
+		return zero, err2
+	}
+	if !ok2 || c2.SymKey == "" {
+		s.mu.Unlock()
+		return zero, ErrNotPaired
+	}
+	s.rules.Set(snap, at)
 	s.lastPingOK = true
 	s.lastPingAt = at
 	s.state = "lan-ok"
@@ -679,16 +690,16 @@ func (s *Service) Unpair() error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.vault.Clear(); err != nil {
 		return err
 	}
 	s.rules.Clear()
-	s.mu.Lock()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""
 	s.state = "unpaired"
-	s.mu.Unlock()
 	return nil
 }
 
