@@ -1286,7 +1286,15 @@ function App() {
             />
           )}
 
-          {tab === 'rules' && <RulesTab mode={modes.rules} policies={showPolicies} />}
+          {tab === 'rules' && (
+            <RulesTab
+              mode={modes.rules}
+              onOpenControl={() => {
+                setSettingsOpen('fw-app')
+                selectTab('settings')
+              }}
+            />
+          )}
 
           {tab === 'settings' && (
             <SettingsTab

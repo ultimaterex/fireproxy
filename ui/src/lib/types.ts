@@ -187,6 +187,85 @@ export type Policy = {
   notes?: string
 }
 
+export type FwAppRuleSection = 'allow' | 'block' | 'disturb' | 'timelimit' | 'other'
+
+export type FwAppRule = {
+  id: string
+  section: FwAppRuleSection
+  action: string
+  type: string
+  target: string
+  name?: string
+  notes?: string
+  direction?: string
+  trafficDirection?: string
+  disabled: boolean
+  scope?: string[]
+  tags?: string[]
+  scopeLabel?: string
+  hitCount: number
+  lastHitTs?: number
+  activatedTime?: string
+  timestamp?: string
+}
+
+export type FwAppExceptionRule = {
+  id: string
+  type?: string
+  alarmType?: string
+  target?: string
+  targetName?: string
+  matchCount: number
+  timestamp?: number
+  reason?: string
+  category?: string
+  ifType?: string
+  ifTarget?: string
+}
+
+export type FwAppScopeChipKind = 'all' | 'device' | 'tag' | 'group'
+
+export type FwAppScopeChip = {
+  id: string
+  kind: FwAppScopeChipKind
+  label: string
+  count: number
+}
+
+export type FwAppRulesHub = {
+  totalRules: number
+  totalHits: number
+  allowHits: number
+  blockHits: number
+  allowCount: number
+  blockCount: number
+}
+
+export type FwAppRulesCapabilities = Record<string, boolean>
+
+export type FwAppRulesView = {
+  hub: FwAppRulesHub
+  rules: FwAppRule[]
+  scopes: FwAppScopeChip[]
+  exceptions: FwAppExceptionRule[]
+  capabilities: FwAppRulesCapabilities
+  refreshed_at?: string
+}
+
+export type FwAppStatus = {
+  paired: boolean
+  state: string
+  box_ip?: string
+  gid_hint?: string
+  email?: string
+  device_name?: string
+  paired_at?: string
+  last_ping_ok?: boolean
+  last_ping_at?: string
+  last_error?: string
+  secrets_ready: boolean
+}
+
 export type Tag = {
   id: string
   name: string

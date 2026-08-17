@@ -4,6 +4,7 @@ import type {
   ControlEvent,
   Dashboard,
   Device,
+  FwAppRulesView,
   HistoryPoint,
   LatestView,
   ModuleInfo,
@@ -1018,6 +1019,42 @@ export function anonymizePolicies(anon: Anon, policies: Policy[], cidrs: CidrMap
     target: p.target ? anon.rewriteText(p.target, cidrs) : p.target,
     notes: p.notes ? anon.rewriteText(p.notes, cidrs) : p.notes,
   }))
+}
+
+export function anonymizeFwAppRules(
+  anon: Anon,
+  view: FwAppRulesView,
+  cidrs: CidrMap[] = [],
+): FwAppRulesView {
+  return {
+    ...view,
+    rules: view.rules.map((r) => ({
+      ...r,
+      target: r.target ? anon.rewriteText(r.target, cidrs) : r.target,
+      name: r.name ? anon.rewriteText(r.name, cidrs) : r.name,
+      notes: r.notes ? anon.rewriteText(r.notes, cidrs) : r.notes,
+      scopeLabel: r.scopeLabel ? anon.rewriteText(r.scopeLabel, cidrs) : r.scopeLabel,
+      scope: r.scope?.map((m) => anon.fakeMAC(m)),
+      tags: r.tags?.map((t) => anon.rewriteText(t, cidrs)),
+    })),
+    exceptions: view.exceptions.map((e) => ({
+      ...e,
+      target: e.target ? anon.rewriteText(e.target, cidrs) : e.target,
+      targetName: e.targetName ? anon.rewriteText(e.targetName, cidrs) : e.targetName,
+      reason: e.reason ? anon.rewriteText(e.reason, cidrs) : e.reason,
+      ifTarget: e.ifTarget ? anon.rewriteText(e.ifTarget, cidrs) : e.ifTarget,
+    })),
+    scopes: view.scopes.map((s) => ({
+      ...s,
+      id:
+        s.kind === 'device'
+          ? anon.fakeMAC(s.id)
+          : s.id.startsWith('tag:')
+            ? `tag:${anon.rewriteText(s.id.slice(4), cidrs)}`
+            : s.id,
+      label: anon.rewriteText(s.label, cidrs),
+    })),
+  }
 }
 
 export function anonymizeTags(anon: Anon, tags: Tag[]): Tag[] {
