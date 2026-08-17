@@ -73,8 +73,8 @@ func (c *Collector) collectDashboard(now time.Time, nets []inventory.NetworkIfac
 	byRegDest := map[string]map[string]*rankAcc{}
 	byDevDest := map[string]map[string]*rankAcc{}
 	byDestDev := map[string]map[string]*rankAcc{}
-	c.accumulateSumflow("lastsyssumflow:upload", names, types, true, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev)
-	c.accumulateSumflow("lastsyssumflow:download", names, types, false, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev)
+	c.accumulateSumflow("lastsyssumflow:upload", now, names, types, true, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev)
+	c.accumulateSumflow("lastsyssumflow:download", now, names, types, false, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev)
 	out.TopUpload = topN(byDev, 5, "up")
 	out.TopDownload = topN(byDev, 5, "down")
 	out.DestFlows = topN(byDest, 0, "total")
@@ -475,19 +475,43 @@ func (c *Collector) attachDeviceTraffic(now time.Time, devs []inventory.Device) 
 
 func (c *Collector) accumulateSumflow(
 	pointer string,
+	now time.Time,
 	names, types map[string]string,
 	upload bool,
 	byDev, byDest, byReg map[string]*rankAcc,
 	byRegDev, byRegDest, byDevDest, byDestDev map[string]map[string]*rankAcc,
 ) {
 	key, err := c.Redis.Get(pointer)
-	if err != nil || key == "" {
+	if err == nil && key != "" {
+		if c.accumulateSumflowKey(key, names, types, upload, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev) {
+			return
+		}
+	}
+	dim := strings.TrimPrefix(pointer, "last")
+	if !strings.HasPrefix(dim, "syssumflow:") {
 		return
 	}
+	hour := (now.Unix() / 3600) * 3600
+	for i := 0; i < 24; i++ {
+		begin := hour - int64(i)*3600
+		end := begin + 3600
+		hourly := dim + ":" + strconv.FormatInt(begin, 10) + ":" + strconv.FormatInt(end, 10)
+		c.accumulateSumflowKey(hourly, names, types, upload, byDev, byDest, byReg, byRegDev, byRegDest, byDevDest, byDestDev)
+	}
+}
+
+func (c *Collector) accumulateSumflowKey(
+	key string,
+	names, types map[string]string,
+	upload bool,
+	byDev, byDest, byReg map[string]*rankAcc,
+	byRegDev, byRegDest, byDevDest, byDestDev map[string]map[string]*rankAcc,
+) bool {
 	members, err := c.Redis.ZRevRangeByScore(key, "+inf", "0", 0, 80)
 	if err != nil {
-		return
+		return false
 	}
+	got := false
 	for _, z := range members {
 		if z.Member == "_" || z.Member == "" || z.Score <= 0 {
 			continue
@@ -501,6 +525,7 @@ func (c *Collector) accumulateSumflow(
 		if json.Unmarshal([]byte(z.Member), &row) != nil {
 			continue
 		}
+		got = true
 		bytes := int64(z.Score)
 		mac := ""
 		if row.Device != "" {
@@ -568,6 +593,7 @@ func (c *Collector) accumulateSumflow(
 			bumpNested(byDestDev, destID, mac, devName, types[mac], "", cc, region, upload, bytes)
 		}
 	}
+	return got
 }
 
 func bumpNested(
