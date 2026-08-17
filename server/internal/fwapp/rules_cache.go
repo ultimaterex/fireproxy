@@ -49,6 +49,12 @@ func cloneRulesSnapshot(in RulesSnapshot) RulesSnapshot {
 			out.Rules[i] = cloneRule(r)
 		}
 	}
+	if in.DapRules != nil {
+		out.DapRules = make([]Rule, len(in.DapRules))
+		for i, r := range in.DapRules {
+			out.DapRules[i] = cloneRule(r)
+		}
+	}
 	if in.Exceptions != nil {
 		out.Exceptions = append([]ExceptionRule(nil), in.Exceptions...)
 	}

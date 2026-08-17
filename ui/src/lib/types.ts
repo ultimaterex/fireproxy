@@ -207,6 +207,10 @@ export type FwAppRule = {
   lastHitTs?: number
   activatedTime?: string
   timestamp?: string
+  purpose?: string
+  method?: string
+  alarmType?: string
+  readOnly?: boolean
 }
 
 export type FwAppExceptionRule = {
@@ -246,6 +250,7 @@ export type FwAppRulesCapabilities = Record<string, boolean>
 export type FwAppRulesView = {
   hub: FwAppRulesHub
   rules: FwAppRule[]
+  dapRules?: FwAppRule[]
   scopes: FwAppScopeChip[]
   exceptions: FwAppExceptionRule[]
   capabilities: FwAppRulesCapabilities

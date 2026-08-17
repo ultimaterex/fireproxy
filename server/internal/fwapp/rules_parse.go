@@ -83,18 +83,30 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 		rules = append(rules, normalizeScreentimeRule(sr, hostLabels, tagLabels))
 	}
 
+	mainRules := make([]Rule, 0, len(rules))
+	dapRules := make([]Rule, 0)
+	for _, r := range rules {
+		if strings.EqualFold(r.Purpose, "dap") {
+			dapRules = append(dapRules, r)
+			continue
+		}
+		mainRules = append(mainRules, r)
+	}
+
 	exceptions := make([]ExceptionRule, 0, len(root.ExceptionRules))
 	for _, er := range root.ExceptionRules {
 		exceptions = append(exceptions, normalizeException(er))
 	}
 
-	hub := buildHub(rules)
+	hub := buildHub(mainRules)
 	// ruleGroup chips deferred until lab shows membership / counts.
-	scopes := buildScopeChips(rules, root.Hosts, root.Tags, hostLabels, tagLabels)
+	// Scopes exclude DAP so device lists match the app’s controllable Rules.
+	scopes := buildScopeChips(mainRules, root.Hosts, root.Tags, hostLabels, tagLabels)
 
 	return RulesSnapshot{
 		Hub:        hub,
-		Rules:      rules,
+		Rules:      mainRules,
+		DapRules:   dapRules,
 		Exceptions: exceptions,
 		Scopes:     scopes,
 	}, nil
@@ -143,6 +155,9 @@ type rawPolicyRule struct {
 	LastHitTs        flexString `json:"lastHitTs"`
 	ActivatedTime    flexString `json:"activatedTime"`
 	Timestamp        flexString `json:"timestamp"`
+	Purpose          string     `json:"purpose"`
+	Method           string     `json:"method"`
+	AlarmType        string     `json:"alarm_type"`
 }
 
 type rawExceptionRule struct {
@@ -201,6 +216,10 @@ func finalizeRule(pr rawPolicyRule, section RuleSection, hosts, tags map[string]
 		scope = append(scope, mac)
 	}
 	tagRefs := append([]string(nil), pr.Tag...)
+	purpose := strings.TrimSpace(pr.Purpose)
+	method := strings.TrimSpace(pr.Method)
+	alarmType := strings.TrimSpace(pr.AlarmType)
+	notes := strings.TrimSpace(pr.Notes)
 	r := Rule{
 		ID:               strings.TrimSpace(string(pr.PID)),
 		Section:          section,
@@ -208,7 +227,7 @@ func finalizeRule(pr rawPolicyRule, section RuleSection, hosts, tags map[string]
 		Type:             strings.TrimSpace(pr.Type),
 		Target:           strings.TrimSpace(pr.Target),
 		Name:             strings.TrimSpace(pr.Name),
-		Notes:            strings.TrimSpace(pr.Notes),
+		Notes:            notes,
 		Direction:        strings.TrimSpace(pr.Direction),
 		TrafficDirection: strings.TrimSpace(pr.TrafficDirection),
 		Disabled:         parseDisabled(pr.Disabled),
@@ -218,9 +237,24 @@ func finalizeRule(pr rawPolicyRule, section RuleSection, hosts, tags map[string]
 		LastHitTs:        parseFloat64(pr.LastHitTs),
 		ActivatedTime:    strings.TrimSpace(string(pr.ActivatedTime)),
 		Timestamp:        strings.TrimSpace(string(pr.Timestamp)),
+		Purpose:          purpose,
+		Method:           method,
+		AlarmType:        alarmType,
+		ReadOnly:         ruleReadOnly(purpose, method, notes),
 	}
 	r.ScopeLabel = scopeLabel(scope, tagRefs, hosts, tags)
 	return r
+}
+
+func ruleReadOnly(purpose, method, notes string) bool {
+	if strings.EqualFold(purpose, "dap") {
+		return true
+	}
+	if strings.EqualFold(method, "auto") {
+		return true
+	}
+	n := strings.ToLower(notes)
+	return strings.Contains(n, "can not be modified") || strings.Contains(n, "cannot be modified")
 }
 
 func normalizeException(er rawExceptionRule) ExceptionRule {

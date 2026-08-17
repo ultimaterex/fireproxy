@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  ChevronDown,
   MonitorSmartphone,
   Plus,
   RefreshCw,
-  Settings2,
   Shield,
   Users,
 } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 
 import { Breadcrumb } from '@/components/Breadcrumb'
 import { Badge } from '@/components/ui/badge'
@@ -58,7 +59,9 @@ const CREATE_ACTIONS = [
   { id: 'disturb', label: 'Disturb', cap: 'rule.create.disturb' },
 ] as const
 
-type Sheet = 'add' | 'options' | null
+const DAP_SCOPE_ID = '__dap__'
+
+type Sheet = 'add' | 'exceptions' | null
 
 function ruleMatchesScope(rule: FwAppRule, chip: FwAppScopeChip | undefined): boolean {
   if (!chip || chip.kind === 'all' || chip.id === 'all') return true
@@ -87,26 +90,51 @@ function fmtHits(n: number): string {
   return String(n)
 }
 
-function fmtHitBadge(r: FwAppRule): string | null {
-  if (!r.hitCount && !r.lastHitTs) return null
-  const count = fmtHits(r.hitCount)
-  if (!r.lastHitTs) return count
-  const d = new Date(r.lastHitTs * 1000)
-  if (Number.isNaN(d.getTime())) return count
-  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  return `${count} · ${date}`
+function isEpochish(s: string): boolean {
+  return /^\d+(\.\d+)?$/.test(s.trim())
+}
+
+function fmtTs(raw?: string | number | null): string | null {
+  if (raw == null || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return null
+  const d = new Date(n * 1000)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function fmtHitBadge(r: FwAppRule): string {
+  if (!r.hitCount && !r.lastHitTs) return '0'
+  const count = fmtHits(r.hitCount ?? 0)
+  const when = fmtTs(r.lastHitTs)
+  return when ? `${count} · ${when}` : count
+}
+
+function directionLabel(r: FwAppRule): string {
+  const dir = (r.trafficDirection || r.direction || '').toLowerCase()
+  if (dir === 'outbound' || dir === 'out') return 'Outbound only'
+  if (dir === 'inbound' || dir === 'in') return 'Inbound only'
+  if (dir === 'bidirection' || dir === 'both') return 'Both directions'
+  return 'Always'
+}
+
+function scheduleLabel(r: FwAppRule): string {
+  const raw = r.activatedTime?.trim()
+  if (!raw || isEpochish(raw)) return 'Always'
+  return raw
 }
 
 function metaLine(r: FwAppRule): string {
-  const dir = (r.trafficDirection || r.direction || '').toLowerCase()
-  let direction = 'Always'
-  if (dir === 'outbound' || dir === 'out') direction = 'Outbound only'
-  else if (dir === 'inbound' || dir === 'in') direction = 'Inbound only'
-  else if (dir === 'bidirection' || dir === 'both') direction = 'Both'
-  const schedule = r.activatedTime?.trim() || 'Always'
+  const direction = directionLabel(r)
+  const schedule = scheduleLabel(r)
   if (direction === 'Always') return schedule
   if (schedule === 'Always') return direction
-  return `${direction}, ${schedule}`
+  return `${direction} · ${schedule}`
 }
 
 function looksLikeUUID(s: string): boolean {
@@ -115,6 +143,13 @@ function looksLikeUUID(s: string): boolean {
 
 function scopeTagId(scope: FwAppScopeChip): string {
   return scope.id.startsWith('tag:') ? scope.id.slice(4) : scope.id
+}
+
+function matchingLabel(r: FwAppRule): string {
+  const kind = (r.type || '').trim()
+  const target = (r.name || r.target || '').trim() || '—'
+  if (!kind) return target
+  return `${kind.toUpperCase()} ${target}`
 }
 
 export function RulesTab({
@@ -135,13 +170,20 @@ export function RulesTab({
   const [status, setStatus] = useState<FwAppStatus | null>(null)
   const [data, setData] = useState<FwAppRulesView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  /** null = scope picker; otherwise drilled into that scope’s rules */
   const [scopeId, setScopeId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [sheet, setSheet] = useState<Sheet>(null)
-  const [exceptionsOpen, setExceptionsOpen] = useState(false)
+  const [selectedRule, setSelectedRule] = useState<FwAppRule | null>(null)
   const [addAction, setAddAction] = useState<(typeof CREATE_ACTIONS)[number]['id']>('allow')
+  const noticeTimer = useRef<number | null>(null)
+
+  const flash = (msg: string) => {
+    setNotice(msg)
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2500)
+  }
 
   const openScope = (id: string) => {
     setQuery('')
@@ -186,11 +228,8 @@ export function RulesTab({
         setData(null)
         return
       }
-      const rules = await loadRules()
-      setData(rules)
-      // RefreshRules marks lan-ok; pick up status after first fetch.
-      const st2 = await loadStatus()
-      setStatus(st2)
+      setData(await loadRules())
+      setStatus(await loadStatus())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
       setData(null)
@@ -219,11 +258,12 @@ export function RulesTab({
           throw new Error(body.error || `refresh ${r.status}`)
         }
         setData((await r.json()) as FwAppRulesView)
+        flash('Synced from Firewalla')
       } else {
         setData(await loadRules())
+        flash('Loaded from cache')
       }
-      const st = await loadStatus()
-      setStatus(st)
+      setStatus(await loadStatus())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
     } finally {
@@ -242,7 +282,7 @@ export function RulesTab({
     return m
   }, [devices])
 
-  const scopeLabel = useCallback(
+  const resolveScopeLabel = useCallback(
     (s: FwAppScopeChip): string => {
       if (s.kind === 'device') {
         const d = devicesByMac.get(s.id.toUpperCase())
@@ -261,6 +301,39 @@ export function RulesTab({
     [devicesByMac, labelTag],
   )
 
+  const displayOn = useCallback(
+    (r: FwAppRule): string => {
+      const parts: string[] = []
+      for (const ref of r.tags ?? []) {
+        if (ref.startsWith('tag:')) {
+          const id = ref.slice(4)
+          const name = labelTag?.(id, 'group')
+          if (name && name !== id && !looksLikeUUID(name)) {
+            parts.push(name)
+            continue
+          }
+          parts.push(looksLikeUUID(id) ? `Group ${id}` : id)
+          continue
+        }
+        if (ref.startsWith('intf:')) {
+          parts.push('Network')
+          continue
+        }
+        if (ref) parts.push(ref)
+      }
+      for (const mac of r.scope ?? []) {
+        const d = devicesByMac.get(mac.toUpperCase())
+        parts.push(d ? preferredName(d) : mac)
+      }
+      if (parts.length) return parts.join(', ')
+      if (r.scopeLabel && !looksLikeUUID(r.scopeLabel) && !isEpochish(r.scopeLabel)) {
+        return r.scopeLabel
+      }
+      return 'All Devices'
+    },
+    [devicesByMac, labelTag],
+  )
+
   const scopes = useMemo(() => {
     const all = show?.scopes ?? []
     return all.filter((s) => s.kind === 'all' || s.count > 0)
@@ -272,34 +345,56 @@ export function RulesTab({
       scopes
         .filter((s) => s.kind === 'tag' || s.kind === 'group')
         .slice()
-        .sort((a, b) => b.count - a.count || scopeLabel(a).localeCompare(scopeLabel(b))),
-    [scopes, scopeLabel],
+        .sort(
+          (a, b) =>
+            b.count - a.count || resolveScopeLabel(a).localeCompare(resolveScopeLabel(b)),
+        ),
+    [scopes, resolveScopeLabel],
   )
   const deviceScopes = useMemo(
     () =>
       scopes
         .filter((s) => s.kind === 'device')
         .slice()
-        .sort((a, b) => b.count - a.count || scopeLabel(a).localeCompare(scopeLabel(b))),
-    [scopes, scopeLabel],
+        .sort(
+          (a, b) =>
+            b.count - a.count || resolveScopeLabel(a).localeCompare(resolveScopeLabel(b)),
+        ),
+    [scopes, resolveScopeLabel],
   )
 
-  const activeScope = scopeId ? scopes.find((s) => s.id === scopeId) : undefined
+  const dapRules = show?.dapRules ?? []
+  const dapScope: FwAppScopeChip | null =
+    dapRules.length > 0
+      ? { id: DAP_SCOPE_ID, kind: 'all', label: 'Active Protect', count: dapRules.length }
+      : null
+
+  const activeScope: FwAppScopeChip | undefined =
+    scopeId === DAP_SCOPE_ID
+      ? (dapScope ?? undefined)
+      : scopeId
+        ? scopes.find((s) => s.id === scopeId)
+        : undefined
 
   useEffect(() => {
     if (scopeId == null) return
+    if (scopeId === DAP_SCOPE_ID) {
+      if (!dapScope) setScopeId(null)
+      return
+    }
     if (!scopes.some((s) => s.id === scopeId)) setScopeId(null)
-  }, [scopes, scopeId])
+  }, [scopes, scopeId, dapScope])
 
   const filtered = useMemo(() => {
     if (!show || !activeScope) return []
+    const source = scopeId === DAP_SCOPE_ID ? dapRules : show.rules
     const q = query.trim().toLowerCase()
-    return show.rules.filter((r) => {
-      if (!ruleMatchesScope(r, activeScope)) return false
+    return source.filter((r) => {
+      if (scopeId !== DAP_SCOPE_ID && !ruleMatchesScope(r, activeScope)) return false
       if (!q) return true
       return ruleHaystack(r).includes(q)
     })
-  }, [show, activeScope, query])
+  }, [show, activeScope, query, scopeId, dapRules])
 
   const bySection = useMemo(() => {
     const m = new Map<FwAppRuleSection, FwAppRule[]>()
@@ -315,16 +410,16 @@ export function RulesTab({
   const filteredGroups = useMemo(
     () =>
       scopeQuery
-        ? groupScopes.filter((s) => scopeLabel(s).toLowerCase().includes(scopeQuery))
+        ? groupScopes.filter((s) => resolveScopeLabel(s).toLowerCase().includes(scopeQuery))
         : groupScopes,
-    [groupScopes, scopeQuery, scopeLabel],
+    [groupScopes, scopeQuery, resolveScopeLabel],
   )
   const filteredDevices = useMemo(
     () =>
       scopeQuery
-        ? deviceScopes.filter((s) => scopeLabel(s).toLowerCase().includes(scopeQuery))
+        ? deviceScopes.filter((s) => resolveScopeLabel(s).toLowerCase().includes(scopeQuery))
         : deviceScopes,
-    [deviceScopes, scopeQuery, scopeLabel],
+    [deviceScopes, scopeQuery, resolveScopeLabel],
   )
 
   const caps = show?.capabilities ?? {}
@@ -335,6 +430,19 @@ export function RulesTab({
   const blockPct = hitDenom > 0 ? 100 - allowPct : 0
   const allowBar = hitDenom > 0 ? ((hub?.allowHits ?? 0) / hitDenom) * 100 : 0
   const blockBar = hitDenom > 0 ? ((hub?.blockHits ?? 0) / hitDenom) * 100 : 0
+
+  const actions = (
+    <ActionsMenu
+      caps={caps}
+      exceptionCount={exceptions.length}
+      dapCount={dapRules.length}
+      busy={busy}
+      onAdd={() => setSheet('add')}
+      onSync={() => void refresh(true)}
+      onExceptions={() => setSheet('exceptions')}
+      onActiveProtect={() => openScope(DAP_SCOPE_ID)}
+    />
+  )
 
   if (!canLoad && !busy) {
     return (
@@ -413,7 +521,12 @@ export function RulesTab({
         <Breadcrumb
           items={[
             { label: 'Rules', onClick: backToScopes },
-            { label: scopeLabel(activeScope) },
+            {
+              label:
+                scopeId === DAP_SCOPE_ID
+                  ? 'Active Protect'
+                  : resolveScopeLabel(activeScope),
+            },
           ]}
           trailing={
             <div className="flex flex-wrap items-center gap-2">
@@ -423,14 +536,7 @@ export function RulesTab({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-              <Button type="button" size="sm" variant="outline" onClick={() => setSheet('options')}>
-                <Settings2 className="size-3.5" />
-                Options
-              </Button>
-              <Button type="button" size="sm" onClick={() => setSheet('add')}>
-                <Plus className="size-3.5" />
-                Add Rule
-              </Button>
+              {actions}
             </div>
           }
         />
@@ -438,20 +544,12 @@ export function RulesTab({
         <div className="flex flex-wrap items-center gap-2">
           <Shield className="size-5 text-muted-foreground" />
           <h1 className="text-lg font-semibold tracking-tight">Rules</h1>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => setSheet('options')}>
-              <Settings2 className="size-3.5" />
-              Options
-            </Button>
-            <Button type="button" size="sm" onClick={() => setSheet('add')}>
-              <Plus className="size-3.5" />
-              Add Rule
-            </Button>
-          </div>
+          <div className="ml-auto">{actions}</div>
         </div>
       )}
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
 
       <Card className="gap-0 py-0">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b py-4">
@@ -480,7 +578,7 @@ export function RulesTab({
             size="sm"
             variant="secondary"
             disabled={busy}
-            onClick={() => void refresh()}
+            onClick={() => void refresh(false)}
           >
             <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
             Refresh
@@ -498,21 +596,6 @@ export function RulesTab({
             <div className="h-full bg-foreground/60" style={{ width: `${allowBar}%` }} />
             <div className="h-full bg-destructive/80" style={{ width: `${blockBar}%` }} />
           </div>
-          {exceptions.length > 0 ? (
-            <div className="border-t pt-3">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between text-sm"
-                onClick={() => setExceptionsOpen((o) => !o)}
-              >
-                <span className="text-muted-foreground">Exceptions</span>
-                <span className="font-mono tabular-nums text-muted-foreground">
-                  {exceptions.length}
-                </span>
-              </button>
-              {exceptionsOpen ? <ExceptionsList rows={exceptions} /> : null}
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
@@ -520,9 +603,17 @@ export function RulesTab({
         filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
         ) : mode === 'list' ? (
-          <RulesTable bySection={bySection} />
+          <RulesTable
+            bySection={bySection}
+            displayOn={displayOn}
+            onSelect={setSelectedRule}
+          />
         ) : (
-          <RulesCompact bySection={bySection} />
+          <RulesCompact
+            bySection={bySection}
+            displayOn={displayOn}
+            onSelect={setSelectedRule}
+          />
         )
       ) : (
         <ScopePicker
@@ -532,7 +623,12 @@ export function RulesTab({
           allScope={allScope}
           groups={filteredGroups}
           devices={filteredDevices}
-          scopeLabel={scopeLabel}
+          dap={
+            dapScope && (!scopeQuery || 'active protect'.includes(scopeQuery))
+              ? dapScope
+              : null
+          }
+          scopeLabel={resolveScopeLabel}
           onOpen={openScope}
         />
       )}
@@ -545,20 +641,125 @@ export function RulesTab({
           onClose={() => setSheet(null)}
         />
       ) : null}
-      {sheet === 'options' ? (
-        <OptionsSheet
+      {sheet === 'exceptions' ? (
+        <SheetShell title="Exceptions" onClose={() => setSheet(null)}>
+          {exceptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No exceptions</p>
+          ) : (
+            <ExceptionsList rows={exceptions} />
+          )}
+        </SheetShell>
+      ) : null}
+      {selectedRule ? (
+        <RuleDetailSheet
+          rule={selectedRule}
+          onLabel={displayOn(selectedRule)}
           caps={caps}
-          exceptions={exceptions}
-          busy={busy}
-          onSync={() => void refresh(true)}
-          onClose={() => setSheet(null)}
+          onClose={() => setSelectedRule(null)}
         />
       ) : null}
     </div>
   )
 }
 
-function RulesTable({ bySection }: { bySection: Map<FwAppRuleSection, FwAppRule[]> }) {
+function ActionsMenu({
+  caps,
+  exceptionCount,
+  dapCount,
+  busy,
+  onAdd,
+  onSync,
+  onExceptions,
+  onActiveProtect,
+}: {
+  caps: Record<string, boolean>
+  exceptionCount: number
+  dapCount: number
+  busy: boolean
+  onAdd: () => void
+  onSync: () => void
+  onExceptions: () => void
+  onActiveProtect: () => void
+}) {
+  return (
+    <div className="flex items-center">
+      <Button type="button" size="sm" className="rounded-r-none" onClick={onAdd}>
+        <Plus className="size-3.5" />
+        Add Rule
+      </Button>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            className="rounded-l-none border-l border-primary-foreground/20 px-2"
+            aria-label="More actions"
+          >
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            sideOffset={6}
+            className="z-50 min-w-48 rounded-md border bg-popover p-1 text-sm shadow-md"
+          >
+            <DropdownMenu.Item
+              className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
+              disabled={busy}
+              onSelect={onSync}
+            >
+              Sync from Firewalla
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
+              onSelect={onExceptions}
+            >
+              Exceptions{exceptionCount ? ` (${exceptionCount})` : ''}
+            </DropdownMenu.Item>
+            {dapCount > 0 ? (
+              <DropdownMenu.Item
+                className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
+                onSelect={onActiveProtect}
+              >
+                Active Protect ({dapCount})
+              </DropdownMenu.Item>
+            ) : null}
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            <DropdownMenu.Item
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
+              disabled
+            >
+              {caps['rule.reset_hits'] ? 'Reset hits' : 'Reset hits · soon'}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
+              disabled
+            >
+              {caps['rule.emergency'] ? 'Emergency Access' : 'Emergency · soon'}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
+              disabled
+            >
+              {caps['rule.diagnose'] ? 'Diagnostics' : 'Diagnostics · soon'}
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
+  )
+}
+
+function RulesTable({
+  bySection,
+  displayOn,
+  onSelect,
+}: {
+  bySection: Map<FwAppRuleSection, FwAppRule[]>
+  displayOn: (r: FwAppRule) => string
+  onSelect: (r: FwAppRule) => void
+}) {
   return (
     <div className="space-y-4">
       {SECTIONS.map(({ id, label }) => {
@@ -578,28 +779,31 @@ function RulesTable({ bySection }: { bySection: Map<FwAppRuleSection, FwAppRule[
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Target</TableHead>
-                    <TableHead>Scope</TableHead>
+                    <TableHead>Matching</TableHead>
+                    <TableHead>On</TableHead>
                     <TableHead>When</TableHead>
                     <TableHead className="text-right">Hits</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((r) => (
-                    <TableRow key={r.id} className={cn(r.disabled && 'opacity-50')}>
-                      <TableCell>
-                        <Badge variant="outline">{r.type || '—'}</Badge>
+                    <TableRow
+                      key={r.id}
+                      className={cn('cursor-pointer', r.disabled && 'opacity-50')}
+                      onClick={() => onSelect(r)}
+                    >
+                      <TableCell className="max-w-[18rem]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Badge variant="outline">{r.action || r.type || '—'}</Badge>
+                          <span className="truncate font-mono">{matchingLabel(r)}</span>
+                        </div>
                       </TableCell>
-                      <TableCell className="max-w-[18rem] truncate font-mono">
-                        {r.name || r.target || '—'}
-                      </TableCell>
-                      <TableCell className="max-w-[10rem] truncate text-muted-foreground">
-                        {r.scopeLabel || '—'}
+                      <TableCell className="max-w-[12rem] truncate text-muted-foreground">
+                        {displayOn(r)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{metaLine(r)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                        {fmtHitBadge(r) ?? '—'}
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {fmtHitBadge(r)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -613,7 +817,15 @@ function RulesTable({ bySection }: { bySection: Map<FwAppRuleSection, FwAppRule[
   )
 }
 
-function RulesCompact({ bySection }: { bySection: Map<FwAppRuleSection, FwAppRule[]> }) {
+function RulesCompact({
+  bySection,
+  displayOn,
+  onSelect,
+}: {
+  bySection: Map<FwAppRuleSection, FwAppRule[]>
+  displayOn: (r: FwAppRule) => string
+  onSelect: (r: FwAppRule) => void
+}) {
   return (
     <div className="space-y-4">
       {SECTIONS.map(({ id, label }) => {
@@ -629,27 +841,27 @@ function RulesCompact({ bySection }: { bySection: Map<FwAppRuleSection, FwAppRul
             </div>
             <div className="space-y-1.5">
               {rows.map((r) => (
-                <div
+                <button
                   key={r.id}
+                  type="button"
+                  onClick={() => onSelect(r)}
                   className={cn(
-                    'flex items-center gap-2 rounded-md border px-3 py-2 text-sm',
+                    'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/40',
                     r.disabled && 'opacity-50',
                   )}
                 >
-                  <Badge variant="outline">{r.type || '—'}</Badge>
-                  <span className="min-w-0 flex-1 truncate font-mono">
-                    {r.name || r.target || '—'}
-                  </span>
+                  <Badge variant="outline">{r.action || r.type || '—'}</Badge>
+                  <span className="min-w-0 flex-1 truncate font-mono">{matchingLabel(r)}</span>
                   <span className="hidden max-w-[8rem] truncate text-xs text-muted-foreground sm:inline">
-                    {r.scopeLabel || '—'}
+                    {displayOn(r)}
                   </span>
                   <span className="hidden text-xs text-muted-foreground md:inline">
                     {metaLine(r)}
                   </span>
-                  <span className="font-mono tabular-nums text-xs text-muted-foreground">
-                    {fmtHitBadge(r) ?? '—'}
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {fmtHitBadge(r)}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -707,6 +919,63 @@ function SheetShell({
         <div className="min-h-0 overflow-y-auto px-6 py-4">{children}</div>
       </div>
     </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">{children}</div>
+    </div>
+  )
+}
+
+function RuleDetailSheet({
+  rule,
+  onLabel,
+  caps,
+  onClose,
+}: {
+  rule: FwAppRule
+  onLabel: string
+  caps: Record<string, boolean>
+  onClose: () => void
+}) {
+  const created = fmtTs(rule.timestamp)
+  const activated = fmtTs(rule.activatedTime)
+  return (
+    <SheetShell title="Rule Details" onClose={onClose}>
+      <div className="space-y-4">
+        {rule.readOnly ? (
+          <div className="rounded-md bg-amber-600/90 px-3 py-2 text-sm text-white">
+            This rule is read-only.
+          </div>
+        ) : null}
+        <Field label="Action">
+          <span className="capitalize">{rule.action || '—'}</span>
+        </Field>
+        <Field label="Matching">{matchingLabel(rule)}</Field>
+        <Field label="On">{onLabel}</Field>
+        <Field label="Schedule">{scheduleLabel(rule)}</Field>
+        <Field label="Direction">{directionLabel(rule)}</Field>
+        <Field label="Hits">{fmtHitBadge(rule)}</Field>
+        {rule.notes ? <Field label="Notes">{rule.notes}</Field> : null}
+        <div className="space-y-1 text-xs text-muted-foreground">
+          {created ? <p>Created: {created}</p> : null}
+          {activated ? <p>Activated: {activated}</p> : null}
+          <p className="font-mono">Rule ID: {rule.id}</p>
+        </div>
+        <div className="flex justify-between gap-2 pt-1">
+          <Button type="button" size="sm" variant="outline" className="text-destructive" disabled>
+            {caps['rule.delete'] && !rule.readOnly ? 'Delete' : 'Delete · soon'}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </SheetShell>
   )
 }
 
@@ -783,6 +1052,7 @@ function ScopePicker({
   allScope,
   groups,
   devices,
+  dap,
   scopeLabel,
   onOpen,
 }: {
@@ -792,12 +1062,13 @@ function ScopePicker({
   allScope: FwAppScopeChip | undefined
   groups: FwAppScopeChip[]
   devices: FwAppScopeChip[]
+  dap: FwAppScopeChip | null
   scopeLabel: (s: FwAppScopeChip) => string
   onOpen: (id: string) => void
 }) {
   const q = query.trim().toLowerCase()
   const showAll = !!allScope && (!q || 'all devices'.includes(q))
-  const empty = !showAll && groups.length === 0 && devices.length === 0
+  const empty = !showAll && groups.length === 0 && devices.length === 0 && !dap
 
   return (
     <div className="space-y-4">
@@ -815,7 +1086,7 @@ function ScopePicker({
           <CardHeader className="border-b py-4">
             <CardTitle className="text-sm">Scopes</CardTitle>
             <CardDescription>
-              {(showAll ? 1 : 0) + groups.length + devices.length}
+              {(showAll ? 1 : 0) + groups.length + devices.length + (dap ? 1 : 0)}
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0">
@@ -829,10 +1100,7 @@ function ScopePicker({
               </TableHeader>
               <TableBody>
                 {showAll && allScope ? (
-                  <TableRow
-                    className="cursor-pointer"
-                    onClick={() => onOpen(allScope.id)}
-                  >
+                  <TableRow className="cursor-pointer" onClick={() => onOpen(allScope.id)}>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5">
                         <Shield className="size-3.5 text-muted-foreground" />
@@ -846,11 +1114,7 @@ function ScopePicker({
                   </TableRow>
                 ) : null}
                 {groups.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    className="cursor-pointer"
-                    onClick={() => onOpen(s.id)}
-                  >
+                  <TableRow key={s.id} className="cursor-pointer" onClick={() => onOpen(s.id)}>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5">
                         <Users className="size-3.5 text-muted-foreground" />
@@ -858,17 +1122,11 @@ function ScopePicker({
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">Group</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {s.count}
-                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{s.count}</TableCell>
                   </TableRow>
                 ))}
                 {devices.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    className="cursor-pointer"
-                    onClick={() => onOpen(s.id)}
-                  >
+                  <TableRow key={s.id} className="cursor-pointer" onClick={() => onOpen(s.id)}>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5">
                         <MonitorSmartphone className="size-3.5 text-muted-foreground" />
@@ -876,11 +1134,21 @@ function ScopePicker({
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">Device</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {s.count}
-                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{s.count}</TableCell>
                   </TableRow>
                 ))}
+                {dap ? (
+                  <TableRow className="cursor-pointer" onClick={() => onOpen(dap.id)}>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Shield className="size-3.5 text-muted-foreground" />
+                        {dap.label}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">Protect</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{dap.count}</TableCell>
+                  </TableRow>
+                ) : null}
               </TableBody>
             </Table>
           </CardContent>
@@ -908,7 +1176,7 @@ function ScopePicker({
                     icon={<Users className="size-4 shrink-0 text-muted-foreground" />}
                     label={scopeLabel(s)}
                     count={s.count}
-                    hint={scopeTagId(s)}
+                    hint={`${s.count} rules`}
                     onClick={() => onOpen(s.id)}
                   />
                 ))}
@@ -927,10 +1195,24 @@ function ScopePicker({
                     }
                     label={scopeLabel(s)}
                     count={s.count}
-                    hint={s.id}
+                    hint={`${s.count} rules`}
                     onClick={() => onOpen(s.id)}
                   />
                 ))}
+              </div>
+            </div>
+          ) : null}
+          {dap ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Active Protect</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <ScopeCard
+                  icon={<Shield className="size-4 shrink-0 text-muted-foreground" />}
+                  label={dap.label}
+                  count={dap.count}
+                  hint="Read-only"
+                  onClick={() => onOpen(dap.id)}
+                />
               </div>
             </div>
           ) : null}
@@ -964,61 +1246,9 @@ function ScopeCard({
             </CardTitle>
             <span className="font-mono text-lg tabular-nums">{count}</span>
           </div>
-          <CardDescription className="font-mono">{hint}</CardDescription>
+          <CardDescription>{hint}</CardDescription>
         </CardHeader>
       </Card>
     </button>
-  )
-}
-
-function OptionsSheet({
-  caps,
-  exceptions,
-  busy,
-  onSync,
-  onClose,
-}: {
-  caps: Record<string, boolean>
-  exceptions: FwAppExceptionRule[]
-  busy: boolean
-  onSync: () => void
-  onClose: () => void
-}) {
-  return (
-    <SheetShell title="Options" onClose={onClose}>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">Sync from Firewalla</span>
-          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={onSync}>
-            <RefreshCw className={cn('size-3', busy && 'animate-spin')} />
-            Sync
-          </Button>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">Reset hits</span>
-          <Button type="button" size="xs" variant="outline" disabled>
-            {caps['rule.reset_hits'] ? 'Reset' : 'Coming soon'}
-          </Button>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">Emergency Access</span>
-          <Button type="button" size="xs" variant="outline" disabled>
-            {caps['rule.emergency'] ? 'Enable' : 'Coming soon'}
-          </Button>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm">Diagnostics</span>
-          <Button type="button" size="xs" variant="outline" disabled>
-            {caps['rule.diagnose'] ? 'Run' : 'Coming soon'}
-          </Button>
-        </div>
-        {exceptions.length > 0 ? (
-          <div className="space-y-2 border-t pt-4">
-            <p className="text-sm text-muted-foreground">Exceptions</p>
-            <ExceptionsList rows={exceptions} />
-          </div>
-        ) : null}
-      </div>
-    </SheetShell>
   )
 }

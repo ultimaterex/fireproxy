@@ -30,6 +30,10 @@ type Rule struct {
 	LastHitTs        float64     `json:"lastHitTs,omitempty"`
 	ActivatedTime    string      `json:"activatedTime,omitempty"`
 	Timestamp        string      `json:"timestamp,omitempty"`
+	Purpose          string      `json:"purpose,omitempty"`
+	Method           string      `json:"method,omitempty"`
+	AlarmType        string      `json:"alarmType,omitempty"`
+	ReadOnly         bool        `json:"readOnly"`
 }
 
 // ExceptionRule is a normalized exception from init exceptionRules.
@@ -79,6 +83,7 @@ type RulesHub struct {
 type RulesSnapshot struct {
 	Hub        RulesHub        `json:"hub"`
 	Rules      []Rule          `json:"rules"`
+	DapRules   []Rule          `json:"dapRules"`
 	Exceptions []ExceptionRule `json:"exceptions"`
 	Scopes     []ScopeChip     `json:"scopes"`
 }

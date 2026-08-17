@@ -95,6 +95,10 @@ func fwAppRulesResponse(snap fwapp.RulesSnapshot, at time.Time) map[string]any {
 	if rules == nil {
 		rules = []fwapp.Rule{}
 	}
+	dap := snap.DapRules
+	if dap == nil {
+		dap = []fwapp.Rule{}
+	}
 	scopes := snap.Scopes
 	if scopes == nil {
 		scopes = []fwapp.ScopeChip{}
@@ -110,6 +114,7 @@ func fwAppRulesResponse(snap fwapp.RulesSnapshot, at time.Time) map[string]any {
 	return map[string]any{
 		"hub":          snap.Hub,
 		"rules":        rules,
+		"dapRules":     dap,
 		"scopes":       scopes,
 		"exceptions":   exceptions,
 		"capabilities": fwapp.DefaultRulesCapabilities(),

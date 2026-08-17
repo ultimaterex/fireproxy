@@ -1037,6 +1037,15 @@ export function anonymizeFwAppRules(
       scope: r.scope?.map((m) => anon.fakeMAC(m)),
       tags: r.tags?.map((t) => anon.rewriteText(t, cidrs)),
     })),
+    dapRules: (view.dapRules ?? []).map((r) => ({
+      ...r,
+      target: r.target ? anon.rewriteText(r.target, cidrs) : r.target,
+      name: r.name ? anon.rewriteText(r.name, cidrs) : r.name,
+      notes: r.notes ? anon.rewriteText(r.notes, cidrs) : r.notes,
+      scopeLabel: r.scopeLabel ? anon.rewriteText(r.scopeLabel, cidrs) : r.scopeLabel,
+      scope: r.scope?.map((m) => anon.fakeMAC(m)),
+      tags: r.tags?.map((t) => anon.rewriteText(t, cidrs)),
+    })),
     exceptions: view.exceptions.map((e) => ({
       ...e,
       target: e.target ? anon.rewriteText(e.target, cidrs) : e.target,

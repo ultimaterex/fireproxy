@@ -58,6 +58,9 @@ func TestParseInitRules(t *testing.T) {
 	if snap.Hub.AllowHits != 12 || snap.Hub.BlockHits != 3 {
 		t.Fatalf("hub hits allow=%d block=%d total=%d", snap.Hub.AllowHits, snap.Hub.BlockHits, snap.Hub.TotalHits)
 	}
+	if len(snap.DapRules) != 0 {
+		t.Fatalf("unexpected dap rules: %+v", snap.DapRules)
+	}
 	if len(snap.Scopes) < 1 {
 		t.Fatal("expected scope chips")
 	}
@@ -142,7 +145,35 @@ func TestParseLabFixture(t *testing.T) {
 	if len(snap.Exceptions) < 1 {
 		t.Fatal("expected exceptionRules from lab fixture")
 	}
-	t.Logf("lab: rules=%d exceptions=%d scopes=%d hub=%+v", len(snap.Rules), len(snap.Exceptions), len(snap.Scopes), snap.Hub)
+	t.Logf("lab: rules=%d dap=%d exceptions=%d scopes=%d hub=%+v", len(snap.Rules), len(snap.DapRules), len(snap.Exceptions), len(snap.Scopes), snap.Hub)
+}
+
+func TestParseInitRulesSplitsDAP(t *testing.T) {
+	raw := []byte(`{
+		"policyRules":[
+			{"pid":"1","action":"block","type":"dns","target":"x.test","hitCount":"2"},
+			{"pid":"2","action":"block","type":"mac","target":"AA:BB:CC:DD:EE:01","purpose":"dap","scope":["AA:BB:CC:DD:EE:01"]}
+		],
+		"exceptionRules":[],
+		"screentimeRules":[],
+		"hosts":[{"mac":"AA:BB:CC:DD:EE:01","name":"Phone"}],
+		"tags":{}
+	}`)
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.Rules) != 1 || snap.Rules[0].ID != "1" {
+		t.Fatalf("rules=%+v", snap.Rules)
+	}
+	if len(snap.DapRules) != 1 || !snap.DapRules[0].ReadOnly {
+		t.Fatalf("dap=%+v", snap.DapRules)
+	}
+	for _, c := range snap.Scopes {
+		if c.Kind == ScopeChipDevice {
+			t.Fatalf("dap-only device should not appear in scopes: %+v", snap.Scopes)
+		}
+	}
 }
 
 func labInitFixturePath() string {
