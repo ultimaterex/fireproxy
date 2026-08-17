@@ -38,6 +38,7 @@ import type {
   FwAppExceptionRule,
   FwAppRule,
   FwAppRuleSection,
+  FwAppRulesHub,
   FwAppRulesView,
   FwAppScopeChip,
   FwAppStatus,
@@ -146,7 +147,28 @@ function scopeTagId(scope: FwAppScopeChip): string {
   return scope.id.startsWith('tag:') ? scope.id.slice(4) : scope.id
 }
 
-function matchingLabel(r: FwAppRule): string {
+function hubFromRules(rules: FwAppRule[]): FwAppRulesHub {
+  const hub: FwAppRulesHub = {
+    totalRules: rules.length,
+    totalHits: 0,
+    allowHits: 0,
+    blockHits: 0,
+    allowCount: 0,
+    blockCount: 0,
+  }
+  for (const r of rules) {
+    const n = r.hitCount ?? 0
+    hub.totalHits += n
+    if (r.section === 'allow') {
+      hub.allowCount++
+      hub.allowHits += n
+    } else if (r.section === 'block') {
+      hub.blockCount++
+      hub.blockHits += n
+    }
+  }
+  return hub
+}
   const kind = (r.type || '').trim()
   const target = (r.name || r.target || '').trim() || '—'
   if (!kind) return target
@@ -382,16 +404,17 @@ export function RulesTab({
     if (!scopes.some((s) => s.id === scopeId)) setScopeId(null)
   }, [scopes, scopeId, dapScope])
 
-  const filtered = useMemo(() => {
+  const scopedRules = useMemo(() => {
     if (!show || !activeScope) return []
-    const source = scopeId === DAP_SCOPE_ID ? dapRules : show.rules
+    if (scopeId === DAP_SCOPE_ID) return dapRules
+    return show.rules.filter((r) => ruleMatchesScope(r, activeScope))
+  }, [show, activeScope, scopeId, dapRules])
+
+  const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return source.filter((r) => {
-      if (scopeId !== DAP_SCOPE_ID && !ruleMatchesScope(r, activeScope)) return false
-      if (!q) return true
-      return ruleHaystack(r).includes(q)
-    })
-  }, [show, activeScope, query, scopeId, dapRules])
+    if (!q) return scopedRules
+    return scopedRules.filter((r) => ruleHaystack(r).includes(q))
+  }, [scopedRules, query])
 
   const bySection = useMemo(() => {
     const m = new Map<FwAppRuleSection, FwAppRule[]>()
@@ -420,13 +443,13 @@ export function RulesTab({
   )
 
   const caps = show?.capabilities ?? {}
-  const hub = show?.hub
+  const hub = activeScope ? hubFromRules(scopedRules) : (show?.hub ?? hubFromRules([]))
   const exceptions = show?.exceptions ?? []
-  const hitDenom = (hub?.allowHits ?? 0) + (hub?.blockHits ?? 0)
-  const allowPct = hitDenom > 0 ? Math.round(((hub?.allowHits ?? 0) / hitDenom) * 100) : 0
+  const hitDenom = hub.allowHits + hub.blockHits
+  const allowPct = hitDenom > 0 ? Math.round((hub.allowHits / hitDenom) * 100) : 0
   const blockPct = hitDenom > 0 ? 100 - allowPct : 0
-  const allowBar = hitDenom > 0 ? ((hub?.allowHits ?? 0) / hitDenom) * 100 : 0
-  const blockBar = hitDenom > 0 ? ((hub?.blockHits ?? 0) / hitDenom) * 100 : 0
+  const allowBar = hitDenom > 0 ? (hub.allowHits / hitDenom) * 100 : 0
+  const blockBar = hitDenom > 0 ? (hub.blockHits / hitDenom) * 100 : 0
 
   const actions = (
     <ActionsMenu
@@ -552,10 +575,10 @@ export function RulesTab({
             <CardTitle className="text-sm">Hits</CardTitle>
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="font-mono text-2xl tabular-nums">
-                {fmtHits(hub?.totalHits ?? 0)}
+                {fmtHits(hub.totalHits)}
               </span>
               <span className="text-xs text-muted-foreground">
-                {hub?.totalRules ?? 0} rules
+                {hub.totalRules} rules
                 {show?.refreshed_at
                   ? ` · ${new Date(show.refreshed_at).toLocaleString(undefined, {
                       month: 'short',
@@ -581,10 +604,10 @@ export function RulesTab({
         </CardHeader>
         <CardContent className="space-y-3 px-6 py-4">
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant="secondary">{hub?.allowCount ?? 0} allow</Badge>
-            <Badge variant="destructive">{hub?.blockCount ?? 0} block</Badge>
+            <Badge variant="secondary">{hub.allowCount} allow</Badge>
+            <Badge variant="destructive">{hub.blockCount} block</Badge>
             <span className="font-mono tabular-nums text-muted-foreground">
-              {fmtHits(hub?.allowHits ?? 0)} ({allowPct}%) / {fmtHits(hub?.blockHits ?? 0)} ({blockPct}%)
+              {fmtHits(hub.allowHits)} ({allowPct}%) / {fmtHits(hub.blockHits)} ({blockPct}%)
             </span>
           </div>
           <div className="flex h-2 overflow-hidden rounded-full bg-muted">
