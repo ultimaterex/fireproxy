@@ -145,6 +145,97 @@ func TestCollectDashboardFromRedisRollups(t *testing.T) {
 	}
 }
 
+func TestCollectDashboardRanksFromHourlySumflowWhen24hMissing(t *testing.T) {
+	now := time.Unix(1_700_000_400, 0)
+	hour := (now.Unix() / 3600) * 3600
+	cur := "syssumflow:upload:" + strconv.FormatInt(hour, 10) + ":" + strconv.FormatInt(hour+3600, 10)
+	prev := "syssumflow:upload:" + strconv.FormatInt(hour-3600, 10) + ":" + strconv.FormatInt(hour, 10)
+	curDown := "syssumflow:download:" + strconv.FormatInt(hour, 10) + ":" + strconv.FormatInt(hour+3600, 10)
+	r := &memRedis{
+		hgetall: map[string]map[string]string{
+			"sys:network:info": {
+				"eth1": `{"name":"eth1","desc":"ISP A","type":"wan","uuid":"wan-isp-a","ip_address":"203.0.113.1"}`,
+			},
+			"host:mac:AA:BB:CC:DD:EE:01": {
+				"mac":    "AA:BB:CC:DD:EE:01",
+				"name":   "aurora",
+				"detect": `{"type":"nas"}`,
+			},
+		},
+		gets: map[string]string{
+			"lastsyssumflow:upload":   "syssumflow:upload:1:2",
+			"lastsyssumflow:download": "syssumflow:download:1:2",
+		},
+		zrev: map[string][]ZMember{
+			"syssumflow:upload:1:2": {{Member: `_`, Score: 0}},
+			cur: {
+				{Member: `{"device":"AA:BB:CC:DD:EE:01","destIP":"1.2.3.4","country":"NL"}`, Score: 1000},
+				{Member: `_`, Score: 0},
+			},
+			prev: {
+				{Member: `{"device":"AA:BB:CC:DD:EE:01","destIP":"1.2.3.4","country":"NL"}`, Score: 500},
+			},
+			curDown: {
+				{Member: `{"device":"AA:BB:CC:DD:EE:01","destIP":"9.9.9.9","domain":"hf.co"}`, Score: 400},
+			},
+		},
+	}
+	c := &Collector{Hostname: "Firewalla", Redis: r}
+	cat, err := c.CollectCatalog(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := cat.Dashboard
+	if d == nil {
+		t.Fatal("dashboard missing")
+	}
+	if len(d.TopUpload) != 1 || d.TopUpload[0].Name != "aurora" || d.TopUpload[0].Upload != 1500 {
+		t.Fatalf("top up %+v", d.TopUpload)
+	}
+	if len(d.TopDestDownload) != 1 || d.TopDestDownload[0].Name != "hf.co" {
+		t.Fatalf("top dest %+v", d.TopDestDownload)
+	}
+	if len(d.TopRegions) == 0 || d.TopRegions[0].Name != "Netherlands" || d.TopRegions[0].Upload != 1500 {
+		t.Fatalf("regions %+v", d.TopRegions)
+	}
+}
+
+func TestCollectDashboardRanksPrefer24hSumflowOverHourly(t *testing.T) {
+	now := time.Unix(1_700_000_400, 0)
+	hour := (now.Unix() / 3600) * 3600
+	hourly := "syssumflow:upload:" + strconv.FormatInt(hour, 10) + ":" + strconv.FormatInt(hour+3600, 10)
+	r := &memRedis{
+		hgetall: map[string]map[string]string{
+			"sys:network:info": {
+				"eth1": `{"name":"eth1","desc":"ISP A","type":"wan","uuid":"wan-isp-a","ip_address":"203.0.113.1"}`,
+			},
+			"host:mac:AA:BB:CC:DD:EE:01": {
+				"mac":  "AA:BB:CC:DD:EE:01",
+				"name": "aurora",
+			},
+		},
+		gets: map[string]string{
+			"lastsyssumflow:upload": "syssumflow:upload:1:2",
+		},
+		zrev: map[string][]ZMember{
+			"syssumflow:upload:1:2": {
+				{Member: `{"device":"AA:BB:CC:DD:EE:01","destIP":"1.2.3.4","country":"NL"}`, Score: 1000},
+			},
+			hourly: {
+				{Member: `{"device":"AA:BB:CC:DD:EE:01","destIP":"1.2.3.4","country":"NL"}`, Score: 500},
+			},
+		},
+	}
+	c := &Collector{Hostname: "Firewalla", Redis: r}
+	cat, err := c.CollectCatalog(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cat.Dashboard.TopUpload; len(got) != 1 || got[0].Upload != 1000 {
+		t.Fatalf("want 24h only, got %+v", got)
+	}
+}
+
 func TestCollectDashboardSpeedtestAndDNS(t *testing.T) {
 	now := time.Unix(1_700_000_400, 0)
 	hourSlot := (now.Unix() / 3600) * 3600
