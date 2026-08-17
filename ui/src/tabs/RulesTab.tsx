@@ -119,7 +119,8 @@ export function RulesTab({
   const [exceptionsOpen, setExceptionsOpen] = useState(false)
   const [addAction, setAddAction] = useState<(typeof CREATE_ACTIONS)[number]['id']>('allow')
 
-  const lanOk = !!status?.paired && status.state === 'lan-ok'
+  const canLoad =
+    !!status?.paired && status.state !== 'lan-down' && status.state !== 'error' && status.state !== 'unpaired'
 
   const loadStatus = useCallback(async () => {
     const r = await api('/v1/fw-app/status')
@@ -146,12 +147,17 @@ export function RulesTab({
     try {
       const st = await loadStatus()
       setStatus(st)
-      if (!st.paired || st.state !== 'lan-ok') {
+      const ok =
+        st.paired && st.state !== 'lan-down' && st.state !== 'error' && st.state !== 'unpaired'
+      if (!ok) {
         setData(null)
         return
       }
       const rules = await loadRules()
       setData(rules)
+      // RefreshRules marks lan-ok; pick up status after first fetch.
+      const st2 = await loadStatus()
+      setStatus(st2)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
       setData(null)
@@ -165,7 +171,7 @@ export function RulesTab({
   }, [load])
 
   const refresh = async () => {
-    if (!lanOk || busy) return
+    if (!canLoad || busy) return
     setBusy(true)
     setError(null)
     try {
@@ -228,7 +234,7 @@ export function RulesTab({
   const allowPct = hub ? ((hub.allowHits / hitTotal) * 100) : 0
   const blockPct = hub ? ((hub.blockHits / hitTotal) * 100) : 0
 
-  if (!lanOk) {
+  if (!canLoad && !busy) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -241,9 +247,7 @@ export function RulesTab({
             <div className="space-y-1">
               <p className="text-sm font-medium">
                 {!status
-                  ? busy
-                    ? '…'
-                    : 'Control unavailable'
+                  ? 'Control unavailable'
                   : !status.paired
                     ? 'Not paired'
                     : status.state === 'lan-down'
@@ -256,6 +260,44 @@ export function RulesTab({
             </div>
             <Button type="button" size="sm" onClick={onOpenControl}>
               Open Control
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (busy && !show) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Shield className="size-5 text-muted-foreground" />
+          <h1 className="text-lg font-semibold tracking-tight">Rules</h1>
+        </div>
+        <Card className="gap-0 py-0">
+          <CardContent className="flex items-center gap-2 px-6 py-8 text-sm text-muted-foreground">
+            <RefreshCw className="size-3.5 animate-spin" />
+            Loading from Firewalla…
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!show) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Shield className="size-5 text-muted-foreground" />
+          <h1 className="text-lg font-semibold tracking-tight">Rules</h1>
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <Card className="gap-0 py-0">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 px-6 py-8">
+            <p className="text-sm text-muted-foreground">No rules loaded</p>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>
+              <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />
+              Retry
             </Button>
           </CardContent>
         </Card>

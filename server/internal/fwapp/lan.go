@@ -196,10 +196,20 @@ func (c *LANClient) SendTo(ctx context.Context, creds Creds, mtype string, data 
 }
 
 // FetchInit loads the fw-app init payload (rules + hosts + tags).
+// Lab init blobs are large and often take 30–90s; use a dedicated client.
 func (c *LANClient) FetchInit(ctx context.Context, creds Creds) (json.RawMessage, error) {
-	return c.Send(ctx, creds, MTypeInit, map[string]any{
+	long := *c
+	long.HTTP = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives:     true,
+			ResponseHeaderTimeout: 120 * time.Second,
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+		},
+	}
+	return long.Send(ctx, creds, MTypeInit, map[string]any{
 		"get":             "0.0.0.0",
-		"COMMAND_TIMEOUT": 15,
+		"COMMAND_TIMEOUT": 90,
 	})
 }
 
