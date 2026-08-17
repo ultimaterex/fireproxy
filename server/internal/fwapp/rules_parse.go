@@ -52,6 +52,28 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 		tagLabels[uid] = name
 		tagLabels[id] = name
 	}
+	// User-affiliated groups often store a UUID as the tag name; prefer the userTag display name.
+	for id, ut := range root.UserTags {
+		name := strings.TrimSpace(ut.Name)
+		if name == "" || looksLikeUUID(name) {
+			continue
+		}
+		af := strings.TrimSpace(ut.AffiliatedTag)
+		uid := strings.TrimSpace(ut.UID)
+		if uid == "" {
+			uid = id
+		}
+		if af != "" {
+			tagLabels[af] = name
+		}
+		tagLabels[uid] = name
+		tagLabels[id] = name
+	}
+	for id, name := range tagLabels {
+		if looksLikeUUID(name) {
+			tagLabels[id] = "Group " + id
+		}
+	}
 
 	rules := make([]Rule, 0, len(root.PolicyRules)+len(root.ScreentimeRules))
 	for _, pr := range root.PolicyRules {
@@ -102,6 +124,7 @@ type initRoot struct {
 	RuleGroups      []rawRuleGroup     `json:"ruleGroups"`
 	Hosts           []rawHost          `json:"hosts"`
 	Tags            map[string]rawTag  `json:"tags"`
+	UserTags        map[string]rawUserTag `json:"userTags"`
 }
 
 type rawPolicyRule struct {
@@ -145,6 +168,12 @@ type rawHost struct {
 type rawTag struct {
 	UID  string `json:"uid"`
 	Name string `json:"name"`
+}
+
+type rawUserTag struct {
+	UID           string `json:"uid"`
+	Name          string `json:"name"`
+	AffiliatedTag string `json:"affiliatedTag"`
 }
 
 type rawRuleGroup struct {
@@ -414,6 +443,26 @@ func parseDisabled(v flexString) bool {
 	default:
 		return false
 	}
+}
+
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	// 8-4-4-4-12
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func parseInt64(v flexString) int64 {

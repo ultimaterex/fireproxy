@@ -1289,6 +1289,8 @@ function App() {
           {tab === 'rules' && (
             <RulesTab
               mode={modes.rules}
+              devices={showDevices}
+              labelTag={labelTag}
               onOpenControl={() => {
                 setSettingsOpen('fw-app')
                 selectTab('settings')

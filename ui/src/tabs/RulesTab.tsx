@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  ChevronRight,
   MonitorSmartphone,
   Plus,
   RefreshCw,
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -30,7 +30,9 @@ import {
 import { anonymizeFwAppRules, createAnon } from '@/lib/anonymity'
 import { anonymitySalt, isAnonymityOn, subscribeAnonymity } from '@/lib/anonymity-on'
 import { api } from '@/lib/api'
+import { preferredName } from '@/lib/format'
 import type {
+  Device,
   FwAppExceptionRule,
   FwAppRule,
   FwAppRuleSection,
@@ -107,11 +109,23 @@ function metaLine(r: FwAppRule): string {
   return `${direction}, ${schedule}`
 }
 
+function looksLikeUUID(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim())
+}
+
+function scopeTagId(scope: FwAppScopeChip): string {
+  return scope.id.startsWith('tag:') ? scope.id.slice(4) : scope.id
+}
+
 export function RulesTab({
   mode,
+  devices = [],
+  labelTag,
   onOpenControl,
 }: {
   mode: ViewMode
+  devices?: Device[]
+  labelTag?: (id: string, preferType?: string) => string
   onOpenControl: () => void
 }) {
   const [anonOn, setAnonOn] = useState(isAnonymityOn)
@@ -222,6 +236,31 @@ export function RulesTab({
     return anon ? anonymizeFwAppRules(anon, data) : data
   }, [anon, data])
 
+  const devicesByMac = useMemo(() => {
+    const m = new Map<string, Device>()
+    for (const d of devices) m.set(d.mac.toUpperCase(), d)
+    return m
+  }, [devices])
+
+  const scopeLabel = useCallback(
+    (s: FwAppScopeChip): string => {
+      if (s.kind === 'device') {
+        const d = devicesByMac.get(s.id.toUpperCase())
+        if (d) return preferredName(d)
+      }
+      if (s.kind === 'tag' || s.kind === 'group') {
+        const id = scopeTagId(s)
+        const fromApp = labelTag?.(id, 'group')
+        if (fromApp && fromApp !== id && !looksLikeUUID(fromApp)) return fromApp
+        const fromUser = labelTag?.(id, 'user')
+        if (fromUser && fromUser !== id && !looksLikeUUID(fromUser)) return fromUser
+      }
+      if (looksLikeUUID(s.label)) return `Group ${scopeTagId(s)}`
+      return s.label
+    },
+    [devicesByMac, labelTag],
+  )
+
   const scopes = useMemo(() => {
     const all = show?.scopes ?? []
     return all.filter((s) => s.kind === 'all' || s.count > 0)
@@ -233,16 +272,16 @@ export function RulesTab({
       scopes
         .filter((s) => s.kind === 'tag' || s.kind === 'group')
         .slice()
-        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
-    [scopes],
+        .sort((a, b) => b.count - a.count || scopeLabel(a).localeCompare(scopeLabel(b))),
+    [scopes, scopeLabel],
   )
   const deviceScopes = useMemo(
     () =>
       scopes
         .filter((s) => s.kind === 'device')
         .slice()
-        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
-    [scopes],
+        .sort((a, b) => b.count - a.count || scopeLabel(a).localeCompare(scopeLabel(b))),
+    [scopes, scopeLabel],
   )
 
   const activeScope = scopeId ? scopes.find((s) => s.id === scopeId) : undefined
@@ -276,16 +315,16 @@ export function RulesTab({
   const filteredGroups = useMemo(
     () =>
       scopeQuery
-        ? groupScopes.filter((s) => s.label.toLowerCase().includes(scopeQuery))
+        ? groupScopes.filter((s) => scopeLabel(s).toLowerCase().includes(scopeQuery))
         : groupScopes,
-    [groupScopes, scopeQuery],
+    [groupScopes, scopeQuery, scopeLabel],
   )
   const filteredDevices = useMemo(
     () =>
       scopeQuery
-        ? deviceScopes.filter((s) => s.label.toLowerCase().includes(scopeQuery))
+        ? deviceScopes.filter((s) => scopeLabel(s).toLowerCase().includes(scopeQuery))
         : deviceScopes,
-    [deviceScopes, scopeQuery],
+    [deviceScopes, scopeQuery, scopeLabel],
   )
 
   const caps = show?.capabilities ?? {}
@@ -370,20 +409,47 @@ export function RulesTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Shield className="size-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold tracking-tight">Rules</h1>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => setSheet('options')}>
-            <Settings2 className="size-3.5" />
-            Options
-          </Button>
-          <Button type="button" size="sm" onClick={() => setSheet('add')}>
-            <Plus className="size-3.5" />
-            Add Rule
-          </Button>
+      {activeScope ? (
+        <Breadcrumb
+          items={[
+            { label: 'Rules', onClick: backToScopes },
+            { label: scopeLabel(activeScope) },
+          ]}
+          trailing={
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-8 w-36 sm:w-44"
+                placeholder="Search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <Button type="button" size="sm" variant="outline" onClick={() => setSheet('options')}>
+                <Settings2 className="size-3.5" />
+                Options
+              </Button>
+              <Button type="button" size="sm" onClick={() => setSheet('add')}>
+                <Plus className="size-3.5" />
+                Add Rule
+              </Button>
+            </div>
+          }
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Shield className="size-5 text-muted-foreground" />
+          <h1 className="text-lg font-semibold tracking-tight">Rules</h1>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setSheet('options')}>
+              <Settings2 className="size-3.5" />
+              Options
+            </Button>
+            <Button type="button" size="sm" onClick={() => setSheet('add')}>
+              <Plus className="size-3.5" />
+              Add Rule
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -451,94 +517,24 @@ export function RulesTab({
       </Card>
 
       {activeScope ? (
-        <div className="space-y-4">
-          <Breadcrumb
-            items={[
-              { label: 'Rules', onClick: backToScopes },
-              { label: activeScope.label },
-            ]}
-            trailing={
-              <Input
-                className="h-8 w-36 sm:w-44"
-                placeholder="Search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            }
-          />
-          {filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
-          ) : mode === 'list' ? (
-            <RulesTable bySection={bySection} />
-          ) : (
-            <RulesCompact bySection={bySection} />
-          )}
-        </div>
+        filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
+        ) : mode === 'list' ? (
+          <RulesTable bySection={bySection} />
+        ) : (
+          <RulesCompact bySection={bySection} />
+        )
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Input
-              className="h-8 max-w-xs"
-              placeholder="Search scopes"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-
-          {!allScope && filteredGroups.length === 0 && filteredDevices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No scopes</p>
-          ) : (
-            <Card className="gap-0 py-0">
-              <CardContent className="divide-y p-0">
-                {allScope && (!scopeQuery || 'all devices'.includes(scopeQuery)) ? (
-                  <ScopeRow
-                    icon={<Shield className="size-4 text-muted-foreground" />}
-                    label={allScope.label}
-                    count={allScope.count}
-                    onClick={() => openScope(allScope.id)}
-                    flush
-                  />
-                ) : null}
-
-                {filteredGroups.length > 0 ? (
-                  <>
-                    <div className="bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
-                      Groups
-                    </div>
-                    {filteredGroups.map((s) => (
-                      <ScopeRow
-                        key={s.id}
-                        icon={<Users className="size-4 text-muted-foreground" />}
-                        label={s.label}
-                        count={s.count}
-                        onClick={() => openScope(s.id)}
-                        flush
-                      />
-                    ))}
-                  </>
-                ) : null}
-
-                {filteredDevices.length > 0 ? (
-                  <>
-                    <div className="bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground">
-                      Devices
-                    </div>
-                    {filteredDevices.map((s) => (
-                      <ScopeRow
-                        key={s.id}
-                        icon={<MonitorSmartphone className="size-4 text-muted-foreground" />}
-                        label={s.label}
-                        count={s.count}
-                        onClick={() => openScope(s.id)}
-                        flush
-                      />
-                    ))}
-                  </>
-                ) : null}
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        <ScopePicker
+          mode={mode}
+          query={query}
+          onQuery={setQuery}
+          allScope={allScope}
+          groups={filteredGroups}
+          devices={filteredDevices}
+          scopeLabel={scopeLabel}
+          onOpen={openScope}
+        />
       )}
 
       {sheet === 'add' ? (
@@ -780,34 +776,197 @@ function AddRuleSheet({
   )
 }
 
-function ScopeRow({
+function ScopePicker({
+  mode,
+  query,
+  onQuery,
+  allScope,
+  groups,
+  devices,
+  scopeLabel,
+  onOpen,
+}: {
+  mode: ViewMode
+  query: string
+  onQuery: (q: string) => void
+  allScope: FwAppScopeChip | undefined
+  groups: FwAppScopeChip[]
+  devices: FwAppScopeChip[]
+  scopeLabel: (s: FwAppScopeChip) => string
+  onOpen: (id: string) => void
+}) {
+  const q = query.trim().toLowerCase()
+  const showAll = !!allScope && (!q || 'all devices'.includes(q))
+  const empty = !showAll && groups.length === 0 && devices.length === 0
+
+  return (
+    <div className="space-y-4">
+      <Input
+        className="h-8 max-w-xs"
+        placeholder="Search"
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+      />
+
+      {empty ? (
+        <p className="text-sm text-muted-foreground">No scopes</p>
+      ) : mode === 'list' ? (
+        <Card className="gap-0 py-0">
+          <CardHeader className="border-b py-4">
+            <CardTitle className="text-sm">Scopes</CardTitle>
+            <CardDescription>
+              {(showAll ? 1 : 0) + groups.length + devices.length}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Rules</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {showAll && allScope ? (
+                  <TableRow
+                    className="cursor-pointer"
+                    onClick={() => onOpen(allScope.id)}
+                  >
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Shield className="size-3.5 text-muted-foreground" />
+                        {scopeLabel(allScope)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">All</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {allScope.count}
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+                {groups.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer"
+                    onClick={() => onOpen(s.id)}
+                  >
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Users className="size-3.5 text-muted-foreground" />
+                        {scopeLabel(s)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">Group</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {s.count}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {devices.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer"
+                    onClick={() => onOpen(s.id)}
+                  >
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5">
+                        <MonitorSmartphone className="size-3.5 text-muted-foreground" />
+                        {scopeLabel(s)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">Device</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {s.count}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {showAll && allScope ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <ScopeCard
+                icon={<Shield className="size-4 shrink-0 text-muted-foreground" />}
+                label={scopeLabel(allScope)}
+                count={allScope.count}
+                hint="All"
+                onClick={() => onOpen(allScope.id)}
+              />
+            </div>
+          ) : null}
+          {groups.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Groups</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {groups.map((s) => (
+                  <ScopeCard
+                    key={s.id}
+                    icon={<Users className="size-4 shrink-0 text-muted-foreground" />}
+                    label={scopeLabel(s)}
+                    count={s.count}
+                    hint={scopeTagId(s)}
+                    onClick={() => onOpen(s.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {devices.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Devices</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {devices.map((s) => (
+                  <ScopeCard
+                    key={s.id}
+                    icon={
+                      <MonitorSmartphone className="size-4 shrink-0 text-muted-foreground" />
+                    }
+                    label={scopeLabel(s)}
+                    count={s.count}
+                    hint={s.id}
+                    onClick={() => onOpen(s.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ScopeCard({
   icon,
   label,
   count,
+  hint,
   onClick,
-  flush = false,
 }: {
   icon: ReactNode
   label: string
   count: number
+  hint: string
   onClick: () => void
-  flush?: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 text-left transition-colors hover:bg-muted/50',
-        flush ? 'px-4 py-3' : 'rounded-lg border px-4 py-3',
-      )}
-    >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">{label}</span>
-      <span className="font-mono text-sm tabular-nums text-muted-foreground">{count}</span>
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+    <button type="button" className="text-left" onClick={onClick}>
+      <Card className="h-full gap-2 py-4 transition-colors hover:bg-accent/40">
+        <CardHeader className="px-5">
+          <div className="flex items-baseline justify-between gap-2">
+            <CardTitle className="inline-flex min-w-0 items-center gap-1.5 text-base">
+              {icon}
+              <span className="truncate">{label}</span>
+            </CardTitle>
+            <span className="font-mono text-lg tabular-nums">{count}</span>
+          </div>
+          <CardDescription className="font-mono">{hint}</CardDescription>
+        </CardHeader>
+      </Card>
     </button>
   )
 }

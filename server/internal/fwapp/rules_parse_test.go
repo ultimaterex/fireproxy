@@ -82,6 +82,33 @@ func TestParseInitRules(t *testing.T) {
 	}
 }
 
+func TestParseInitRulesUserTagLabels(t *testing.T) {
+	raw := []byte(`{
+		"policyRules":[{"pid":"1","action":"block","type":"dns","target":"x.test","tag":["tag:2"],"hitCount":"1"}],
+		"exceptionRules":[],
+		"screentimeRules":[],
+		"hosts":[],
+		"tags":{"2":{"uid":"2","name":"cf2a3118-3736-4338-ab7e-fc888b0e90db"}},
+		"userTags":{"1":{"uid":"1","name":"Selby USA","affiliatedTag":"2"}}
+	}`)
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var label string
+	for _, c := range snap.Scopes {
+		if c.Kind == ScopeChipTag && c.ID == "tag:2" {
+			label = c.Label
+		}
+	}
+	if label != "Selby USA" {
+		t.Fatalf("want user name Selby USA, got %q scopes=%+v", label, snap.Scopes)
+	}
+	if snap.Rules[0].ScopeLabel != "Selby USA" {
+		t.Fatalf("rule ScopeLabel=%q", snap.Rules[0].ScopeLabel)
+	}
+}
+
 func TestParseInitRulesEnvelope(t *testing.T) {
 	raw := []byte(`{"mtype":"init","data":{"policyRules":[{"pid":"1","action":"allow","type":"dns","target":"a.test"}],"exceptionRules":[{"eid":"2","type":"ALARM_INTEL","if.target":"b.test"}],"screentimeRules":[],"hosts":[],"tags":{}}}`)
 	snap, err := ParseInitRules(raw)
