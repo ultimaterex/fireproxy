@@ -169,6 +169,8 @@ function hubFromRules(rules: FwAppRule[]): FwAppRulesHub {
   }
   return hub
 }
+
+function matchingLabel(r: FwAppRule): string {
   const kind = (r.type || '').trim()
   const target = (r.name || r.target || '').trim() || '—'
   if (!kind) return target
