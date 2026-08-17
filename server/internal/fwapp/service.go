@@ -354,12 +354,17 @@ func (s *Service) RefreshRules(ctx context.Context) (RulesSnapshot, error) {
 	s.state = "lan-ok"
 	s.lastErr = ""
 	s.mu.Unlock()
+	s.persistRulesCache(snap, at)
 	return cloneRulesSnapshot(snap), nil
 }
 
 // RulesSnapshot returns the cached Rules read model. ok is false when empty or never refreshed.
+// Falls back to a persisted SQLite snapshot so restarts don't require a full LAN init.
 func (s *Service) RulesSnapshot() (RulesSnapshot, time.Time, bool) {
-	return s.rules.Get()
+	if snap, at, ok := s.rules.Get(); ok {
+		return snap, at, true
+	}
+	return s.hydrateRulesCacheFromStore()
 }
 
 func (s *Service) fetchInit(ctx context.Context, creds Creds) (json.RawMessage, error) {
@@ -696,6 +701,7 @@ func (s *Service) Unpair() error {
 		return err
 	}
 	s.rules.Clear()
+	s.clearPersistedRulesCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""

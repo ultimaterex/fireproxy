@@ -170,21 +170,25 @@ export function RulesTab({
     void load()
   }, [load])
 
-  const refresh = async () => {
+  const refresh = async (force = false) => {
     if (!canLoad || busy) return
     setBusy(true)
     setError(null)
     try {
-      const r = await api('/v1/fw-app/rules/refresh', { method: 'POST' })
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          error?: string
-          status?: FwAppStatus
+      if (force) {
+        const r = await api('/v1/fw-app/rules/refresh', { method: 'POST' })
+        if (!r.ok) {
+          const body = (await r.json().catch(() => ({}))) as {
+            error?: string
+            status?: FwAppStatus
+          }
+          if (body.status) setStatus(body.status)
+          throw new Error(body.error || `refresh ${r.status}`)
         }
-        if (body.status) setStatus(body.status)
-        throw new Error(body.error || `refresh ${r.status}`)
+        setData((await r.json()) as FwAppRulesView)
+      } else {
+        setData(await loadRules())
       }
-      setData((await r.json()) as FwAppRulesView)
       const st = await loadStatus()
       setStatus(st)
     } catch (e) {
@@ -422,6 +426,8 @@ export function RulesTab({
         <OptionsSheet
           caps={caps}
           exceptions={exceptions}
+          busy={busy}
+          onSync={() => void refresh(true)}
           onClose={() => setSheet(null)}
         />
       ) : null}
@@ -650,15 +656,26 @@ function AddRuleSheet({
 function OptionsSheet({
   caps,
   exceptions,
+  busy,
+  onSync,
   onClose,
 }: {
   caps: Record<string, boolean>
   exceptions: FwAppExceptionRule[]
+  busy: boolean
+  onSync: () => void
   onClose: () => void
 }) {
   return (
     <SheetShell title="Options" onClose={onClose}>
       <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm">Sync from Firewalla</span>
+          <Button type="button" size="xs" variant="outline" disabled={busy} onClick={onSync}>
+            <RefreshCw className={cn('size-3', busy && 'animate-spin')} />
+            Sync
+          </Button>
+        </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm">Reset hits</span>
           <Button type="button" size="xs" variant="outline" disabled>
