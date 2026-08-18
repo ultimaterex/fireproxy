@@ -247,14 +247,33 @@ export type FwAppRulesHub = {
 
 export type FwAppRulesCapabilities = Record<string, boolean>
 
+export type FwAppCatalogItem = {
+  id: string
+  label?: string
+}
+
+export type FwAppRuleCatalog = {
+  apps?: FwAppCatalogItem[]
+}
+
 export type FwAppCreateRuleRequest = {
-  action: 'allow' | 'block' | 'timelimit' | 'disturb'
+  action: 'allow' | 'block'
   type?: string
   target: string
-  scope: string[]
+  scope?: string[]
   direction?: string
   notes?: string
   name?: string
+}
+
+export type FwAppHostPolicy = {
+  mac: string
+  label?: string
+  monitor: boolean
+  isolated: boolean
+  emergency?: boolean
+  note?: string
+  tags?: string[]
 }
 
 export type FwAppRulesView = {
@@ -263,6 +282,7 @@ export type FwAppRulesView = {
   dapRules?: FwAppRule[]
   scopes: FwAppScopeChip[]
   exceptions: FwAppExceptionRule[]
+  catalog?: FwAppRuleCatalog
   capabilities: FwAppRulesCapabilities
   refreshed_at?: string
 }

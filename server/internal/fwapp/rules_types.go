@@ -79,6 +79,17 @@ type RulesHub struct {
 	BlockCount int   `json:"blockCount"`
 }
 
+// CatalogItem is a selectable id from init (apps, etc).
+type CatalogItem struct {
+	ID    string `json:"id"`
+	Label string `json:"label,omitempty"`
+}
+
+// RuleCatalog is init-backed pickers for Add Rule (not hardcoded app/target lists).
+type RuleCatalog struct {
+	Apps []CatalogItem `json:"apps,omitempty"`
+}
+
 // RulesSnapshot is the normalized init-backed Rules read model.
 type RulesSnapshot struct {
 	Hub        RulesHub        `json:"hub"`
@@ -86,4 +97,6 @@ type RulesSnapshot struct {
 	DapRules   []Rule          `json:"dapRules"`
 	Exceptions []ExceptionRule `json:"exceptions"`
 	Scopes     []ScopeChip     `json:"scopes"`
+	Catalog    RuleCatalog     `json:"catalog"`
+	Hosts      []HostPolicy    `json:"hosts,omitempty"`
 }

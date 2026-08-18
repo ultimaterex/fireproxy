@@ -207,7 +207,52 @@ func (s *Server) postFWAppRulesResetHits(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) postFWAppRulesEmergency(w http.ResponseWriter, r *http.Request) {
-	s.writeFWAppRulesNotImplemented(w, "rule emergency not available")
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !fwapp.DefaultRulesCapabilities()["rule.emergency"] {
+		s.writeFWAppRulesNotImplemented(w, "rule emergency not available")
+		return
+	}
+	var body struct {
+		Enabled      *bool `json:"enabled"`
+		ExpireMinute int   `json:"expireMinute"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if body.Enabled == nil {
+		http.Error(w, "enabled required", http.StatusBadRequest)
+		return
+	}
+	kind, actor := s.controlActor(r)
+	err := svc.SetEmergency(r.Context(), *body.Enabled, body.ExpireMinute)
+	summary := "off"
+	if *body.Enabled {
+		summary = "on"
+	}
+	s.controlHist().Record(controlhist.Outcome{
+		Scheme:    controlhist.SchemeFirewalla,
+		Action:    controlhist.ActionRuleEmergency,
+		Target:    "0.0.0.0",
+		Summary:   summary,
+		ActorKind: kind,
+		Actor:     actor,
+		After:     map[string]any{"enabled": *body.Enabled, "expireMinute": body.ExpireMinute},
+		Err:       err,
+	})
+	if err != nil {
+		writeFWAppRulesErr(w, svc, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"enabled": *body.Enabled,
+		"status":  svc.Status(),
+	})
 }
 
 func (s *Server) postFWAppRulesDiagnose(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +331,7 @@ func fwAppRulesResponse(snap fwapp.RulesSnapshot, at time.Time) map[string]any {
 		"dapRules":     dap,
 		"scopes":       scopes,
 		"exceptions":   exceptions,
+		"catalog":      snap.Catalog,
 		"capabilities": fwapp.DefaultRulesCapabilities(),
 		"refreshed_at": refreshedAt,
 	}

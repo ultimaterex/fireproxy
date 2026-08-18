@@ -132,6 +132,115 @@ func TestCreateRuleAllowBlock(t *testing.T) {
 	}
 }
 
+func TestNormalizeCreateRule(t *testing.T) {
+	all, err := normalizeCreateRule(CreateRuleRequest{Action: "block", Type: "ip", Target: "203.0.113.9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Type != "ip" || all.Target != "203.0.113.9" || all.Scope != nil || all.Tag != nil {
+		t.Fatalf("all devices: %+v", all)
+	}
+
+	cidr, err := normalizeCreateRule(CreateRuleRequest{Action: "block", Type: "ip", Target: "203.0.113.0/24"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cidr.Target != "203.0.113.0/24" {
+		t.Fatalf("cidr: %+v", cidr)
+	}
+
+	tag, err := normalizeCreateRule(CreateRuleRequest{
+		Action: "allow", Type: "category", Target: "p2p", Scope: []string{"tag:51"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag.Type != "category" || len(tag.Tag) != 1 || tag.Tag[0] != "tag:51" || tag.Scope != nil {
+		t.Fatalf("tag: %+v", tag)
+	}
+
+	mac, err := normalizeCreateRule(CreateRuleRequest{
+		Action: "block", Type: "dns", Target: "example.test", Scope: []string{"50-ba-02-ca-d4-8a"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mac.Scope) != 1 || mac.Scope[0] != "50:BA:02:CA:D4:8A" || mac.Tag != nil {
+		t.Fatalf("mac: %+v", mac)
+	}
+
+	cc, err := normalizeCreateRule(CreateRuleRequest{Action: "block", Type: "country", Target: "cn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc.Target != "CN" {
+		t.Fatalf("country: %+v", cc)
+	}
+
+	dev, err := normalizeCreateRule(CreateRuleRequest{Action: "block", Type: "mac", Target: "50-ba-02-ca-d4-8a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dev.Type != "mac" || dev.Target != "50:BA:02:CA:D4:8A" {
+		t.Fatalf("device: %+v", dev)
+	}
+
+	if _, err := normalizeCreateRule(CreateRuleRequest{Action: "block", Type: "app", Target: "youtube"}); err == nil {
+		t.Fatal("app type should be rejected until captured")
+	}
+	if _, err := normalizeCreateRule(CreateRuleRequest{
+		Action: "block", Type: "dns", Target: "x.test", Scope: []string{"tag:1", "50:BA:02:CA:D4:8A"},
+	}); err == nil {
+		t.Fatal("mixed tag+mac should be rejected")
+	}
+}
+
+func TestCreateRuleAllDevicesAndTag(t *testing.T) {
+	svc, sent := pairedMutateService(t)
+	blockEnv := readCmdFixture(t, "create_block.cmd.json")
+	initRaw, err := os.ReadFile(filepath.Join("testdata", "init_rules_min.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	svc.SetSendFn(func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		*sent = append(*sent, sentCmd{item: data["item"].(string), data: data, target: target})
+		return cmdFixtureResponseEnvelope(t, blockEnv), nil
+	})
+
+	if _, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		Action: "block", Type: "category", Target: "porn",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	val := (*sent)[0].data["value"].(map[string]any)
+	if _, ok := val["scope"]; ok {
+		t.Fatalf("all-devices should omit scope: %+v", val)
+	}
+	if _, ok := val["tag"]; ok {
+		t.Fatalf("all-devices should omit tag: %+v", val)
+	}
+	if val["type"] != "category" || val["target"] != "porn" {
+		t.Fatalf("value %+v", val)
+	}
+
+	if _, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		Action: "block", Type: "country", Target: "IR", Scope: []string{"tag:9"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	val = (*sent)[1].data["value"].(map[string]any)
+	if _, ok := val["scope"]; ok {
+		t.Fatalf("tag scope should omit mac scope: %+v", val)
+	}
+	tags, _ := val["tag"].([]string)
+	if len(tags) != 1 || tags[0] != "tag:9" {
+		t.Fatalf("tag %+v", val["tag"])
+	}
+}
+
 func TestDisableEnableDeleteRule(t *testing.T) {
 	svc, sent := pairedMutateService(t)
 	disableEnv := readCmdFixture(t, "disable.cmd.json")

@@ -92,7 +92,14 @@
       "name": "Lab Phone",
       "bname": "lab-phone",
       "ip": "192.0.2.10",
-      "tags": ["10"]
+      "tags": ["10"],
+      "policy": {
+        "monitor": true,
+        "isolation": {"external": true, "internal": false},
+        "acl": true,
+        "_note": "lab note",
+        "tags": ["10"]
+      }
     },
     {
       "mac": "AA:BB:CC:DD:EE:02",
@@ -107,5 +114,9 @@
       "uid": "10",
       "name": "Kids"
     }
+  },
+  "appConfs": {
+    "youtube": {"features": {"acl": true}},
+    "netflix": {"features": {"acl": true}}
   }
 }

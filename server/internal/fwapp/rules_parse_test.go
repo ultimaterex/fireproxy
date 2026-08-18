@@ -83,6 +83,37 @@ func TestParseInitRules(t *testing.T) {
 	if !sawTag {
 		t.Fatalf("expected tag ScopeChip for Kids; scopes=%+v", snap.Scopes)
 	}
+	if len(snap.Catalog.Apps) != 2 {
+		t.Fatalf("catalog apps=%+v", snap.Catalog.Apps)
+	}
+	ids := map[string]bool{}
+	for _, a := range snap.Catalog.Apps {
+		ids[a.ID] = true
+	}
+	if !ids["youtube"] || !ids["netflix"] {
+		t.Fatalf("catalog apps=%+v", snap.Catalog.Apps)
+	}
+	var phone HostPolicy
+	for _, h := range snap.Hosts {
+		if h.MAC == "AA:BB:CC:DD:EE:01" {
+			phone = h
+		}
+	}
+	if !phone.Monitor || !phone.Isolated || phone.Emergency || phone.Note != "lab note" {
+		t.Fatalf("host policy %+v hosts=%+v", phone, snap.Hosts)
+	}
+	if len(phone.Tags) != 1 || phone.Tags[0] != "10" {
+		t.Fatalf("host tags %+v", phone.Tags)
+	}
+	var laptop HostPolicy
+	for _, h := range snap.Hosts {
+		if h.MAC == "AA:BB:CC:DD:EE:02" {
+			laptop = h
+		}
+	}
+	if !laptop.Monitor || laptop.Isolated || laptop.Emergency {
+		t.Fatalf("default host policy %+v", laptop)
+	}
 }
 
 func TestParseInitRulesUserTagLabels(t *testing.T) {

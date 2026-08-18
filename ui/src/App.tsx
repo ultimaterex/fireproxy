@@ -974,6 +974,8 @@ function App() {
               }
               port={portIndex.get(selectedDevice.mac.toUpperCase())}
               groupLabel={groupNameFor(selectedDevice, labelTag)}
+              tags={showTags}
+              labelTag={labelTag}
               unifi={unifiMod}
               domainSuffix={showBox?.local_domain_suffix}
               onRenamed={(mac, name) => {
@@ -1000,6 +1002,14 @@ function App() {
                 setDevices((prev) =>
                   prev.map((d) =>
                     d.mac.toUpperCase() === key ? { ...d, local_domain: hostname || undefined } : d,
+                  ),
+                )
+              }}
+              onGroupUpdated={(mac, tagIds) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, tag_ids: tagIds } : d,
                   ),
                 )
               }}
@@ -1290,6 +1300,7 @@ function App() {
             <RulesTab
               mode={modes.rules}
               devices={showDevices}
+              tags={showTags}
               labelTag={labelTag}
               onOpenControl={() => {
                 setSettingsOpen('fw-app')

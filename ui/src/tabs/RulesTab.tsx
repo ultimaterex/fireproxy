@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   MonitorSmartphone,
   Plus,
   RefreshCw,
@@ -10,6 +12,7 @@ import {
 import { DropdownMenu } from 'radix-ui'
 
 import { Breadcrumb } from '@/components/Breadcrumb'
+import { Flag } from '@/components/Flag'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,6 +24,13 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -31,9 +41,11 @@ import {
 import { anonymizeFwAppRules, createAnon } from '@/lib/anonymity'
 import { anonymitySalt, isAnonymityOn, subscribeAnonymity } from '@/lib/anonymity-on'
 import { api } from '@/lib/api'
+import { countries, countryLabel } from '@/lib/countries'
 import { preferredName } from '@/lib/format'
 import type {
   Device,
+  FwAppCatalogItem,
   FwAppCreateRuleRequest,
   FwAppExceptionRule,
   FwAppRule,
@@ -42,6 +54,7 @@ import type {
   FwAppRulesView,
   FwAppScopeChip,
   FwAppStatus,
+  Tag,
   ViewMode,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -57,13 +70,68 @@ const SECTIONS: { id: FwAppRuleSection; label: string }[] = [
 const CREATE_ACTIONS = [
   { id: 'allow', label: 'Allow', cap: 'rule.create.allow' },
   { id: 'block', label: 'Block', cap: 'rule.create.block' },
-  { id: 'timelimit', label: 'Time Limit', cap: 'rule.create.timelimit' },
-  { id: 'disturb', label: 'Disturb', cap: 'rule.create.disturb' },
 ] as const
+
+const MATCH_KINDS = [
+  { id: 'dns', label: 'Domain', type: 'dns', ready: true },
+  { id: 'ip', label: 'IP Address', type: 'ip', ready: true },
+  { id: 'iprange', label: 'IP Address Range', type: 'ip', ready: true },
+  { id: 'country', label: 'Region', type: 'country', ready: true },
+  { id: 'category', label: 'Category', type: 'category', ready: true },
+  { id: 'app', label: 'App', type: 'app', ready: false },
+  { id: 'targetlist', label: 'Target List', type: 'category', ready: false },
+  { id: 'remotePort', label: 'Remote Port', type: 'remotePort', ready: false },
+  { id: 'localPort', label: 'Local Port', type: 'localPort', ready: false },
+  { id: 'device', label: 'Device', type: 'mac', ready: true },
+  { id: 'intranet', label: 'Local Network', type: 'intranet', ready: false },
+  { id: 'internet', label: 'Internet', type: 'internet', ready: false },
+] as const
+
+const MATCH_GROUPS: { label: string; ids: (typeof MATCH_KINDS)[number]['id'][] }[] = [
+  { label: 'App', ids: ['app', 'targetlist'] },
+  { label: 'Network', ids: ['dns', 'ip', 'iprange', 'remotePort', 'localPort', 'country'] },
+  { label: 'Device', ids: ['device', 'intranet', 'internet'] },
+  { label: 'Category', ids: ['category'] },
+]
+
+const SYSTEM_CATEGORIES = [
+  { id: 'games', label: 'All Gaming Sites' },
+  { id: 'social', label: 'All Social Sites' },
+  { id: 'av', label: 'All Video Sites' },
+  { id: 'porn', label: 'All Porn Sites' },
+  { id: 'p2p', label: 'All P2P Sites' },
+  { id: 'gamble', label: 'All Gambling Sites' },
+  { id: 'shopping', label: 'All Shopping Sites' },
+  { id: 'vpn', label: 'All VPN Sites' },
+  { id: 'violence', label: 'All Violence Sites' },
+  { id: 'drugs', label: 'All Drugs & Alcohol Sites' },
+] as const
+
+const APP_LABELS: Record<string, string> = {
+  amznvideo: 'Amazon Prime',
+  discord: 'Discord',
+  disneyplus: 'Disney+',
+  facebook: 'Facebook',
+  fortnite: 'Fortnite',
+  googlemeet: 'Google Meet',
+  hulu: 'Hulu',
+  instagram: 'Instagram',
+  lol: 'League of Legends',
+  msteams: 'Microsoft Teams',
+  netflix: 'Netflix',
+  roblox: 'Roblox',
+  snapchat: 'Snapchat',
+  tiktok: 'TikTok',
+  twitch: 'Twitch',
+  twitter: 'X',
+  webex: 'Webex',
+  youtube: 'YouTube',
+  zoom: 'Zoom',
+}
 
 const DAP_SCOPE_ID = '__dap__'
 
-type Sheet = 'add' | 'exceptions' | null
+type Sheet = 'add' | 'exceptions' | 'emergency' | null
 
 function ruleMatchesScope(rule: FwAppRule, chip: FwAppScopeChip | undefined): boolean {
   if (!chip || chip.kind === 'all' || chip.id === 'all') return true
@@ -180,11 +248,13 @@ function matchingLabel(r: FwAppRule): string {
 export function RulesTab({
   mode,
   devices = [],
+  tags = [],
   labelTag,
   onOpenControl,
 }: {
   mode: ViewMode
   devices?: Device[]
+  tags?: Tag[]
   labelTag?: (id: string, preferType?: string) => string
   onOpenControl: () => void
 }) {
@@ -461,6 +531,7 @@ export function RulesTab({
       onAdd={() => setSheet('add')}
       onExceptions={() => setSheet('exceptions')}
       onActiveProtect={() => openScope(DAP_SCOPE_ID)}
+      onEmergency={() => setSheet('emergency')}
     />
   )
 
@@ -531,6 +602,46 @@ export function RulesTab({
             </Button>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  if (sheet === 'add') {
+    return (
+      <div className="space-y-4">
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
+        <AddRuleSheet
+          action={addAction}
+          onAction={setAddAction}
+          caps={caps}
+          devices={devices}
+          tags={tags}
+          apps={show.catalog?.apps ?? []}
+          labelTag={labelTag}
+          scopeLabel={
+            activeScope
+              ? scopeId === DAP_SCOPE_ID
+                ? 'Active Protect'
+                : resolveScopeLabel(activeScope)
+              : undefined
+          }
+          defaultOn={
+            activeScope?.kind === 'device'
+              ? activeScope.id.toUpperCase()
+              : activeScope?.kind === 'tag' || activeScope?.kind === 'group'
+                ? (activeScope.id.startsWith('tag:') ? activeScope.id : `tag:${activeScope.id}`)
+                : '__all__'
+          }
+          busy={busy}
+          onClose={() => setSheet(null)}
+          onCreated={async (scopeId) => {
+            setSheet(null)
+            await load()
+            if (scopeId && scopeId !== '__all__') openScope(scopeId)
+            flash('Created')
+          }}
+        />
       </div>
     )
   }
@@ -653,26 +764,6 @@ export function RulesTab({
         />
       )}
 
-      {sheet === 'add' ? (
-        <AddRuleSheet
-          action={addAction}
-          onAction={setAddAction}
-          caps={caps}
-          devices={deviceScopes}
-          scopeLabel={resolveScopeLabel}
-          defaultMac={
-            activeScope?.kind === 'device' ? activeScope.id : undefined
-          }
-          busy={busy}
-          onClose={() => setSheet(null)}
-          onCreated={async (mac) => {
-            setSheet(null)
-            await load()
-            if (mac) openScope(mac.toUpperCase())
-            flash('Created')
-          }}
-        />
-      ) : null}
       {sheet === 'exceptions' ? (
         <SheetShell title="Exceptions" onClose={() => setSheet(null)}>
           {exceptions.length === 0 ? (
@@ -681,6 +772,16 @@ export function RulesTab({
             <ExceptionsList rows={exceptions} />
           )}
         </SheetShell>
+      ) : null}
+      {sheet === 'emergency' ? (
+        <EmergencySheet
+          busy={busy}
+          onClose={() => setSheet(null)}
+          onDone={async (enabled) => {
+            setSheet(null)
+            flash(enabled ? 'Emergency on' : 'Emergency off')
+          }}
+        />
       ) : null}
       {selectedRule ? (
         <RuleDetailSheet
@@ -706,6 +807,7 @@ function ActionsMenu({
   onAdd,
   onExceptions,
   onActiveProtect,
+  onEmergency,
 }: {
   caps: Record<string, boolean>
   exceptionCount: number
@@ -713,6 +815,7 @@ function ActionsMenu({
   onAdd: () => void
   onExceptions: () => void
   onActiveProtect: () => void
+  onEmergency: () => void
 }) {
   return (
     <div className="flex items-center">
@@ -758,12 +861,21 @@ function ActionsMenu({
             >
               {caps['rule.reset_hits'] ? 'Reset hits' : 'Reset hits · soon'}
             </DropdownMenu.Item>
-            <DropdownMenu.Item
-              className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
-              disabled
-            >
-              {caps['rule.emergency'] ? 'Emergency Access' : 'Emergency · soon'}
-            </DropdownMenu.Item>
+            {caps['rule.emergency'] ? (
+              <DropdownMenu.Item
+                className="cursor-pointer rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-muted"
+                onSelect={onEmergency}
+              >
+                Emergency Access
+              </DropdownMenu.Item>
+            ) : (
+              <DropdownMenu.Item
+                className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
+                disabled
+              >
+                Emergency · soon
+              </DropdownMenu.Item>
+            )}
             <DropdownMenu.Item
               className="cursor-pointer rounded-sm px-2 py-1.5 text-muted-foreground outline-none data-[highlighted]:bg-muted"
               disabled
@@ -918,13 +1030,70 @@ function ExceptionsList({ rows }: { rows: FwAppExceptionRule[] }) {
   )
 }
 
+function EmergencySheet({
+  busy,
+  onClose,
+  onDone,
+}: {
+  busy: boolean
+  onClose: () => void
+  onDone: (enabled: boolean) => Promise<void>
+}) {
+  const [err, setErr] = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
+
+  const apply = async (enabled: boolean) => {
+    if (working || busy) return
+    setWorking(true)
+    setErr(null)
+    try {
+      const r = await api('/v1/fw-app/rules/emergency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error || `emergency ${r.status}`)
+      }
+      await onDone(enabled)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <SheetShell title="Emergency Access" onClose={onClose}>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" disabled={working || busy} onClick={() => void apply(true)}>
+          Enable
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={working || busy}
+          onClick={() => void apply(false)}
+        >
+          Disable
+        </Button>
+      </div>
+      {err ? <p className="mt-3 text-sm text-destructive">{err}</p> : null}
+    </SheetShell>
+  )
+}
+
 function SheetShell({
   title,
   onClose,
+  onBack,
   children,
 }: {
   title: string
   onClose: () => void
+  onBack?: () => void
   children: ReactNode
 }) {
   return (
@@ -937,13 +1106,58 @@ function SheetShell({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b px-6 py-4">
-          <span className="text-base font-medium">{title}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            {onBack ? (
+              <Button type="button" size="xs" variant="ghost" onClick={onBack} aria-label="Back">
+                <ChevronLeft className="size-4" />
+              </Button>
+            ) : null}
+            <span className="truncate text-base font-medium">{title}</span>
+          </div>
           <Button type="button" size="xs" variant="outline" onClick={onClose}>
             Close
           </Button>
         </div>
         <div className="min-h-0 overflow-y-auto px-6 py-4">{children}</div>
       </div>
+    </div>
+  )
+}
+
+function AddRuleFrame({
+  screen,
+  scopeLabel,
+  onClose,
+  onForm,
+  children,
+}: {
+  screen: 'form' | 'match' | 'on' | 'country' | 'deviceTarget'
+  scopeLabel?: string
+  onClose: () => void
+  onForm: () => void
+  children: ReactNode
+}) {
+  const extra =
+    screen === 'match'
+      ? 'Matching'
+      : screen === 'on'
+        ? 'On'
+        : screen === 'country'
+          ? 'Region'
+          : screen === 'deviceTarget'
+            ? 'Device'
+            : null
+  return (
+    <div className="space-y-4">
+      <Breadcrumb
+        items={[
+          { label: 'Rules', onClick: onClose },
+          ...(scopeLabel ? [{ label: scopeLabel, onClick: onClose }] : []),
+          extra ? { label: 'Add Rule', onClick: onForm } : { label: 'Add Rule' },
+          ...(extra ? [{ label: extra }] : []),
+        ]}
+      />
+      {children}
     </div>
   )
 }
@@ -1088,8 +1302,11 @@ function AddRuleSheet({
   onAction,
   caps,
   devices,
+  tags,
+  apps,
+  labelTag,
   scopeLabel,
-  defaultMac,
+  defaultOn,
   busy,
   onClose,
   onCreated,
@@ -1097,18 +1314,22 @@ function AddRuleSheet({
   action: (typeof CREATE_ACTIONS)[number]['id']
   onAction: (id: (typeof CREATE_ACTIONS)[number]['id']) => void
   caps: Record<string, boolean>
-  devices: FwAppScopeChip[]
-  scopeLabel: (s: FwAppScopeChip) => string
-  defaultMac?: string
+  devices: Device[]
+  tags: Tag[]
+  apps: FwAppCatalogItem[]
+  labelTag?: (id: string, preferType?: string) => string
+  scopeLabel?: string
+  defaultOn: string
   busy: boolean
   onClose: () => void
-  onCreated: (mac?: string) => Promise<void>
+  onCreated: (scopeId: string) => Promise<void>
 }) {
   const selected = CREATE_ACTIONS.find((a) => a.id === action)!
   const ready = !!caps[selected.cap]
   const [name, setName] = useState('')
+  const [matchId, setMatchId] = useState<(typeof MATCH_KINDS)[number]['id']>('dns')
   const [target, setTarget] = useState('')
-  const [mac, setMac] = useState(defaultMac ?? '')
+  const [on, setOn] = useState(defaultOn || '__all__')
   const [customMac, setCustomMac] = useState('')
   const [notes, setNotes] = useState('')
   const [direction, setDirection] = useState(
@@ -1116,17 +1337,56 @@ function AddRuleSheet({
   )
   const [err, setErr] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
+  const [screen, setScreen] = useState<'form' | 'match' | 'on' | 'country' | 'deviceTarget'>('form')
+  const [onQuery, setOnQuery] = useState('')
+  const [pickerQuery, setPickerQuery] = useState('')
+
+  const match = MATCH_KINDS.find((m) => m.id === matchId) ?? MATCH_KINDS[0]
 
   useEffect(() => {
     setDirection(action === 'allow' ? 'outbound' : 'bidirection')
   }, [action])
 
-  const scopeMac = (mac === '__custom__' ? customMac : mac).trim()
+  const userTags = useMemo(
+    () => tags.filter((t) => t.type === 'user').slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [tags],
+  )
+  const affiliated = useMemo(
+    () => new Set(userTags.map((t) => t.affiliated_tag).filter(Boolean) as string[]),
+    [userTags],
+  )
+  const groupTags = useMemo(
+    () =>
+      tags
+        .filter((t) => (!t.type || t.type === 'group') && !affiliated.has(t.id))
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [tags, affiliated],
+  )
+  const deviceRows = useMemo(
+    () =>
+      devices
+        .slice()
+        .sort((a, b) => preferredName(a).localeCompare(preferredName(b))),
+    [devices],
+  )
+  const appRows = useMemo(
+    () =>
+      apps
+        .slice()
+        .sort((a, b) =>
+          (APP_LABELS[a.id] ?? a.label ?? a.id).localeCompare(APP_LABELS[b.id] ?? b.label ?? b.id),
+        ),
+    [apps],
+  )
+
+  const scopeValue = on === '__custom__' ? customMac.trim() : on
+  const matchReady = match.ready
   const canSubmit =
     ready &&
-    (action === 'allow' || action === 'block') &&
+    matchReady &&
     !!target.trim() &&
-    !!scopeMac &&
+    !!scopeValue &&
     !working &&
     !busy
 
@@ -1134,11 +1394,13 @@ function AddRuleSheet({
     if (!canSubmit) return
     setWorking(true)
     setErr(null)
+    const scope =
+      scopeValue === '__all__' ? [] : [scopeValue]
     const body: FwAppCreateRuleRequest = {
-      action: action as 'allow' | 'block',
-      type: 'dns',
+      action,
+      type: match.type,
       target: target.trim(),
-      scope: [scopeMac],
+      scope,
       direction,
       notes: notes.trim() || undefined,
       name: name.trim() || undefined,
@@ -1153,7 +1415,7 @@ function AddRuleSheet({
         const res = (await r.json().catch(() => ({}))) as { error?: string }
         throw new Error(res.error || `create ${r.status}`)
       }
-      await onCreated(scopeMac)
+      await onCreated(scopeValue === '__custom__' ? customMac.trim().toUpperCase() : scopeValue)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'failed')
     } finally {
@@ -1161,110 +1423,529 @@ function AddRuleSheet({
     }
   }
 
-  return (
-    <SheetShell title="Add Rule" onClose={onClose}>
+  const matchPlaceholder =
+    match.id === 'ip'
+      ? '203.0.113.10'
+      : match.id === 'iprange'
+        ? '203.0.113.0/24'
+        : match.id === 'country'
+          ? 'US'
+          : 'example.com'
+
+  const tagLabel = (t: Tag, prefer: 'group' | 'user') => {
+    const fromApp = labelTag?.(t.id, prefer)
+    if (fromApp && fromApp !== t.id && !looksLikeUUID(fromApp)) return fromApp
+    if (t.name && !looksLikeUUID(t.name)) return t.name
+    return t.name || t.id
+  }
+
+  const countryRows = useMemo(() => countries(), [])
+
+  const pickMatch = (id: (typeof MATCH_KINDS)[number]['id']) => {
+    const next = MATCH_KINDS.find((m) => m.id === id)
+    if (!next) return
+    setMatchId(next.id)
+    setPickerQuery('')
+    if (next.id === 'category') {
+      setTarget(SYSTEM_CATEGORIES[0].id)
+      setScreen('form')
+      return
+    }
+    if (next.id === 'app') {
+      setTarget(appRows[0]?.id ?? '')
+      setScreen('form')
+      return
+    }
+    setTarget('')
+    if (next.id === 'country') {
+      setScreen('country')
+      return
+    }
+    if (next.id === 'device') {
+      setScreen('deviceTarget')
+      return
+    }
+    setScreen('form')
+  }
+
+  const onLabel = (() => {
+    if (on === '__all__') return 'All Devices'
+    if (on === '__custom__') return customMac.trim() || 'Other MAC'
+    if (on.startsWith('tag:')) {
+      const id = on.slice(4)
+      const user = userTags.find((t) => (t.affiliated_tag || t.id) === id)
+      if (user) return tagLabel(user, 'user')
+      const group = groupTags.find((t) => t.id === id)
+      if (group) return tagLabel(group, 'group')
+      return id
+    }
+    const d = deviceRows.find((x) => x.mac.toUpperCase() === on)
+    return d ? preferredName(d) : on
+  })()
+
+  const q = onQuery.trim().toLowerCase()
+  const filteredUsers = q
+    ? userTags.filter((t) => tagLabel(t, 'user').toLowerCase().includes(q))
+    : userTags
+  const filteredGroups = q
+    ? groupTags.filter((t) => tagLabel(t, 'group').toLowerCase().includes(q))
+    : groupTags
+  const filteredDevices = q
+    ? deviceRows.filter((d) => preferredName(d).toLowerCase().includes(q) || d.mac.toLowerCase().includes(q))
+    : deviceRows
+  const showAllOn = !q || 'all devices'.includes(q)
+  const showCustomOn = !q || 'other mac'.includes(q)
+
+  const pickOn = (value: string) => {
+    setOn(value)
+    setScreen('form')
+  }
+
+  const pq = pickerQuery.trim().toLowerCase()
+  const filteredCountries = pq
+    ? countryRows.filter(
+        (c) => c.label.toLowerCase().includes(pq) || c.id.toLowerCase().includes(pq),
+      )
+    : countryRows
+  const targetDevices = pq
+    ? deviceRows.filter(
+        (d) => preferredName(d).toLowerCase().includes(pq) || d.mac.toLowerCase().includes(pq),
+      )
+    : deviceRows
+
+  const matchDevice = deviceRows.find((d) => d.mac.toUpperCase() === target.toUpperCase())
+  const matchCategory = SYSTEM_CATEGORIES.find((c) => c.id === target)
+  const matchSummary =
+    match.id === 'country' && target
+      ? countryLabel(target)
+      : match.id === 'device' && target
+        ? matchDevice
+          ? preferredName(matchDevice)
+          : target
+        : match.id === 'category' && matchCategory
+          ? matchCategory.label
+          : match.label
+
+  const targetField =
+    match.id === 'category' ? (
+      <Select value={target || SYSTEM_CATEGORIES[0].id} onValueChange={setTarget} disabled={!ready}>
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" className="max-h-72">
+          {SYSTEM_CATEGORIES.map((c) => (
+            <SelectItem key={c.id} value={c.id}>
+              {c.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ) : match.id === 'app' ? (
+      appRows.length === 0 ? (
+        <Input disabled value="Sync for apps" readOnly />
+      ) : (
+        <Select value={target || appRows[0].id} onValueChange={setTarget} disabled={!ready}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" className="max-h-72">
+            {appRows.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                {APP_LABELS[a.id] ?? a.label ?? a.id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    ) : match.id === 'country' ? (
+      <button
+        type="button"
+        disabled={!ready}
+        className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left disabled:opacity-50"
+        onClick={() => {
+          setPickerQuery('')
+          setScreen('country')
+        }}
+      >
+        <span className="inline-flex items-center gap-2">
+          {target ? <Flag cc={target} /> : null}
+          {target ? countryLabel(target) : 'Region'}
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </button>
+    ) : match.id === 'device' ? (
+      <button
+        type="button"
+        disabled={!ready}
+        className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left disabled:opacity-50"
+        onClick={() => {
+          setPickerQuery('')
+          setScreen('deviceTarget')
+        }}
+      >
+        <span>
+          {target
+            ? preferredName(
+                deviceRows.find((d) => d.mac.toUpperCase() === target.toUpperCase()) ?? {
+                  mac: target,
+                  name: target,
+                },
+              )
+            : 'Device'}
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </button>
+    ) : match.ready ? (
+      <Input
+        value={target}
+        onChange={(e) => setTarget(e.target.value)}
+        disabled={!ready}
+        placeholder={matchPlaceholder}
+      />
+    ) : (
+      <Input disabled readOnly />
+    )
+
+  const frame = (s: typeof screen, body: ReactNode) => (
+    <AddRuleFrame
+      screen={s}
+      scopeLabel={scopeLabel}
+      onClose={onClose}
+      onForm={() => setScreen('form')}
+    >
+      {body}
+    </AddRuleFrame>
+  )
+
+  if (screen === 'match') {
+    return frame(
+      'match',
       <div className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Action</p>
-          <div className="flex flex-wrap gap-2">
-            {CREATE_ACTIONS.map((a) => (
-              <Button
-                key={a.id}
-                type="button"
-                size="sm"
-                variant={action === a.id ? 'default' : 'outline'}
-                onClick={() => onAction(a.id)}
-              >
-                {a.label}
-              </Button>
-            ))}
+        {MATCH_GROUPS.map((g) => (
+          <div key={g.label} className="space-y-2">
+            <p className="text-xs text-muted-foreground">{g.label}</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {g.ids.map((id) => {
+                const m = MATCH_KINDS.find((k) => k.id === id)
+                if (!m) return null
+                const selected = matchId === m.id
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={cn(
+                      'flex h-[4.5rem] flex-col items-start justify-between rounded-md border p-3 text-left text-sm',
+                      selected ? 'border-primary bg-muted' : 'hover:bg-muted/60',
+                    )}
+                    onClick={() => pickMatch(m.id)}
+                  >
+                    <span className="font-medium">{m.label}</span>
+                    {m.ready ? null : <span className="text-xs text-muted-foreground">soon</span>}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">Name</span>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!ready}
-            placeholder="Optional"
-          />
-        </label>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">Matching</span>
-          <Input
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            disabled={!ready}
-            placeholder="DNS domain"
-          />
-        </label>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">On</span>
-          <select
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50"
-            value={mac}
-            disabled={!ready}
-            onChange={(e) => setMac(e.target.value)}
-          >
-            <option value="">Device MAC…</option>
-            {devices.map((d) => (
-              <option key={d.id} value={d.id}>
-                {scopeLabel(d)}
-              </option>
-            ))}
-            <option value="__custom__">Other MAC…</option>
-          </select>
-          {mac === '__custom__' ? (
-            <Input
-              className="mt-2 font-mono"
-              value={customMac}
-              onChange={(e) => setCustomMac(e.target.value)}
-              disabled={!ready}
-              placeholder="AA:BB:CC:DD:EE:FF"
-            />
+        ))}
+      </div>,
+    )
+  }
+
+  if (screen === 'on') {
+    return frame(
+      'on',
+      <div className="space-y-3">
+        <Input
+          className="h-8"
+          placeholder="Search"
+          value={onQuery}
+          onChange={(e) => setOnQuery(e.target.value)}
+          autoFocus
+        />
+        <div className="grid grid-cols-2 gap-2">
+          {showAllOn ? (
+            <button
+              type="button"
+              className={cn(
+                'rounded-md border p-3 text-left text-sm',
+                on === '__all__' ? 'border-primary bg-muted' : 'hover:bg-muted/60',
+              )}
+              onClick={() => pickOn('__all__')}
+            >
+              All Devices
+            </button>
           ) : null}
-        </label>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">Direction</span>
-          <select
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50"
-            value={direction}
-            disabled={!ready}
-            onChange={(e) => setDirection(e.target.value)}
-          >
-            <option value="outbound">Outbound only</option>
-            <option value="inbound">Inbound only</option>
-            <option value="bidirection">Both directions</option>
-          </select>
-        </label>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">Schedule</span>
-          <Input disabled value="Always" readOnly />
-        </label>
-        <label className="block space-y-1.5 text-sm">
-          <span className="text-muted-foreground">Notes</span>
-          <Input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={!ready}
-          />
-        </label>
-        {err ? <p className="text-sm text-destructive">{err}</p> : null}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" size="sm" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canSubmit}
-            onClick={() => void submit()}
-          >
-            {ready ? (working ? '…' : 'Create') : 'Coming soon'}
-          </Button>
+          {showCustomOn ? (
+            <button
+              type="button"
+              className={cn(
+                'rounded-md border p-3 text-left text-sm',
+                on === '__custom__' ? 'border-primary bg-muted' : 'hover:bg-muted/60',
+              )}
+              onClick={() => pickOn('__custom__')}
+            >
+              Other MAC
+            </button>
+          ) : null}
+        </div>
+        {filteredUsers.length > 0 ? (
+          <OnSection label="Users">
+            {filteredUsers.map((t) => {
+              const value = `tag:${t.affiliated_tag || t.id}`
+              return (
+                <OnRow
+                  key={`user:${t.id}`}
+                  label={tagLabel(t, 'user')}
+                  selected={on === value}
+                  onClick={() => pickOn(value)}
+                />
+              )
+            })}
+          </OnSection>
+        ) : null}
+        {filteredGroups.length > 0 ? (
+          <OnSection label="Groups">
+            {filteredGroups.map((t) => {
+              const value = `tag:${t.id}`
+              return (
+                <OnRow
+                  key={`group:${t.id}`}
+                  label={tagLabel(t, 'group')}
+                  selected={on === value}
+                  onClick={() => pickOn(value)}
+                />
+              )
+            })}
+          </OnSection>
+        ) : null}
+        {filteredDevices.length > 0 ? (
+          <OnSection label="Devices">
+            {filteredDevices.map((d) => {
+              const value = d.mac.toUpperCase()
+              return (
+                <OnRow
+                  key={d.mac}
+                  label={preferredName(d)}
+                  selected={on === value}
+                  onClick={() => pickOn(value)}
+                />
+              )
+            })}
+          </OnSection>
+        ) : null}
+      </div>,
+    )
+  }
+
+  if (screen === 'country') {
+    return frame(
+      'country',
+      <div className="space-y-3">
+        <Input
+          className="h-8"
+          placeholder="Search"
+          value={pickerQuery}
+          onChange={(e) => setPickerQuery(e.target.value)}
+          autoFocus
+        />
+        <div className="overflow-hidden rounded-md border">
+          {filteredCountries.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={cn(
+                'flex w-full items-center gap-2 border-b px-3 py-2 text-left text-sm last:border-b-0',
+                target === c.id ? 'bg-muted' : 'hover:bg-muted/60',
+              )}
+              onClick={() => {
+                setTarget(c.id)
+                setScreen('form')
+              }}
+            >
+              <Flag cc={c.id} />
+              <span>{c.label}</span>
+              <span className="ml-auto font-mono text-xs text-muted-foreground">{c.id}</span>
+            </button>
+          ))}
+        </div>
+      </div>,
+    )
+  }
+
+  if (screen === 'deviceTarget') {
+    return frame(
+      'deviceTarget',
+      <div className="space-y-3">
+        <Input
+          className="h-8"
+          placeholder="Search"
+          value={pickerQuery}
+          onChange={(e) => setPickerQuery(e.target.value)}
+          autoFocus
+        />
+        <OnSection label="Devices">
+          {targetDevices.map((d) => {
+            const value = d.mac.toUpperCase()
+            return (
+              <OnRow
+                key={d.mac}
+                label={preferredName(d)}
+                selected={target === value}
+                onClick={() => {
+                  setTarget(value)
+                  setScreen('form')
+                }}
+              />
+            )
+          })}
+        </OnSection>
+      </div>,
+    )
+  }
+
+  return frame(
+    'form',
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">Action</p>
+        <div className="flex flex-wrap gap-2">
+          {CREATE_ACTIONS.map((a) => (
+            <Button
+              key={a.id}
+              type="button"
+              size="sm"
+              variant={action === a.id ? 'default' : 'outline'}
+              onClick={() => onAction(a.id)}
+            >
+              {a.label}
+            </Button>
+          ))}
         </div>
       </div>
-    </SheetShell>
+      <label className="block space-y-1.5 text-sm">
+        <span className="text-muted-foreground">Name</span>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!ready}
+          placeholder="Optional"
+        />
+      </label>
+      <div className="space-y-1.5 text-sm">
+        <button
+          type="button"
+          disabled={!ready}
+          className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left disabled:opacity-50"
+          onClick={() => setScreen('match')}
+        >
+          <span className="text-muted-foreground">Matching</span>
+          <span className="inline-flex items-center gap-2">
+            {match.id === 'country' && target ? <Flag cc={target} /> : null}
+            {matchSummary}
+            {!match.ready ? <span className="text-xs text-muted-foreground">soon</span> : null}
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </span>
+        </button>
+        {targetField}
+      </div>
+      <div className="space-y-1.5 text-sm">
+        <button
+          type="button"
+          disabled={!ready}
+          className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left disabled:opacity-50"
+          onClick={() => {
+            setOnQuery('')
+            setScreen('on')
+          }}
+        >
+          <span className="text-muted-foreground">On</span>
+          <span className="inline-flex items-center gap-1">
+            {onLabel}
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </span>
+        </button>
+        {on === '__custom__' ? (
+          <Input
+            className="font-mono"
+            value={customMac}
+            onChange={(e) => setCustomMac(e.target.value)}
+            disabled={!ready}
+            placeholder="AA:BB:CC:DD:EE:FF"
+          />
+        ) : null}
+      </div>
+      <div className="space-y-1.5 text-sm">
+        <span className="text-muted-foreground">Direction</span>
+        <Select value={direction} onValueChange={setDirection} disabled={!ready}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            <SelectItem value="outbound">Outbound only</SelectItem>
+            <SelectItem value="inbound">Inbound only</SelectItem>
+            <SelectItem value="bidirection">Both directions</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <label className="block space-y-1.5 text-sm">
+        <span className="text-muted-foreground">Schedule</span>
+        <Input disabled value="Always" readOnly />
+      </label>
+      <label className="block space-y-1.5 text-sm">
+        <span className="text-muted-foreground">Notes</span>
+        <Input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          disabled={!ready}
+        />
+      </label>
+      {err ? <p className="text-sm text-destructive">{err}</p> : null}
+      <div className="flex justify-end gap-2 pt-1">
+        <Button type="button" size="sm" variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!canSubmit}
+          onClick={() => void submit()}
+        >
+          {ready && matchReady ? (working ? '…' : 'Create') : 'Coming soon'}
+        </Button>
+      </div>
+    </div>,
+  )
+}
+
+function OnSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="overflow-hidden rounded-md border">{children}</div>
+    </div>
+  )
+}
+
+function OnRow({
+  label,
+  selected,
+  onClick,
+}: {
+  label: string
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm last:border-b-0',
+        selected ? 'bg-muted' : 'hover:bg-muted/60',
+      )}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   )
 }
 

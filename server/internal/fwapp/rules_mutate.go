@@ -4,62 +4,54 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
 
 // Lab-proven NetBot cmd item names (local/fixtures/fw-app/rules/*.cmd.json):
-//   policy:create  — value {action, type, target, scope[], direction, notes, _name}
+//   policy:create  — value {action, type, target, scope[]|tag[], direction, notes, _name}
 //   policy:disable — value {policyID}
 //   policy:enable  — value {policyID}
 //   policy:delete  — value {policyID}
 
-// CreateRuleRequest is the FireProxy create body for allow/block DNS rules.
+// CreateRuleRequest is the FireProxy create body for allow/block rules.
 type CreateRuleRequest struct {
 	Action    string   `json:"action"`
 	Type      string   `json:"type"`
 	Target    string   `json:"target"`
-	Scope     []string `json:"scope"`
+	Scope     []string `json:"scope"` // MACs, "tag:<id>", or empty = all devices
 	Direction string   `json:"direction"`
 	Notes     string   `json:"notes"`
 	Name      string   `json:"name"`
 }
 
+type createApply struct {
+	Type      string
+	Target    string
+	Scope     []string
+	Tag       []string
+	Direction string
+}
+
 // CreateRule sends policy:create (allow/block only), then RefreshRules.
 func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, error) {
 	var zero Rule
-	action := strings.ToLower(strings.TrimSpace(req.Action))
-	switch action {
-	case "allow", "block":
-	default:
-		return zero, fmt.Errorf("action %q not supported (allow/block only)", req.Action)
-	}
-	target := strings.TrimSpace(req.Target)
-	if target == "" {
-		return zero, fmt.Errorf("target required")
-	}
-	typ := strings.TrimSpace(req.Type)
-	if typ == "" {
-		typ = "dns"
-	}
-	scope, err := normalizeRuleScope(req.Scope)
+	apply, err := normalizeCreateRule(req)
 	if err != nil {
 		return zero, err
 	}
-	direction := strings.TrimSpace(req.Direction)
-	if direction == "" {
-		if action == "allow" {
-			direction = "outbound"
-		} else {
-			direction = "bidirection"
-		}
-	}
 	value := map[string]any{
-		"action":    action,
-		"type":      typ,
-		"target":    target,
-		"scope":     scope,
-		"direction": direction,
+		"action":    strings.ToLower(strings.TrimSpace(req.Action)),
+		"type":      apply.Type,
+		"target":    apply.Target,
+		"direction": apply.Direction,
+	}
+	if apply.Scope != nil {
+		value["scope"] = apply.Scope
+	}
+	if apply.Tag != nil {
+		value["tag"] = apply.Tag
 	}
 	if notes := strings.TrimSpace(req.Notes); notes != "" {
 		value["notes"] = notes
@@ -151,23 +143,120 @@ func (s *Service) send(ctx context.Context, creds Creds, mtype string, data map[
 	return s.lan.SendTo(ctx, creds, mtype, data, target)
 }
 
-func normalizeRuleScope(scope []string) ([]string, error) {
-	out := make([]string, 0, len(scope))
+func normalizeCreateRule(req CreateRuleRequest) (createApply, error) {
+	var zero createApply
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	switch action {
+	case "allow", "block":
+	default:
+		return zero, fmt.Errorf("action %q not supported (allow/block only)", req.Action)
+	}
+	typ := strings.ToLower(strings.TrimSpace(req.Type))
+	if typ == "" {
+		typ = "dns"
+	}
+	target, err := normalizeCreateTarget(typ, req.Target)
+	if err != nil {
+		return zero, err
+	}
+	scope, tag, err := normalizeCreateScope(req.Scope)
+	if err != nil {
+		return zero, err
+	}
+	direction := strings.TrimSpace(req.Direction)
+	if direction == "" {
+		if action == "allow" {
+			direction = "outbound"
+		} else {
+			direction = "bidirection"
+		}
+	}
+	return createApply{
+		Type:      typ,
+		Target:    target,
+		Scope:     scope,
+		Tag:       tag,
+		Direction: direction,
+	}, nil
+}
+
+func normalizeCreateTarget(typ, raw string) (string, error) {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return "", fmt.Errorf("target required")
+	}
+	switch typ {
+	case "dns":
+		if strings.ContainsAny(target, " \t") {
+			return "", fmt.Errorf("invalid dns target")
+		}
+		return strings.ToLower(target), nil
+	case "ip":
+		if ip := net.ParseIP(target); ip != nil {
+			return target, nil
+		}
+		if _, _, err := net.ParseCIDR(target); err == nil {
+			return target, nil
+		}
+		return "", fmt.Errorf("invalid ip target")
+	case "category":
+		return target, nil
+	case "country":
+		if len(target) != 2 {
+			return "", fmt.Errorf("invalid country target")
+		}
+		a, b := target[0], target[1]
+		if !isLetter(a) || !isLetter(b) {
+			return "", fmt.Errorf("invalid country target")
+		}
+		return strings.ToUpper(target), nil
+	case "mac":
+		mac, err := ParseMAC(target)
+		if err != nil {
+			return "", fmt.Errorf("invalid mac target: %w", err)
+		}
+		return mac, nil
+	default:
+		return "", fmt.Errorf("type %q not supported", typ)
+	}
+}
+
+func isLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+func normalizeCreateScope(scope []string) (macs []string, tags []string, err error) {
+	var outMAC []string
+	var outTag []string
 	for _, s := range scope {
 		s = strings.TrimSpace(s)
-		if s == "" {
+		if s == "" || s == "__all__" {
+			continue
+		}
+		if id, ok := strings.CutPrefix(s, "tag:"); ok {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				return nil, nil, fmt.Errorf("invalid scope tag")
+			}
+			outTag = append(outTag, "tag:"+id)
 			continue
 		}
 		mac, err := ParseMAC(s)
 		if err != nil {
-			return nil, fmt.Errorf("invalid scope mac: %w", err)
+			return nil, nil, fmt.Errorf("invalid scope mac: %w", err)
 		}
-		out = append(out, mac)
+		outMAC = append(outMAC, mac)
 	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("scope required")
+	if len(outMAC) > 0 && len(outTag) > 0 {
+		return nil, nil, fmt.Errorf("scope cannot mix devices and groups")
 	}
-	return out, nil
+	if len(outMAC) > 0 {
+		return outMAC, nil, nil
+	}
+	if len(outTag) > 0 {
+		return nil, outTag, nil
+	}
+	return nil, nil, nil
 }
 
 // ParsePolicyRuleJSON normalizes a single policy rule object (create/pause/delete reply data).

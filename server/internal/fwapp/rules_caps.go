@@ -14,7 +14,12 @@ func DefaultRulesCapabilities() RulesCapabilities {
 		"rule.pause":            true,
 		"rule.delete":           true,
 		"rule.reset_hits":       false,
-		"rule.emergency":        false,
+		"rule.emergency":        true,
 		"rule.diagnose":         false,
+		"host.monitor":          true,
+		"host.isolation":        true,
+		"host.emergency":        true,
+		"host.note":             true,
+		"host.group":            true,
 	}
 }

@@ -61,6 +61,18 @@ func cloneRulesSnapshot(in RulesSnapshot) RulesSnapshot {
 	if in.Scopes != nil {
 		out.Scopes = append([]ScopeChip(nil), in.Scopes...)
 	}
+	if in.Catalog.Apps != nil {
+		out.Catalog.Apps = append([]CatalogItem(nil), in.Catalog.Apps...)
+	}
+	if in.Hosts != nil {
+		out.Hosts = make([]HostPolicy, len(in.Hosts))
+		for i, h := range in.Hosts {
+			out.Hosts[i] = h
+			if h.Tags != nil {
+				out.Hosts[i].Tags = append([]string(nil), h.Tags...)
+			}
+		}
+	}
 	return out
 }
 
@@ -73,4 +85,19 @@ func cloneRule(r Rule) Rule {
 		out.Tags = append([]string(nil), r.Tags...)
 	}
 	return out
+}
+
+func (c *RulesCache) PatchHost(mac string, patch HostPolicyPatch) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.ok {
+		return
+	}
+	for i := range c.snap.Hosts {
+		if c.snap.Hosts[i].MAC == mac {
+			c.snap.Hosts[i] = applyHostPolicyPatch(c.snap.Hosts[i], patch)
+			return
+		}
+	}
+	c.snap.Hosts = append(c.snap.Hosts, applyHostPolicyPatch(HostPolicy{MAC: mac, Monitor: true}, patch))
 }

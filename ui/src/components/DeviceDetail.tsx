@@ -3,11 +3,19 @@ import { createPortal } from 'react-dom'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { Flag } from '@/components/Flag'
+import { IndeterminateBar } from '@/components/IndeterminateBar'
 import { Toast } from '@/components/Toast'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch as Toggle } from '@/components/ui/switch'
 import {
   Table,
@@ -27,7 +35,7 @@ import {
   preferredName,
 } from '@/lib/format'
 import type { PortLoc } from '@/lib/switch-port'
-import type { Device, ModuleInfo, NetIface, RankedFlow, WirelessClient } from '@/lib/types'
+import type { Device, FwAppHostPolicy, ModuleInfo, NetIface, RankedFlow, Tag, WirelessClient } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -161,20 +169,26 @@ export function DeviceDetail({
   lan,
   port,
   groupLabel,
+  tags = [],
+  labelTag,
   unifi,
   domainSuffix,
   onRenamed,
   onDNSUpdated,
+  onGroupUpdated,
 }: {
   device: DeviceDetailModel
   nowMs: number
   lan?: NetIface
   port?: PortLoc
   groupLabel?: string
+  tags?: Tag[]
+  labelTag?: (id: string, preferType?: string) => string
   unifi?: ModuleInfo | null
   domainSuffix?: string | null
   onRenamed?: (mac: string, name: string) => void
   onDNSUpdated?: (mac: string, hostname: string) => void
+  onGroupUpdated?: (mac: string, tagIds: string[]) => void
 }) {
   const online = deviceOnline(
     { mac: device.mac, name: device.name, last_active_ts: device.last_active_ts },
@@ -196,6 +210,26 @@ export function DeviceDetail({
   const [pushUnifi, setPushUnifi] = useState(false)
   const [renameBusy, setRenameBusy] = useState(false)
   const [dnsBusy, setDnsBusy] = useState(false)
+  const [hostPol, setHostPol] = useState<FwAppHostPolicy | null>(null)
+  const [polBusy, setPolBusy] = useState(false)
+  const [draftNote, setDraftNote] = useState('')
+
+  const groupTags = useMemo(
+    () =>
+      tags
+        .filter((t) => !t.type || t.type === 'group')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [tags],
+  )
+  const groupTagLabel = (id: string) => {
+    const t = groupTags.find((g) => g.id === id)
+    if (!t) return id
+    const fromApp = labelTag?.(t.id, 'group')
+    if (fromApp && fromApp !== t.id) return fromApp
+    return t.name || id
+  }
+  const selectedGroupId = hostPol?.tags?.[0] ?? device.tag_ids?.[0] ?? ''
 
   const unifiPushAvailable =
     !!unifi?.enabled && unifi.status === 'ok' && !!unifi.name_sync_enabled
@@ -226,6 +260,32 @@ export function DeviceDetail({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!controlReady) {
+      setHostPol(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api(`/v1/fw-app/hosts/policy?mac=${encodeURIComponent(device.mac)}`, {
+          cache: 'no-store',
+        })
+        if (!r.ok || cancelled) return
+        const body = (await r.json()) as { policy?: FwAppHostPolicy }
+        if (!cancelled && body.policy) {
+          setHostPol(body.policy)
+          setDraftNote(body.policy.note ?? '')
+        }
+      } catch {
+        if (!cancelled) setHostPol(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [controlReady, device.mac])
 
   function startRename() {
     setEditingDNS(false)
@@ -332,6 +392,61 @@ export function DeviceDetail({
     }
   }
 
+  async function setPolicy(patch: {
+    monitor?: boolean
+    isolation?: boolean
+    emergency?: boolean
+    note?: string
+    tags?: string[]
+  }) {
+    if (!controlReady || polBusy || !hostPol) return
+    const prev = hostPol
+    setHostPol(applyPolicyPatchOptimistic(hostPol, patch))
+    setPolBusy(true)
+    try {
+      const r = await api('/v1/fw-app/hosts/policy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: device.mac, ...patch }),
+        cache: 'no-store',
+      })
+      const body = (await r.json().catch(() => ({}))) as {
+        error?: string
+        policy?: FwAppHostPolicy
+      }
+      if (!r.ok) {
+        setHostPol(prev)
+        setToast(body.error || 'Policy failed')
+        return
+      }
+      if (body.policy) {
+        setHostPol(body.policy)
+        setDraftNote(body.policy.note ?? '')
+        if (patch.tags) onGroupUpdated?.(device.mac, body.policy.tags ?? patch.tags)
+      }
+      const get = await api(`/v1/fw-app/hosts/policy?mac=${encodeURIComponent(device.mac)}`, {
+        cache: 'no-store',
+      })
+      const got = (await get.json().catch(() => ({}))) as { policy?: FwAppHostPolicy }
+      const next = pickHostPolicy(got.policy, body.policy, patch)
+      if (next) {
+        setHostPol(next)
+        setDraftNote(next.note ?? '')
+        if (patch.tags) onGroupUpdated?.(device.mac, next.tags ?? patch.tags)
+      }
+    } catch {
+      setHostPol(prev)
+      setToast('Policy failed')
+    } finally {
+      setPolBusy(false)
+    }
+  }
+
+  async function saveNote() {
+    if (!controlReady || polBusy) return
+    await setPolicy({ note: draftNote.trim() })
+  }
+
   const identity = useMemo(() => {
     const rows: { label: string; value: string }[] = []
     if (device.hostname && device.hostname !== displayName) {
@@ -340,7 +455,7 @@ export function DeviceDetail({
     if (device.vendor) rows.push({ label: 'Manufacturer', value: device.vendor })
     if (device.type) rows.push({ label: 'Type', value: device.type })
     if (device.os) rows.push({ label: 'OS', value: device.os })
-    if (groupLabel) rows.push({ label: 'Group', value: groupLabel })
+    if (groupLabel && !controlReady) rows.push({ label: 'Group', value: groupLabel })
     if (device.dap) {
       rows.push({
         label: 'DAP',
@@ -523,6 +638,89 @@ export function DeviceDetail({
           </CardContent>
         </Card>
 
+        {controlReady && hostPol ? (
+          <Card className="gap-0 py-0">
+            <CardHeader className={SECTION_HEADER}>
+              <CardTitle className={SECTION_TITLE}>Policy</CardTitle>
+            </CardHeader>
+            {polBusy ? <IndeterminateBar /> : null}
+            <CardContent className="divide-y px-0">
+              <div className={ROW}>
+                <div className="text-muted-foreground">Monitoring</div>
+                <div className="flex justify-end">
+                  <Toggle
+                    checked={hostPol.monitor}
+                    disabled={polBusy}
+                    onCheckedChange={(v) => void setPolicy({ monitor: v })}
+                  />
+                </div>
+              </div>
+              <div className={ROW}>
+                <div className="text-muted-foreground">Device Isolation</div>
+                <div className="flex justify-end">
+                  <Toggle
+                    checked={hostPol.isolated}
+                    disabled={polBusy}
+                    onCheckedChange={(v) => void setPolicy({ isolation: v })}
+                  />
+                </div>
+              </div>
+              <div className={ROW}>
+                <div className="text-muted-foreground">Emergency Access</div>
+                <div className="flex justify-end">
+                  <Toggle
+                    checked={!!hostPol.emergency}
+                    disabled={polBusy}
+                    onCheckedChange={(v) => void setPolicy({ emergency: v })}
+                  />
+                </div>
+              </div>
+              <div className={ROW}>
+                <div className="text-muted-foreground">Group</div>
+                <div className="min-w-0">
+                  <Select
+                    value={selectedGroupId || '__none__'}
+                    disabled={polBusy}
+                    onValueChange={(v) => {
+                      const tags = v === '__none__' ? [] : [v]
+                      void setPolicy({ tags })
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper">
+                      <SelectItem value="__none__">None</SelectItem>
+                      {groupTags.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {groupTagLabel(t.id)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className={ROW}>
+                <div className="text-muted-foreground">Note</div>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Input
+                    className="h-8 min-w-0 flex-1"
+                    value={draftNote}
+                    onChange={(e) => setDraftNote(e.target.value)}
+                    disabled={polBusy}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void saveNote()
+                    }}
+                  />
+                  <Button type="button" size="xs" disabled={polBusy} onClick={() => void saveNote()}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card className="gap-0 py-0">
           <CardHeader className={SECTION_HEADER}>
             <CardTitle className={SECTION_TITLE}>Link</CardTitle>
@@ -533,7 +731,7 @@ export function DeviceDetail({
         </Card>
 
         {traffic.length > 0 ? (
-          <Card className="gap-0 py-0 lg:col-span-2">
+          <Card className="gap-0 py-0">
             <CardHeader className={SECTION_HEADER}>
               <CardTitle className={SECTION_TITLE}>Traffic</CardTitle>
             </CardHeader>
@@ -584,6 +782,76 @@ export function DeviceDetail({
       </div>
     </div>
   )
+}
+
+function applyPolicyPatchOptimistic(
+  cur: FwAppHostPolicy,
+  patch: {
+    monitor?: boolean
+    isolation?: boolean
+    emergency?: boolean
+    note?: string
+    tags?: string[]
+  },
+): FwAppHostPolicy {
+  let monitor = cur.monitor
+  let emergency = !!cur.emergency
+  if (patch.emergency === true) {
+    emergency = true
+    monitor = false
+  } else if (patch.emergency === false) {
+    emergency = false
+  }
+  if (patch.monitor === true) {
+    monitor = true
+    emergency = false
+  } else if (patch.monitor === false) {
+    monitor = false
+  }
+  return {
+    ...cur,
+    monitor,
+    emergency,
+    isolated: patch.isolation ?? cur.isolated,
+    note: patch.note ?? cur.note,
+    tags: patch.tags ?? cur.tags,
+  }
+}
+
+function pickHostPolicy(
+  fetched: FwAppHostPolicy | undefined,
+  posted: FwAppHostPolicy | undefined,
+  patch: {
+    monitor?: boolean
+    isolation?: boolean
+    emergency?: boolean
+    note?: string
+    tags?: string[]
+  },
+): FwAppHostPolicy | undefined {
+  if (fetched && hostPolicyMatchesPatch(fetched, patch)) return fetched
+  if (posted && hostPolicyMatchesPatch(posted, patch)) return posted
+  return posted ?? fetched
+}
+
+function hostPolicyMatchesPatch(
+  pol: FwAppHostPolicy,
+  patch: {
+    monitor?: boolean
+    isolation?: boolean
+    emergency?: boolean
+    note?: string
+    tags?: string[]
+  },
+): boolean {
+  if (patch.emergency != null && !!pol.emergency !== patch.emergency) return false
+  if (patch.emergency === true && patch.monitor == null && pol.monitor) return false
+  if (patch.monitor === true && patch.emergency == null && pol.emergency) return false
+  if (patch.monitor != null && pol.monitor !== patch.monitor) return false
+  if (patch.isolation != null && pol.isolated !== patch.isolation) return false
+  if (patch.note != null && (pol.note ?? '') !== patch.note) return false
+  if (patch.tags != null && (pol.tags ?? []).join('\0') !== patch.tags.join('\0')) return false
+  return true
 }
 
 export function groupNameFor(

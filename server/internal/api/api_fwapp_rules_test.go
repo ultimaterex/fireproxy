@@ -119,10 +119,16 @@ func TestFWAppRulesGETFromCache(t *testing.T) {
 		"rule.create.block": true,
 		"rule.pause":        true,
 		"rule.delete":       true,
+		"rule.emergency":    true,
+		"host.monitor":      true,
+		"host.isolation":    true,
+		"host.emergency":    true,
+		"host.note":         true,
+		"host.group":        true,
 	}
 	wantCapsOff := []string{
 		"rule.create.timelimit", "rule.create.disturb",
-		"rule.reset_hits", "rule.emergency", "rule.diagnose",
+		"rule.reset_hits", "rule.diagnose",
 	}
 	for k, want := range wantCapsOn {
 		if body.Caps[k] != want {
@@ -211,7 +217,6 @@ func TestFWAppRulesMutationsNotImplemented(t *testing.T) {
 		method, path, body string
 	}{
 		{http.MethodPost, "/v1/fw-app/rules/reset-hits", `{}`},
-		{http.MethodPost, "/v1/fw-app/rules/emergency", `{"enabled":true}`},
 		{http.MethodPost, "/v1/fw-app/rules/diagnose", `{"target":"x"}`},
 	}
 	for _, tc := range cases {
@@ -302,6 +307,126 @@ func TestFWAppRulesCreatePauseDelete(t *testing.T) {
 		}
 		if len(rows) != 1 || rows[0].Result != "ok" {
 			t.Fatalf("%s rows=%+v", action, rows)
+		}
+	}
+}
+
+func TestFWAppHostPolicyAndEmergency(t *testing.T) {
+	svc := fwAppTestPair(t, nil)
+	initRaw := readFWAppRulesFixture(t)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	var lastItem, lastMType, lastTarget string
+	var lastValue map[string]any
+	svc.SetSendFn(func(ctx context.Context, creds fwapp.Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		lastMType = mtype
+		lastItem, _ = data["item"].(string)
+		lastTarget = target
+		lastValue, _ = data["value"].(map[string]any)
+		return json.RawMessage(`{"code":200}`), nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, mux, p := fwAppHistServer(t, svc, nil)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/fw-app/hosts/policy?mac=AA:BB:CC:DD:EE:01", nil))
+	if rr.Code != 200 {
+		t.Fatalf("get policy %d %s", rr.Code, rr.Body.String())
+	}
+	var getBody struct {
+		Policy fwapp.HostPolicy `json:"policy"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&getBody); err != nil {
+		t.Fatal(err)
+	}
+	if !getBody.Policy.Monitor || !getBody.Policy.Isolated {
+		t.Fatalf("get %+v", getBody.Policy)
+	}
+
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/policy", strings.NewReader(`{
+		"mac":"AA:BB:CC:DD:EE:01","monitor":false,"isolation":true
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("set policy %d %s", rr.Code, rr.Body.String())
+	}
+	if lastMType != fwapp.MTypeSet || lastItem != "policy" || lastTarget != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("set %s %s %s", lastMType, lastItem, lastTarget)
+	}
+	iso, _ := lastValue["isolation"].(map[string]any)
+	if lastValue["monitor"] != false || iso["external"] != true {
+		t.Fatalf("value %+v", lastValue)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/policy", strings.NewReader(`{
+		"mac":"AA:BB:CC:DD:EE:01","emergency":true
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("set emergency %d %s", rr.Code, rr.Body.String())
+	}
+	if lastValue["acl"] != false || lastValue["monitor"] != false {
+		t.Fatalf("emergency value %+v", lastValue)
+	}
+	var postBody struct {
+		Policy fwapp.HostPolicy `json:"policy"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&postBody); err != nil {
+		t.Fatal(err)
+	}
+	if !postBody.Policy.Emergency || postBody.Policy.Monitor {
+		t.Fatalf("post policy %+v", postBody.Policy)
+	}
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/fw-app/hosts/policy?mac=AA:BB:CC:DD:EE:01", nil))
+	if rr.Code != 200 {
+		t.Fatalf("get after emergency %d %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache-control %q", rr.Header().Get("Cache-Control"))
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&getBody); err != nil {
+		t.Fatal(err)
+	}
+	if !getBody.Policy.Emergency || getBody.Policy.Monitor {
+		t.Fatalf("get after emergency %+v", getBody.Policy)
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/fw-app/rules/emergency", strings.NewReader(`{"enabled":true,"expireMinute":15}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("emergency %d %s", rr.Code, rr.Body.String())
+	}
+	if lastMType != fwapp.MTypeCmd || lastItem != "policy:setDisableAll" {
+		t.Fatalf("emergency send %s %s", lastMType, lastItem)
+	}
+	if lastValue["flag"] != "on" || lastValue["expireMinute"] != 15 {
+		t.Fatalf("emergency value %+v", lastValue)
+	}
+
+	want := map[string]int{"host.policy": 2, "rule.emergency": 1}
+	for action, n := range want {
+		rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "firewalla", Action: action, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != n {
+			t.Fatalf("%s rows=%d want %d %+v", action, len(rows), n, rows)
+		}
+		for _, row := range rows {
+			if row.Result != "ok" {
+				t.Fatalf("%s %+v", action, row)
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@ package fwapp
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -109,6 +110,8 @@ func ParseInitRules(raw []byte) (RulesSnapshot, error) {
 		DapRules:   dapRules,
 		Exceptions: exceptions,
 		Scopes:     scopes,
+		Catalog:    RuleCatalog{Apps: parseAppCatalog(root.AppConfs)},
+		Hosts:      parseHostPolicies(root.Hosts, hostLabels),
 	}, nil
 }
 
@@ -130,13 +133,14 @@ func unwrapInitData(raw []byte) ([]byte, error) {
 }
 
 type initRoot struct {
-	PolicyRules     []rawPolicyRule    `json:"policyRules"`
-	ExceptionRules  []rawExceptionRule `json:"exceptionRules"`
-	ScreentimeRules []rawPolicyRule    `json:"screentimeRules"`
-	RuleGroups      []rawRuleGroup     `json:"ruleGroups"`
-	Hosts           []rawHost          `json:"hosts"`
-	Tags            map[string]rawTag  `json:"tags"`
-	UserTags        map[string]rawUserTag `json:"userTags"`
+	PolicyRules     []rawPolicyRule            `json:"policyRules"`
+	ExceptionRules  []rawExceptionRule         `json:"exceptionRules"`
+	ScreentimeRules []rawPolicyRule            `json:"screentimeRules"`
+	RuleGroups      []rawRuleGroup             `json:"ruleGroups"`
+	Hosts           []rawHost                  `json:"hosts"`
+	Tags            map[string]rawTag          `json:"tags"`
+	UserTags        map[string]rawUserTag      `json:"userTags"`
+	AppConfs        map[string]json.RawMessage `json:"appConfs"`
 }
 
 type rawPolicyRule struct {
@@ -175,9 +179,10 @@ type rawExceptionRule struct {
 }
 
 type rawHost struct {
-	MAC   string `json:"mac"`
-	Name  string `json:"name"`
-	BName string `json:"bname"`
+	MAC    string          `json:"mac"`
+	Name   string          `json:"name"`
+	BName  string          `json:"bname"`
+	Policy json.RawMessage `json:"policy"`
 }
 
 type rawTag struct {
@@ -497,6 +502,87 @@ func looksLikeUUID(s string) bool {
 		}
 	}
 	return true
+}
+
+func parseAppCatalog(confs map[string]json.RawMessage) []CatalogItem {
+	if len(confs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(confs))
+	for id := range confs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]CatalogItem, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, CatalogItem{ID: id})
+	}
+	return out
+}
+
+func parseHostPolicies(hosts []rawHost, labels map[string]string) []HostPolicy {
+	out := make([]HostPolicy, 0, len(hosts))
+	for _, h := range hosts {
+		mac := NormalizeMAC(h.MAC)
+		if mac == "" {
+			continue
+		}
+		hp := HostPolicy{MAC: mac, Monitor: true}
+		if label := labels[mac]; label != "" {
+			hp.Label = label
+		} else {
+			hp.Label = mac
+		}
+		applyRawHostPolicy(&hp, h.Policy)
+		out = append(out, hp)
+	}
+	return out
+}
+
+type rawHostPolicy struct {
+	Monitor   *bool        `json:"monitor"`
+	ACL       *bool        `json:"acl"`
+	Note      string       `json:"_note"`
+	Tags      []flexString `json:"tags"`
+	Isolation *struct {
+		External bool `json:"external"`
+		Internal bool `json:"internal"`
+	} `json:"isolation"`
+}
+
+func applyRawHostPolicy(hp *HostPolicy, raw json.RawMessage) {
+	if hp == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var p rawHostPolicy
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return
+	}
+	if p.Monitor != nil {
+		hp.Monitor = *p.Monitor
+	}
+	if p.Isolation != nil {
+		hp.Isolated = p.Isolation.External
+	}
+	if p.ACL != nil {
+		hp.Emergency = !*p.ACL
+	}
+	hp.Note = strings.TrimSpace(p.Note)
+	if len(p.Tags) > 0 {
+		tags := make([]string, 0, len(p.Tags))
+		for _, t := range p.Tags {
+			id := strings.TrimSpace(string(t))
+			if id == "" {
+				continue
+			}
+			tags = append(tags, id)
+		}
+		hp.Tags = tags
+	}
 }
 
 func parseInt64(v flexString) int64 {
