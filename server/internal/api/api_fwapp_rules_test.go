@@ -311,6 +311,49 @@ func TestFWAppRulesCreatePauseDelete(t *testing.T) {
 	}
 }
 
+func TestFWAppRulesCreateAllDevicesHistoryTarget(t *testing.T) {
+	svc := fwAppTestPair(t, nil)
+	initRaw := readFWAppRulesFixture(t)
+	allowResp := readFWAppCmdFixture(t, "create_allow.cmd.json")
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	svc.SetSendFn(func(ctx context.Context, creds fwapp.Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		var env map[string]any
+		if err := json.Unmarshal(allowResp, &env); err != nil {
+			t.Fatal(err)
+		}
+		reply, _ := env["data"].(map[string]any)
+		delete(reply, "scope")
+		out, err := json.Marshal(env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out, nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, mux, p := fwAppHistServer(t, svc, nil)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fw-app/rules", strings.NewReader(`{
+		"action":"allow","type":"dns","target":"fireproxy-lab-allow.example","scope":[]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "firewalla", Action: "rule.create", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Target != "all" {
+		t.Fatalf("history target %+v", rows)
+	}
+}
+
 func TestFWAppHostPolicyAndEmergency(t *testing.T) {
 	svc := fwAppTestPair(t, nil)
 	initRaw := readFWAppRulesFixture(t)

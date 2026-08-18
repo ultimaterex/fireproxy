@@ -74,6 +74,9 @@ func (s *Server) postFWAppRulesCreate(w http.ResponseWriter, r *http.Request) {
 	if len(rule.Scope) > 0 {
 		target = strings.Join(rule.Scope, ",")
 	}
+	if strings.TrimSpace(target) == "" {
+		target = "all"
+	}
 	var after map[string]any
 	if err == nil {
 		after = map[string]any{

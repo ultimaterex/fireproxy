@@ -280,6 +280,12 @@ export function RulesTab({
     noticeTimer.current = window.setTimeout(() => setNotice(null), 2500)
   }
 
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
+    }
+  }, [])
+
   const openScope = (id: string) => {
     setQuery('')
     setScopeId(id)
