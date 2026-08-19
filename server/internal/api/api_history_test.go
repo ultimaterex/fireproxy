@@ -81,7 +81,7 @@ func TestControlHistoryListAndPagination(t *testing.T) {
 		t.Fatalf("before/after: %+v %+v", ev.Before, ev.After)
 	}
 	fwActions := page1.Actions["firewalla"]
-	if len(fwActions) != 4 || fwActions[0] != "host.rename" {
+	if len(fwActions) != 9 || fwActions[0] != "host.rename" || fwActions[4] != "rule.create" {
 		t.Fatalf("actions firewalla: %+v", page1.Actions)
 	}
 	if len(page1.Actions["unifi"]) != 1 || page1.Actions["unifi"][0] != "client.rename" {

@@ -332,6 +332,151 @@ func (s *Server) postFWAppHostDNS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) getFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	mac := strings.TrimSpace(r.URL.Query().Get("mac"))
+	if mac == "" {
+		http.Error(w, "mac required", http.StatusBadRequest)
+		return
+	}
+	if _, _, ok := svc.RulesSnapshot(); !ok {
+		if _, err := svc.RefreshRules(r.Context()); err != nil {
+			writeFWAppRulesErr(w, svc, err)
+			return
+		}
+	}
+	pol, ok := svc.LookupHostPolicy(mac)
+	if !ok {
+		http.Error(w, "invalid mac", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"policy":       pol,
+		"capabilities": fwapp.DefaultRulesCapabilities(),
+	})
+}
+
+func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	caps := fwapp.DefaultRulesCapabilities()
+	var body struct {
+		MAC       string    `json:"mac"`
+		Monitor   *bool     `json:"monitor"`
+		Isolation *bool     `json:"isolation"`
+		Emergency *bool     `json:"emergency"`
+		Note      *string   `json:"note"`
+		Tags      *[]string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if body.Monitor != nil && !caps["host.monitor"] {
+		s.writeFWAppRulesNotImplemented(w, "host monitor not available")
+		return
+	}
+	if body.Isolation != nil && !caps["host.isolation"] {
+		s.writeFWAppRulesNotImplemented(w, "host isolation not available")
+		return
+	}
+	if body.Emergency != nil && !caps["host.emergency"] {
+		s.writeFWAppRulesNotImplemented(w, "host emergency not available")
+		return
+	}
+	if body.Note != nil && !caps["host.note"] {
+		s.writeFWAppRulesNotImplemented(w, "host note not available")
+		return
+	}
+	if body.Tags != nil && !caps["host.group"] {
+		s.writeFWAppRulesNotImplemented(w, "host group not available")
+		return
+	}
+	kind, actor := s.controlActor(r)
+	before, _ := svc.LookupHostPolicy(body.MAC)
+	err := svc.SetHostPolicy(r.Context(), body.MAC, fwapp.HostPolicyPatch{
+		Monitor:   body.Monitor,
+		Isolation: body.Isolation,
+		Emergency: body.Emergency,
+		Note:      body.Note,
+		Tags:      body.Tags,
+	})
+	mac, _ := fwapp.ParseMAC(body.MAC)
+	if mac == "" {
+		mac = strings.TrimSpace(body.MAC)
+	}
+	summaryParts := make([]string, 0, 4)
+	after := map[string]any{}
+	if body.Monitor != nil {
+		after["monitor"] = *body.Monitor
+		if *body.Monitor {
+			summaryParts = append(summaryParts, "monitor on")
+		} else {
+			summaryParts = append(summaryParts, "monitor off")
+		}
+	}
+	if body.Isolation != nil {
+		after["isolated"] = *body.Isolation
+		if *body.Isolation {
+			summaryParts = append(summaryParts, "isolation on")
+		} else {
+			summaryParts = append(summaryParts, "isolation off")
+		}
+	}
+	if body.Emergency != nil {
+		after["emergency"] = *body.Emergency
+		if *body.Emergency {
+			summaryParts = append(summaryParts, "emergency on")
+		} else {
+			summaryParts = append(summaryParts, "emergency off")
+		}
+	}
+	if body.Note != nil {
+		after["note"] = *body.Note
+		summaryParts = append(summaryParts, "note")
+	}
+	if body.Tags != nil {
+		after["tags"] = *body.Tags
+		summaryParts = append(summaryParts, "group")
+	}
+	s.controlHist().Record(controlhist.Outcome{
+		Scheme:    controlhist.SchemeFirewalla,
+		Action:    controlhist.ActionHostPolicy,
+		Target:    mac,
+		Summary:   strings.Join(summaryParts, ", "),
+		ActorKind: kind,
+		Actor:     actor,
+		Before: map[string]any{
+			"monitor":   before.Monitor,
+			"isolated":  before.Isolated,
+			"emergency": before.Emergency,
+			"note":      before.Note,
+			"tags":      before.Tags,
+		},
+		After: after,
+		Err:   err,
+	})
+	if err != nil {
+		writeFWAppRulesErr(w, svc, err)
+		return
+	}
+	pol, _ := svc.LookupHostPolicy(mac)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"policy": pol,
+		"status": svc.Status(),
+	})
+}
+
 func (s *Server) tryPushUniFiName(mac, name, actorKind, actor string) string {
 	if !s.unifiModuleEnabled() {
 		return "UniFi module off"

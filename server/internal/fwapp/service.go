@@ -2,6 +2,7 @@ package fwapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,11 +19,17 @@ type Service struct {
 	vault  *CredentialVault
 	lan    *LANClient
 	pairFn func(ctx context.Context, req PairRequest) (Creds, error) // test hook; nil = PairWithCloud
+	// fetchInitFn overrides LAN FetchInit (tests).
+	fetchInitFn func(ctx context.Context, creds Creds) (json.RawMessage, error)
+	// sendFn overrides lan.SendTo (tests).
+	sendFn func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error)
 
 	lastPingOK bool
 	lastPingAt time.Time
 	lastErr    string
 	state      string // unpaired | ready | lan-ok | lan-down | error
+
+	rules RulesCache
 
 	speedJobs map[string]*SpeedtestJob
 	// IndexSpeedtest merges LAN history into the server catalog (optional).
@@ -301,6 +308,72 @@ func (s *Service) Ping(ctx context.Context) (Status, error) {
 	s.lastErr = ""
 	s.mu.Unlock()
 	return s.Status(), nil
+}
+
+// RefreshRules fetches fw-app init, parses Rules, and updates the in-memory cache.
+func (s *Service) RefreshRules(ctx context.Context) (RulesSnapshot, error) {
+	var zero RulesSnapshot
+	if !s.secretsReady() {
+		return zero, fmt.Errorf("FIREPROXY_SECRETS_KEY required")
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil {
+		return zero, err
+	}
+	if !ok || c.SymKey == "" {
+		return zero, ErrNotPaired
+	}
+	raw, err := s.fetchInit(ctx, c)
+	if err != nil {
+		s.mu.Lock()
+		s.lastPingOK = false
+		s.lastPingAt = time.Now().UTC()
+		s.state = "lan-down"
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		return zero, err
+	}
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		return zero, err
+	}
+	at := time.Now().UTC()
+	// Re-check pairing under the same lock Unpair uses so a concurrent
+	// Unpair cannot Clear then lose to a late Set.
+	s.mu.Lock()
+	c2, ok2, err2 := s.vault.Load()
+	if err2 != nil {
+		s.mu.Unlock()
+		return zero, err2
+	}
+	if !ok2 || c2.SymKey == "" {
+		s.mu.Unlock()
+		return zero, ErrNotPaired
+	}
+	s.rules.Set(snap, at)
+	s.lastPingOK = true
+	s.lastPingAt = at
+	s.state = "lan-ok"
+	s.lastErr = ""
+	s.mu.Unlock()
+	s.persistRulesCache(snap, at)
+	return cloneRulesSnapshot(snap), nil
+}
+
+// RulesSnapshot returns the cached Rules read model. ok is false when empty or never refreshed.
+// Falls back to a persisted SQLite snapshot so restarts don't require a full LAN init.
+func (s *Service) RulesSnapshot() (RulesSnapshot, time.Time, bool) {
+	if snap, at, ok := s.rules.Get(); ok {
+		return snap, at, true
+	}
+	return s.hydrateRulesCacheFromStore()
+}
+
+func (s *Service) fetchInit(ctx context.Context, creds Creds) (json.RawMessage, error) {
+	if s.fetchInitFn != nil {
+		return s.fetchInitFn(ctx, creds)
+	}
+	return s.lan.FetchInit(ctx, creds)
 }
 
 // RunSpeedtest runs an internet speedtest on the given WAN via LAN only.
@@ -624,15 +697,17 @@ func (s *Service) Unpair() error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.vault.Clear(); err != nil {
 		return err
 	}
-	s.mu.Lock()
+	s.rules.Clear()
+	s.clearPersistedRulesCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""
 	s.state = "unpaired"
-	s.mu.Unlock()
 	return nil
 }
 
@@ -641,7 +716,17 @@ func (s *Service) SetPairFn(fn func(ctx context.Context, req PairRequest) (Creds
 	s.pairFn = fn
 }
 
+// SetFetchInit overrides LAN init fetch (tests).
+func (s *Service) SetFetchInit(fn func(ctx context.Context, creds Creds) (json.RawMessage, error)) {
+	s.fetchInitFn = fn
+}
+
 // SetLAN overrides the LAN client (tests).
 func (s *Service) SetLAN(lan *LANClient) {
 	s.lan = lan
+}
+
+// SetSendFn overrides LAN SendTo (tests).
+func (s *Service) SetSendFn(fn func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error)) {
+	s.sendFn = fn
 }
