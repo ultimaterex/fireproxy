@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.0](https://github.com/ultimaterex/fireproxy/compare/v0.2.0...v0.3.0) (2026-08-19)
+
+
+### Features
+
+* Control History for Firewalla and UniFi writes ([#16](https://github.com/ultimaterex/fireproxy/issues/16)) ([f560a94](https://github.com/ultimaterex/fireproxy/commit/f560a942e69d4b19afe2571a6ae8d5aa01bc95ab))
+* **fw-app:** Add Rule matching and host emergency/monitoring ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** cache init-backed Rules snapshot ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** create/pause/delete rules via policy NetBot cmds ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** parse init policyRules into Rules DTOs ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* Rules v2 via Firewalla App API ([#21](https://github.com/ultimaterex/fireproxy/issues/21)) ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** Rules scope list with breadcrumb drill-down ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** Rules v2 hub + hybrid list (pair-gated) ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+
+
+### Bug Fixes
+
+* fall back to hourly syssumflow when 24h rank zset is gone ([#20](https://github.com/ultimaterex/fireproxy/issues/20)) ([979293f](https://github.com/ultimaterex/fireproxy/commit/979293fe018c73f40c4b43f42dd05e5d40066a15))
+* **fw-app:** deep-clone Rules cache and guard Set after Unpair ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** normalize Rules scope MACs and tighten parse tests ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** persist Rules cache and make Refresh use it ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **fw-app:** raise init timeout and unblock Rules load UX ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* label all-devices rule creates in Control History ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** make Sync the on-page Rules action ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** repair RulesTab syntax after scope list rewrite ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** resolve Rules user labels, top breadcrumb, list/table scopes ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** restore matchingLabel after scoped hits hub ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** Rules actions menu, DAP split, clearer rule details ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** scope Rules hits hub to the selected device/group ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+* **ui:** tighten Rules chips and show hit percentages ([9381423](https://github.com/ultimaterex/fireproxy/commit/93814232b73bc1f32139fe8729f3d71d0d0019ea))
+
 ## [0.2.0](https://github.com/ultimaterex/fireproxy/compare/v0.1.1...v0.2.0) (2026-08-16)
 
 
