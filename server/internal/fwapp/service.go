@@ -29,7 +29,9 @@ type Service struct {
 	lastErr    string
 	state      string // unpaired | ready | lan-ok | lan-down | error
 
-	rules RulesCache
+	rules     RulesCache
+	obsCache  ObservatoryCache
+	initGroup initFlight
 
 	speedJobs map[string]*SpeedtestJob
 	// IndexSpeedtest merges LAN history into the server catalog (optional).
@@ -310,54 +312,18 @@ func (s *Service) Ping(ctx context.Context) (Status, error) {
 	return s.Status(), nil
 }
 
-// RefreshRules fetches fw-app init, parses Rules, and updates the in-memory cache.
+// RefreshRules fetches fw-app init, parses Rules + observatory, and updates both caches.
+// Always refreshes (ignores InitCache TTL) so Rules mutations see fresh box state.
 func (s *Service) RefreshRules(ctx context.Context) (RulesSnapshot, error) {
 	var zero RulesSnapshot
-	if !s.secretsReady() {
-		return zero, fmt.Errorf("FIREPROXY_SECRETS_KEY required")
-	}
-	c, ok, err := s.vault.Load()
-	if err != nil {
+	if err := s.refreshInitForced(ctx); err != nil {
 		return zero, err
 	}
-	if !ok || c.SymKey == "" {
-		return zero, ErrNotPaired
+	snap, _, ok := s.RulesSnapshot()
+	if !ok {
+		return zero, fmt.Errorf("fwapp: rules cache empty after refresh")
 	}
-	raw, err := s.fetchInit(ctx, c)
-	if err != nil {
-		s.mu.Lock()
-		s.lastPingOK = false
-		s.lastPingAt = time.Now().UTC()
-		s.state = "lan-down"
-		s.lastErr = err.Error()
-		s.mu.Unlock()
-		return zero, err
-	}
-	snap, err := ParseInitRules(raw)
-	if err != nil {
-		return zero, err
-	}
-	at := time.Now().UTC()
-	// Re-check pairing under the same lock Unpair uses so a concurrent
-	// Unpair cannot Clear then lose to a late Set.
-	s.mu.Lock()
-	c2, ok2, err2 := s.vault.Load()
-	if err2 != nil {
-		s.mu.Unlock()
-		return zero, err2
-	}
-	if !ok2 || c2.SymKey == "" {
-		s.mu.Unlock()
-		return zero, ErrNotPaired
-	}
-	s.rules.Set(snap, at)
-	s.lastPingOK = true
-	s.lastPingAt = at
-	s.state = "lan-ok"
-	s.lastErr = ""
-	s.mu.Unlock()
-	s.persistRulesCache(snap, at)
-	return cloneRulesSnapshot(snap), nil
+	return snap, nil
 }
 
 // RulesSnapshot returns the cached Rules read model. ok is false when empty or never refreshed.
@@ -703,6 +669,7 @@ func (s *Service) Unpair() error {
 		return err
 	}
 	s.rules.Clear()
+	s.obsCache.Clear()
 	s.clearPersistedRulesCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}

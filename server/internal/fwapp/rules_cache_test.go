@@ -4,11 +4,67 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"fireproxy/server/internal/tplink"
 )
+
+func TestEnsureInitCoalescesFetches(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("ab", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := readTestdata(t, "init_rules_min.json")
+	var calls atomic.Int32
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		calls.Add(1)
+		time.Sleep(50 * time.Millisecond)
+		return json.RawMessage(raw), nil
+	})
+
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = svc.EnsureInit(context.Background())
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("EnsureInit[%d]: %v", i, err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("FetchInit calls=%d want 1", got)
+	}
+
+	obs, _, ok := svc.ObservatorySnapshot()
+	if !ok || len(obs.Devices) == 0 {
+		t.Fatalf("expected observatory cache with devices, ok=%v devices=%d", ok, len(obs.Devices))
+	}
+	if _, _, ok := svc.RulesSnapshot(); !ok {
+		t.Fatal("expected rules cache filled")
+	}
+}
 
 func TestRefreshRulesFillsCache(t *testing.T) {
 	key, err := tplink.KeyFromEnv(strings.Repeat("ab", 32))
@@ -107,11 +163,17 @@ func TestUnpairClearsRulesCache(t *testing.T) {
 	if _, _, ok := svc.RulesSnapshot(); !ok {
 		t.Fatal("expected cache before unpair")
 	}
+	if _, _, ok := svc.ObservatorySnapshot(); !ok {
+		t.Fatal("expected observatory cache before unpair")
+	}
 	if err := svc.Unpair(); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, ok := svc.RulesSnapshot(); ok {
 		t.Fatal("expected empty cache after unpair")
+	}
+	if _, _, ok := svc.ObservatorySnapshot(); ok {
+		t.Fatal("expected empty observatory cache after unpair")
 	}
 }
 
