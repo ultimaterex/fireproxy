@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.25-alpine AS build
+# Cross-compile on the runner's native arch; avoid QEMU for the Go toolchain.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 ARG VERSION=dev
 WORKDIR /src
 COPY pkg/ ./pkg/
@@ -7,7 +10,7 @@ COPY server/ ./server/
 COPY agent/ ./agent/
 COPY deploy/agent/install-agent.sh /out/install-agent.sh
 WORKDIR /src/server
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-server ./cmd/fireproxy-server
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-server ./cmd/fireproxy-server
 WORKDIR /src/agent
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-agent-arm64 ./cmd/fireproxy-agent \
  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o /out/fireproxy-agent-amd64 ./cmd/fireproxy-agent \

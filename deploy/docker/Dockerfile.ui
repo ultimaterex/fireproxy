@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM node:22-alpine AS build
+# Vite output is platform-agnostic; build natively on the runner to avoid QEMU.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci
