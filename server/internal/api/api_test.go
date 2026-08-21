@@ -216,11 +216,11 @@ func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 func TestBoxFromCatalog(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
-		TS:   9,
+		TS:   time.Now().Unix(),
 		Host: "TestBox",
 		Box:  &inventory.Box{Name: "TestBox", PublicIP: "1.2.3.4", EID: "eid1", Mode: "router"},
 	})
-	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"1.2.3.4": "SR"}}
+	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"1.2.3.4": "SR"}, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -229,11 +229,15 @@ func TestBoxFromCatalog(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Box inventory.Box `json:"box"`
+		Box    inventory.Box `json:"box"`
+		Source string        `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if body.Box.Country != "SR" || body.Box.Region != "Suriname" || body.Box.EID != "eid1" {
 		t.Fatalf("%+v", body.Box)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
 	}
 }
 

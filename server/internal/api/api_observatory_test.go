@@ -167,3 +167,170 @@ func TestMetricsLatestOfflineUsesFWAppInit(t *testing.T) {
 		t.Fatalf("invented rate: %+v", r)
 	}
 }
+
+func TestDevicesOfflineUsesFWAppInit(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("ab", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	if err := v.Save(fwapp.Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"mtype":"init","data":{
+		"model":"gold","groupName":"LabBox",
+		"hosts":[{"mac":"AA:BB:CC:DD:EE:01","name":"Phone","ip":"192.168.1.10"}]
+	}}`)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := inventory.Device{}
+	stale.MAC = "ff:ff:ff:ff:ff:ff"
+	stale.Name = "Stale"
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		TS:      time.Now().Unix(),
+		Host:    "StaleHost",
+		Devices: []inventory.Device{stale},
+	})
+
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: cat, FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/devices", nil))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Source  string             `json:"source"`
+		Host    string             `json:"host"`
+		Devices []inventory.Device `json:"devices"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != observatory.SourceFWAppInit {
+		t.Fatalf("source=%q", body.Source)
+	}
+	if len(body.Devices) != 1 || body.Devices[0].Name != "Phone" {
+		t.Fatalf("devices %+v", body.Devices)
+	}
+	if body.Devices[0].Hostname != "" || body.Devices[0].SSID != "" {
+		t.Fatalf("UniFi overlay must be skipped on init fallback: %+v", body.Devices[0])
+	}
+}
+
+func TestDevicesUnpaired404(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("11", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: store.NewCatalogStore(), FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/devices", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestBoxOfflineUsesFWAppInit(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("22", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	if err := v.Save(fwapp.Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"mtype":"init","data":{
+		"model":"gold","groupName":"LabBox","publicIp":"203.0.113.9","mode":"router","versionStr":"1.2.3"
+	}}`)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		TS:   time.Now().Unix(),
+		Host: "Stale",
+		Box:  &inventory.Box{Name: "StaleBox", Model: "purple"},
+	})
+
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: cat, FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/box", nil))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Source string        `json:"source"`
+		Host   string        `json:"host"`
+		Box    inventory.Box `json:"box"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != observatory.SourceFWAppInit {
+		t.Fatalf("source=%q", body.Source)
+	}
+	if body.Box.Name != "LabBox" || body.Box.Model != "gold" || body.Box.PublicIP != "203.0.113.9" {
+		t.Fatalf("box %+v", body.Box)
+	}
+}
+
+func TestBoxUnpaired404(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("33", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: store.NewCatalogStore(), FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/box", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+}

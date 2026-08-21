@@ -207,13 +207,14 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok {
+	view, prov, ok := observatory.Devices(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no devices yet", http.StatusNotFound)
 		return
 	}
-	devs := cat.Devices
-	if s.Modules != nil {
+	devs := view.Devices
+	// UniFi overlay only on agent/catalog path — skip on pure init fallback.
+	if prov.Source == observatory.SourceAgent && s.Modules != nil {
 		if m, ok := s.Modules.Running("unifi-sync").(interface {
 			Stations() map[string]unifi.Station
 			Wireless() (unifi.WirelessSnapshot, bool)
@@ -228,11 +229,14 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
 			devs = unifi.OverlayDevices(devs, sta, apName)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":      cat.TS,
-		"host":    cat.Host,
+	out := map[string]any{
+		"ts":      view.TS,
+		"host":    view.Host,
 		"devices": devs,
-	})
+		"source":  prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) network(w http.ResponseWriter, r *http.Request) {
@@ -424,18 +428,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) box(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok || cat.Box == nil {
+	view, prov, ok := observatory.Box(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no box yet", http.StatusNotFound)
 		return
 	}
-	b := *cat.Box
+	b := view.Box
 	geo.EnrichBox(&b, s.Geo)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":   cat.TS,
-		"host": cat.Host,
-		"box":  b,
-	})
+	out := map[string]any{
+		"ts":     view.TS,
+		"host":   view.Host,
+		"box":    b,
+		"source": prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) stampUnifiSync(list []modules.Info) {
