@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { EthernetPort, MonitorSmartphone, Network, Server, Shield, Wifi } from 'lucide-react'
 
 import { CopyText } from '@/components/CopyText'
+import { SourceBadge } from '@/components/SourceBadge'
 
 import { Flag } from '@/components/Flag'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,8 @@ const MODES: { id: Mode; maker: 'firewalla' | 'unifi'; label: string }[] = [
 
 export function InventoryTab({
   box,
+  source,
+  stale,
   unifi,
   console: ucon,
   devices,
@@ -29,6 +32,8 @@ export function InventoryTab({
   policies,
 }: {
   box: BoxInfo | null
+  source?: string
+  stale?: boolean
   unifi: ModuleInfo | null
   console: UnifiConsole | null
   devices: Device[]
@@ -76,6 +81,8 @@ export function InventoryTab({
       {active === 'firewalla' ? (
         <FirewallaPane
           box={box}
+          source={source}
+          stale={stale}
           devices={devices}
           network={network}
           switches={switches}
@@ -90,12 +97,16 @@ export function InventoryTab({
 
 function FirewallaPane({
   box,
+  source,
+  stale,
   devices,
   network,
   switches,
   policies,
 }: {
   box: BoxInfo | null
+  source?: string
+  stale?: boolean
   devices: Device[]
   network: NetIface[]
   switches: Switch[]
@@ -151,6 +162,7 @@ function FirewallaPane({
           <CardTitle className="flex items-center gap-3 text-xl font-normal leading-8">
             <img src={makerLogo('firewalla')} alt="" className="size-8 rounded-sm object-contain" />
             <span>{box.name || makerLabel('firewalla')}</span>
+            <SourceBadge source={source} stale={stale} />
             {box.license ? (
               <span className="ml-auto text-sm text-muted-foreground">{box.license}</span>
             ) : null}

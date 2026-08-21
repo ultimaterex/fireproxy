@@ -30,11 +30,23 @@ export type UnboundHit = {
   life?: boolean
 }
 
+/** Observatory data provenance from dual-source facades (optional on old servers). */
+export type Provenance = {
+  source?: string
+  fetched_at?: string
+  stale?: boolean
+}
+
+export type DataSource = 'agent' | 'fw-app-init' | 'empty' | (string & {})
+
 export type LatestView = {
   snapshot: Snapshot
   rates: Record<string, Rates>
   have_prev: boolean
   unbound_hit?: UnboundHit
+  source?: DataSource
+  fetched_at?: string
+  stale?: boolean
 }
 
 export type HistoryPoint = {
@@ -590,6 +602,9 @@ export type Dashboard = {
   top_regions?: RankedFlow[]
   speedtest?: SpeedtestWAN[]
   dns?: DNSHealth
+  source?: DataSource
+  fetched_at?: string
+  stale?: boolean
 }
 
 export type PersistInfo = {

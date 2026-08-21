@@ -74,6 +74,11 @@ func (c *LANClient) RunSpeedtest(ctx context.Context, creds Creds, wanUUID, serv
 	return out, nil
 }
 
+// parseSpeedtestHistoryReply parses a history/init row without stamping wall-clock now for missing TS.
+func parseSpeedtestHistoryReply(raw json.RawMessage, wanUUID string) (SpeedtestResult, error) {
+	return parseSpeedtestReplyTS(raw, wanUUID, false)
+}
+
 // GetSpeedtestResults fetches recent box history via get internetSpeedtestResults.
 // beginUnix is inclusive (seconds); 0 means "as far back as the box returns".
 func (c *LANClient) GetSpeedtestResults(ctx context.Context, creds Creds, beginUnix int64) ([]SpeedtestResult, error) {
@@ -118,14 +123,14 @@ func parseSpeedtestResults(raw json.RawMessage) ([]SpeedtestResult, error) {
 	}
 	out := make([]SpeedtestResult, 0, len(items))
 	for _, item := range items {
-		r, err := parseSpeedtestReply(item, "")
+		r, err := parseSpeedtestHistoryReply(item, "")
 		if err != nil {
 			continue
 		}
 		if r.WanUUID == "" {
 			r.WanUUID = speedtestWanUUID(item)
 		}
-		if r.WanUUID == "" {
+		if r.WanUUID == "" || r.TS == 0 {
 			continue
 		}
 		out = append(out, r)
@@ -147,6 +152,11 @@ func speedtestWanUUID(raw json.RawMessage) string {
 }
 
 func parseSpeedtestReply(raw json.RawMessage, wanUUID string) (SpeedtestResult, error) {
+	// Live runInternetSpeedtest replies may omit timestamp; stamp now for the UI job.
+	return parseSpeedtestReplyTS(raw, wanUUID, true)
+}
+
+func parseSpeedtestReplyTS(raw json.RawMessage, wanUUID string, allowNow bool) (SpeedtestResult, error) {
 	var zero SpeedtestResult
 	var envelope struct {
 		Code int             `json:"code"`
@@ -210,7 +220,7 @@ func parseSpeedtestReply(raw json.RawMessage, wanUUID string) (SpeedtestResult, 
 		}
 		out.TS = int64(ts)
 	}
-	if out.TS == 0 {
+	if out.TS == 0 && allowNow {
 		out.TS = time.Now().Unix()
 	}
 	out.ServerID, out.Server, out.Location = speedtestServerFields(m)
