@@ -8,12 +8,12 @@ func TestAutoFillEmptyOnly(t *testing.T) {
 	var applied []NameRow
 	AutoFillEmpty(prefs, func() ([]User, []FWHost, []string, error) {
 		return []User{
-				{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
-				{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
-			}, []FWHost{
-				{MAC: "02:00:00:00:00:02", Name: "NAS"},
-				{MAC: "02:00:00:00:00:03", Name: "phone"},
-			}, nil, nil
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		}, []FWHost{
+			{MAC: "02:00:00:00:00:02", Name: "NAS"},
+			{MAC: "02:00:00:00:00:03", Name: "phone"},
+		}, nil, nil
 	}, func(rows []NameRow) []ApplyResult {
 		applied = rows
 		out := make([]ApplyResult, len(rows))
@@ -53,12 +53,12 @@ func TestRefreshPendingCountsActive(t *testing.T) {
 	prefs.Set(Prefs{Enabled: true, Excluded: []string{"02:00:00:00:00:02"}})
 	RefreshPending(prefs, func() ([]User, []FWHost, []string, error) {
 		return []User{
-				{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
-				{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
-			}, []FWHost{
-				{MAC: "02:00:00:00:00:02", Name: "NAS"},
-				{MAC: "02:00:00:00:00:03", Name: "phone"},
-			}, nil, nil
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		}, []FWHost{
+			{MAC: "02:00:00:00:00:02", Name: "NAS"},
+			{MAC: "02:00:00:00:00:03", Name: "phone"},
+		}, nil, nil
 	})
 	if prefs.Pending() != 1 {
 		t.Fatalf("pending=%d", prefs.Pending())
@@ -90,10 +90,10 @@ func TestRefreshAudit(t *testing.T) {
 	})
 	RefreshAudit(prefs, func() ([]User, []FWHost, []string, error) {
 		return []User{
-				{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
-			}, []FWHost{
-				{MAC: "02:00:00:00:00:03", Name: "phone"},
-			}, nil, nil
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		}, []FWHost{
+			{MAC: "02:00:00:00:00:03", Name: "phone"},
+		}, nil, nil
 	}, rep)
 	c := prefs.AuditCounts()
 	if c.Names != 1 || c.VLAN != 2 || c.STP != 3 || c.Unknown != 1 || c.Offline != 2 || c.Pending != 1 {
