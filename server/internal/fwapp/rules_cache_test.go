@@ -66,6 +66,133 @@ func TestEnsureInitCoalescesFetches(t *testing.T) {
 	}
 }
 
+func TestEnsureInitSkipsWhenWarm(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("a1", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readTestdata(t, "init_rules_min.json")
+	var calls atomic.Int32
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		calls.Add(1)
+		return json.RawMessage(raw), nil
+	})
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("after first EnsureInit calls=%d want 1", got)
+	}
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("warm EnsureInit must not fetch: calls=%d", got)
+	}
+}
+
+func TestRefreshRulesFetchesWhenWarm(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("a2", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readTestdata(t, "init_rules_min.json")
+	var calls atomic.Int32
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		calls.Add(1)
+		return json.RawMessage(raw), nil
+	})
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("RefreshRules must fetch despite warm cache: calls=%d want 2", got)
+	}
+}
+
+func TestRefreshRulesDoesNotJoinEnsureInitFlight(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("a3", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &CredentialVault{Store: NewMemStore(), Key: key}
+	svc := NewServiceWithVault(v, nil)
+	if err := v.Save(Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := readTestdata(t, "init_rules_min.json")
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		n := calls.Add(1)
+		if n == 1 {
+			close(started)
+			<-release
+		}
+		return json.RawMessage(raw), nil
+	})
+
+	var ensureErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ensureErr = svc.EnsureInit(context.Background())
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("EnsureInit did not start FetchInit")
+	}
+
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		close(release)
+		wg.Wait()
+		t.Fatal(err)
+	}
+	close(release)
+	wg.Wait()
+	if ensureErr != nil {
+		t.Fatal(ensureErr)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("RefreshRules must not join EnsureInit flight: calls=%d want 2", got)
+	}
+}
+
 func TestRefreshRulesFillsCache(t *testing.T) {
 	key, err := tplink.KeyFromEnv(strings.Repeat("ab", 32))
 	if err != nil {

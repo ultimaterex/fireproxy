@@ -252,7 +252,9 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	return nil
 }
 
-// refreshInitForced always fetches init (for Rules mutations), coalescing with EnsureInit.
+// refreshInitForced always fetches init (for Rules mutations).
+// It does not join the EnsureInit singleflight so post-mutation refresh
+// never waits on / shares a cache-miss EnsureInit in flight.
 func (s *Service) refreshInitForced(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
@@ -264,7 +266,5 @@ func (s *Service) refreshInitForced(ctx context.Context) error {
 	if !ok || c.SymKey == "" {
 		return ErrNotPaired
 	}
-	return s.initGroup.Do(initFlightKey, func() error {
-		return s.fetchAndApplyInit(ctx)
-	})
+	return s.fetchAndApplyInit(ctx)
 }
