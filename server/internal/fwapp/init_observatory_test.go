@@ -1,0 +1,119 @@
+package fwapp
+
+import (
+	"os"
+	"testing"
+)
+
+func TestParseInitObservatoryFromFixture(t *testing.T) {
+	path := labInitFixturePath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("lab fixture missing (%s): %v", path, err)
+	}
+	obs, err := ParseInitObservatory(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.AlarmCount <= 0 {
+		t.Fatalf("alarm_count=%d", obs.AlarmCount)
+	}
+	if len(obs.NewAlarms) == 0 {
+		t.Fatal("expected newAlarms")
+	}
+	if obs.Transfer24h.Upload == 0 && obs.Transfer24h.Download == 0 {
+		t.Fatalf("newLast24 totals %+v", obs.Transfer24h)
+	}
+	if len(obs.Transfer24h.Points) == 0 {
+		t.Fatal("expected newLast24 points")
+	}
+	if len(obs.MonthlyWANs) == 0 {
+		t.Fatal("expected monthlyDataUsageOnWans")
+	}
+	if obs.Box == nil || obs.Box.Model == "" {
+		t.Fatalf("box %+v", obs.Box)
+	}
+	if len(obs.Devices) == 0 {
+		t.Fatal("expected hosts")
+	}
+	if obs.SysMetrics == nil || obs.SysMetrics.Load1 == 0 {
+		t.Fatalf("sysMetrics %+v", obs.SysMetrics)
+	}
+	if len(obs.NICStates) == 0 {
+		t.Fatal("expected nicStates")
+	}
+	if len(obs.Speedtest) == 0 {
+		t.Fatal("expected internetSpeedtestResults grouped by WAN")
+	}
+	for _, w := range obs.Speedtest {
+		if w.UUID == "" {
+			t.Fatalf("speedtest missing uuid: %+v", w)
+		}
+		if len(w.Points) == 0 {
+			t.Fatalf("speedtest %s missing points", w.UUID)
+		}
+	}
+	// Ranked flows stay empty — systemFlows.flows is empty in lab; do not invent.
+	if len(obs.TopUpload) != 0 || len(obs.TopDownload) != 0 ||
+		len(obs.TopDestUpload) != 0 || len(obs.TopDestDownload) != 0 ||
+		len(obs.TopRegions) != 0 || len(obs.DestFlows) != 0 {
+		t.Fatalf("ranked flows must stay empty: up=%d down=%d destUp=%d destDown=%d regions=%d dest=%d",
+			len(obs.TopUpload), len(obs.TopDownload), len(obs.TopDestUpload),
+			len(obs.TopDestDownload), len(obs.TopRegions), len(obs.DestFlows))
+	}
+}
+
+func TestParseInitObservatoryEnvelope(t *testing.T) {
+	raw := []byte(`{"mtype":"init","data":{
+		"activeAlarmCount":2,
+		"pendingAlarmCount":1,
+		"archivedAlarmCount":3,
+		"newAlarms":[{"aid":9,"type":"ALARM_INTEL","message":"hi","timestamp":1}],
+		"newLast24":{"totalUpload":10,"totalDownload":20,"upload":[[100,1]],"download":[[100,2]],"conn":[[100,3]]},
+		"monthlyDataUsageOnWans":{"u1":{"totalUpload":4,"totalDownload":5}},
+		"internetSpeedtestResults":[],
+		"model":"gold",
+		"device":"Box",
+		"hosts":[{"mac":"aa:bb:cc:dd:ee:01","name":"Phone","ip":"10.0.0.2","macVendor":"Acme","tags":["1"],"flowsummary":{"inbytes":8,"outbytes":9}}],
+		"sysMetrics":{"load1":1.5,"load5":1.1,"load15":0.9,"memUsage":0.4,"totalMem":1000},
+		"nicStates":{"eth0":{"address":"aa:bb:cc:dd:ee:ff","carrier":"1","duplex":"full","speed":"1000"}},
+		"systemFlows":{"upload":{"flows":[]},"download":{"flows":[]}}
+	}}`)
+	obs, err := ParseInitObservatory(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.AlarmCount != 2 || obs.PendingAlarmCount != 1 || obs.ArchivedAlarmCount != 3 {
+		t.Fatalf("counts %+v", obs)
+	}
+	if len(obs.NewAlarms) != 1 || obs.NewAlarms[0].AID != 9 {
+		t.Fatalf("alarms %+v", obs.NewAlarms)
+	}
+	if obs.Transfer24h.Upload != 10 || obs.Transfer24h.Download != 20 || len(obs.Transfer24h.Points) != 1 {
+		t.Fatalf("transfer %+v", obs.Transfer24h)
+	}
+	if obs.Transfer24h.Points[0].TS != 100 || obs.Transfer24h.Points[0].Upload != 1 ||
+		obs.Transfer24h.Points[0].Download != 2 || obs.Transfer24h.Points[0].Conn != 3 {
+		t.Fatalf("point %+v", obs.Transfer24h.Points[0])
+	}
+	if len(obs.MonthlyWANs) != 1 || obs.MonthlyWANs[0].UUID != "u1" {
+		t.Fatalf("monthly %+v", obs.MonthlyWANs)
+	}
+	if obs.Box == nil || obs.Box.Model != "gold" || obs.Box.Name != "Box" {
+		t.Fatalf("box %+v", obs.Box)
+	}
+	if len(obs.Devices) != 1 {
+		t.Fatalf("devices %+v", obs.Devices)
+	}
+	d := obs.Devices[0]
+	if d.MAC != "AA:BB:CC:DD:EE:01" || d.Name != "Phone" || d.IP != "10.0.0.2" ||
+		d.Vendor != "Acme" || d.Download != 8 || d.Upload != 9 || len(d.TagIDs) != 1 || d.TagIDs[0] != "1" {
+		t.Fatalf("device %+v", d)
+	}
+	if obs.SysMetrics == nil || obs.SysMetrics.Load1 != 1.5 {
+		t.Fatalf("sys %+v", obs.SysMetrics)
+	}
+	if len(obs.NICStates) != 1 || obs.NICStates[0].Name != "eth0" {
+		t.Fatalf("nics %+v", obs.NICStates)
+	}
+}
