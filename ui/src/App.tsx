@@ -74,6 +74,7 @@ import {
   type PersistInfo,
   type AgentHealth,
   type Policy,
+  type Provenance,
   type SeenId,
   type Tab,
   type Tag,
@@ -162,6 +163,8 @@ function App() {
   const [query, setQuery] = useState('')
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [box, setBox] = useState<BoxInfo | null>(null)
+  const [devicesProv, setDevicesProv] = useState<Provenance>({})
+  const [boxProv, setBoxProv] = useState<Provenance>({})
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [legacyPage, setLegacyPage] = useState<LegacyPage>('metrics')
   const [unifiMod, setUnifiMod] = useState<ModuleInfo | null>(null)
@@ -273,13 +276,22 @@ function App() {
             ts: number
             host: string
             devices: Device[]
+            source?: string
+            fetched_at?: string
+            stale?: boolean
           }
           if (!cancelled) {
             setDevices(data.devices ?? [])
             setInvMeta({ ts: data.ts, host: data.host })
+            setDevicesProv({
+              source: data.source,
+              fetched_at: data.fetched_at,
+              stale: data.stale,
+            })
           }
         } else if (dRes.status === 404 && !cancelled) {
           setDevices([])
+          setDevicesProv({})
         }
 
         if (nRes.ok) {
@@ -348,10 +360,23 @@ function App() {
         }
 
         if (boxRes.ok) {
-          const data = (await boxRes.json()) as { box?: BoxInfo }
-          if (!cancelled) setBox(data.box ?? null)
+          const data = (await boxRes.json()) as {
+            box?: BoxInfo
+            source?: string
+            fetched_at?: string
+            stale?: boolean
+          }
+          if (!cancelled) {
+            setBox(data.box ?? null)
+            setBoxProv({
+              source: data.source,
+              fetched_at: data.fetched_at,
+              stale: data.stale,
+            })
+          }
         } else if (boxRes.status === 404 && !cancelled) {
           setBox(null)
+          setBoxProv({})
         }
 
         if (modRes.ok) {
@@ -1030,6 +1055,8 @@ function App() {
           ) : showDevicesTable ? (
             <DevicesTab
               devices={showDevices}
+              source={devicesProv.source}
+              stale={devicesProv.stale}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}
@@ -1105,6 +1132,8 @@ function App() {
           {tab === 'inventory' && (
             <InventoryTab
               box={showBox}
+              source={boxProv.source}
+              stale={boxProv.stale}
               unifi={unifiMod}
               console={showUnifi}
               devices={showDevices}
@@ -1242,6 +1271,8 @@ function App() {
           {tab === 'devices' && (
             <DevicesTab
               devices={showDevices}
+              source={devicesProv.source}
+              stale={devicesProv.stale}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}

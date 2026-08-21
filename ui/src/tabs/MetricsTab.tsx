@@ -5,6 +5,7 @@ import { DeviceIcon } from '@/components/DeviceIcon'
 import { Flag } from '@/components/Flag'
 import { Donut } from '@/components/Donut'
 import { RegionMap } from '@/components/RegionMap'
+import { SourceBadge } from '@/components/SourceBadge'
 import { completeHourPoints, DnsChart, SpeedSpark, speedTrend } from '@/components/SpeedSpark'
 import { Toast } from '@/components/Toast'
 import { TransferChart } from '@/components/TransferChart'
@@ -105,6 +106,10 @@ export function MetricsTab({
         .sort(([a], [b]) => a.localeCompare(b))
     : []
 
+  // Prefer dashboard provenance; fall back to metrics/latest (old servers omit both).
+  const dataSource = dashboard?.source ?? latest?.source
+  const dataStale = dashboard?.stale ?? latest?.stale
+
   const meta = (
     <p className="text-xs text-muted-foreground">
       {snap ? fmtTime(snap.ts) : dashboard?.ts ? fmtTime(dashboard.ts) : '—'}
@@ -132,6 +137,11 @@ export function MetricsTab({
               {agentOnline ? 'Online' : 'Offline'}
             </StatusChip>
           </StatusGroup>
+          {(dataSource === 'agent' || dataSource === 'fw-app-init') ? (
+            <StatusGroup label="Source">
+              <SourceBadge source={dataSource} stale={dataStale} />
+            </StatusGroup>
+          ) : null}
           {cpuPct != null ? (
             <StatusGroup label="CPU">
               <StatusChip tone={cpuTone(cpuPct)}>{cpuPct.toFixed(0)}%</StatusChip>
