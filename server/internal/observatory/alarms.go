@@ -21,6 +21,14 @@ func Alarms(ctx context.Context, deps Deps) (AlarmsView, Provenance, bool) {
 	now := deps.now()
 	agentAge, haveAgent, cat := alarmsCatalogAge(deps, now, CatalogTTL)
 
+	if deps.PreferInit {
+		snap, _, prov, ok := takeInit(ctx, deps)
+		if ok {
+			return alarmsFromInit(snap), prov, true
+		}
+		return AlarmsView{}, Provenance{Source: SourceEmpty}, false
+	}
+
 	if deps.AgentOnline && haveAgent && agentAge < CatalogTTL {
 		return AlarmsView{
 			ActiveAlarmCount: cat.Dashboard.AlarmCount,

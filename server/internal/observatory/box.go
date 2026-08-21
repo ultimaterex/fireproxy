@@ -20,6 +20,14 @@ func Box(ctx context.Context, deps Deps) (BoxView, Provenance, bool) {
 	now := deps.now()
 	agentAge, haveAgent, cat := boxCatalogAge(deps, now, CatalogTTL)
 
+	if deps.PreferInit {
+		snap, at, prov, ok := takeInit(ctx, deps)
+		if ok && snap.Box != nil {
+			return boxFromInit(snap, at), prov, true
+		}
+		return BoxView{}, Provenance{Source: SourceEmpty}, false
+	}
+
 	if deps.AgentOnline && haveAgent && agentAge < CatalogTTL {
 		return BoxView{TS: cat.TS, Host: cat.Host, Box: *cat.Box}, Provenance{Source: SourceAgent}, true
 	}

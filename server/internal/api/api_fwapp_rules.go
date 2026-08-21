@@ -10,6 +10,7 @@ import (
 
 	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/fwapp"
+	"fireproxy/server/internal/observatory"
 )
 
 func (s *Server) getFWAppRules(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,31 @@ func (s *Server) postFWAppRulesRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	_, at, _ := svc.RulesSnapshot()
 	writeJSON(w, http.StatusOK, fwAppRulesResponse(snap, at))
+}
+
+// postFWAppInitRefresh force-pulls LAN init (rules + observatory), then holds
+// PreferInit so subsequent observatory GETs serve that snapshot.
+func (s *Server) postFWAppInitRefresh(w http.ResponseWriter, r *http.Request) {
+	svc := s.fwApp()
+	if svc == nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if _, err := svc.RefreshRules(r.Context()); err != nil {
+		writeFWAppRulesErr(w, svc, err)
+		return
+	}
+	svc.MarkPreferInit(fwapp.PreferInitHold)
+	_, at, ok := svc.ObservatorySnapshot()
+	out := map[string]any{
+		"ok":           true,
+		"source":       observatory.SourceFWAppInit,
+		"prefer_until": svc.PreferInitUntil().UTC(),
+	}
+	if ok && !at.IsZero() {
+		out["fetched_at"] = at.UTC()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) postFWAppRulesCreate(w http.ResponseWriter, r *http.Request) {

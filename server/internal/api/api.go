@@ -100,6 +100,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/fw-app/pair", s.deleteFWAppPair)
 	mux.HandleFunc("GET /v1/fw-app/rules", s.getFWAppRules)
 	mux.HandleFunc("POST /v1/fw-app/rules/refresh", s.postFWAppRulesRefresh)
+	mux.HandleFunc("POST /v1/fw-app/init/refresh", s.postFWAppInitRefresh)
 	mux.HandleFunc("POST /v1/fw-app/rules", s.postFWAppRulesCreate)
 	mux.HandleFunc("POST /v1/fw-app/rules/{id}/pause", s.postFWAppRulesPause)
 	mux.HandleFunc("DELETE /v1/fw-app/rules/{id}", s.deleteFWAppRule)
@@ -805,6 +806,7 @@ func (s *Server) obsDeps() observatory.Deps {
 	if s.FWApp != nil {
 		deps.ObservatorySnapshot = s.FWApp.ObservatorySnapshot
 		deps.EnsureInit = s.FWApp.EnsureInit
+		deps.PreferInit = s.FWApp.PreferInit()
 	}
 	return deps
 }

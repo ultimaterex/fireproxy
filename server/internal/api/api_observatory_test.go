@@ -423,3 +423,87 @@ func TestAlarmsUnpaired404(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestInitRefreshMarksPreferInit(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("66", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	if err := v.Save(fwapp.Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"mtype":"init","data":{
+		"activeAlarmCount":2,
+		"newLast24":{"totalUpload":1,"totalDownload":2,"upload":[],"download":[],"conn":[]},
+		"model":"gold","groupName":"Lab",
+		"hosts":[{"mac":"aa:bb:cc:dd:ee:01","name":"Phone"}],
+		"sysMetrics":{"load1":1,"load5":1,"load15":1,"memUsage":0.2,"totalMem":100},
+		"nicStates":{"eth0":{"carrier":"1","speed":"1000"}},
+		"policyRules":[]
+	}}`)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		TS:   time.Now().Unix(),
+		Host: "agent-box",
+		Dashboard: &inventory.Dashboard{
+			AlarmCount: 999,
+			TopUpload:  []inventory.RankedFlow{{ID: "agent"}},
+		},
+		Devices: []inventory.Device{{}},
+		Box:     &inventory.Box{Name: "agent-box", Model: "gse"},
+	})
+	hub := &agenthub.Hub{}
+	hub.SetOnline(true)
+	s := &api.Server{CatalogStore: cat, FWApp: svc, AgentHub: hub, Store: store.NewMemoryStore(10)}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	// Before refresh: fresh agent wins.
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil))
+	if rr.Code != 200 {
+		t.Fatalf("pre %d %s", rr.Code, rr.Body.String())
+	}
+	var pre struct {
+		Source string `json:"source"`
+	}
+	_ = json.NewDecoder(rr.Body).Decode(&pre)
+	if pre.Source != observatory.SourceAgent {
+		t.Fatalf("pre source=%q", pre.Source)
+	}
+
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/fw-app/init/refresh", nil))
+	if rr.Code != 200 {
+		t.Fatalf("refresh %d %s", rr.Code, rr.Body.String())
+	}
+	if !svc.PreferInit() {
+		t.Fatal("expected PreferInit after refresh")
+	}
+
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil))
+	if rr.Code != 200 {
+		t.Fatalf("post %d %s", rr.Code, rr.Body.String())
+	}
+	var post struct {
+		Source     string `json:"source"`
+		AlarmCount int64  `json:"alarm_count"`
+	}
+	_ = json.NewDecoder(rr.Body).Decode(&post)
+	if post.Source != observatory.SourceFWAppInit || post.AlarmCount != 2 {
+		t.Fatalf("post %+v", post)
+	}
+}

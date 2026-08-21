@@ -13,6 +13,11 @@ import (
 // (on-demand refresh only — no background poll).
 const InitCacheTTL = 5 * time.Minute
 
+// PreferInitHold is how long observatory facades prefer fw-app init after an
+// explicit header/control refresh (so a demand pull is not overridden by a
+// still-fresh agent catalog).
+const PreferInitHold = time.Minute
+
 const initFlightKey = "init"
 
 // ObservatoryCache holds the last successful init-backed observatory snapshot.

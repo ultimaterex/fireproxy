@@ -16,6 +16,9 @@ const CatalogTTL = time.Hour
 type Deps struct {
 	Now         time.Time // zero → time.Now()
 	AgentOnline bool
+	// PreferInit forces fw-app init when warm (or after one EnsureInit), even if
+	// the agent catalog/ingest is still within TTL. Set after an explicit control refresh.
+	PreferInit bool
 
 	Catalog func() (inventory.Catalog, bool)
 	Latest  func() (store.LatestView, bool)
@@ -54,6 +57,14 @@ type DashboardView struct {
 func Dashboard(ctx context.Context, deps Deps) (DashboardView, Provenance, bool) {
 	now := deps.now()
 	agentAge, haveAgent, cat := catalogAge(deps, now, CatalogTTL)
+
+	if deps.PreferInit {
+		snap, at, prov, ok := takeInit(ctx, deps)
+		if ok {
+			return dashboardFromInit(snap, at), prov, true
+		}
+		return DashboardView{}, Provenance{Source: SourceEmpty}, false
+	}
 
 	// Prefer agent without touching InitCache when online + fresh.
 	if deps.AgentOnline && haveAgent && agentAge < CatalogTTL {
@@ -110,6 +121,18 @@ func ensureInitOnce(ctx context.Context, deps Deps) bool {
 		return false
 	}
 	return true
+}
+
+// takeInit returns a warm observatory snapshot, ensuring init once if needed.
+func takeInit(ctx context.Context, deps Deps) (fwapp.ObservatorySnapshot, time.Time, Provenance, bool) {
+	snap, at, initOK := peekInit(deps)
+	if !initOK && ensureInitOnce(ctx, deps) {
+		snap, at, initOK = peekInit(deps)
+	}
+	if !initOK {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, Provenance{Source: SourceEmpty}, false
+	}
+	return snap, at, Provenance{Source: SourceFWAppInit, FetchedAt: at}, true
 }
 
 func dashboardFromCatalog(cat inventory.Catalog) DashboardView {

@@ -33,6 +33,8 @@ type Service struct {
 	obsCache  ObservatoryCache
 	initGroup initFlight
 
+	preferInitUntil time.Time // observatory: prefer init over agent until this time
+
 	speedJobs map[string]*SpeedtestJob
 	// IndexSpeedtest merges LAN history into the server catalog (optional).
 	IndexSpeedtest func(results []SpeedtestResult)
@@ -670,12 +672,43 @@ func (s *Service) Unpair() error {
 	}
 	s.rules.Clear()
 	s.obsCache.Clear()
+	s.preferInitUntil = time.Time{}
 	s.clearPersistedRulesCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""
 	s.state = "unpaired"
 	return nil
+}
+
+// MarkPreferInit makes observatory facades prefer fw-app init until now+d.
+func (s *Service) MarkPreferInit(d time.Duration) {
+	if s == nil || d <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.preferInitUntil = time.Now().UTC().Add(d)
+}
+
+// PreferInit reports whether observatory should serve init over fresh agent data.
+func (s *Service) PreferInit() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.preferInitUntil.IsZero() && time.Now().UTC().Before(s.preferInitUntil)
+}
+
+// PreferInitUntil returns the deadline for PreferInit (UTC zero if inactive).
+func (s *Service) PreferInitUntil() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.preferInitUntil
 }
 
 // SetPairFn overrides cloud pairing (tests).

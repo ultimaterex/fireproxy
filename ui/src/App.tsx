@@ -12,6 +12,7 @@ import {
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
   ScrollText,
   Settings,
   Shield,
@@ -172,6 +173,9 @@ function App() {
   const [unifiConsole, setUnifiConsole] = useState<UnifiConsole | null>(null)
   const [settingsOpen, setSettingsOpen] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [initRefreshing, setInitRefreshing] = useState(false)
+  const [controlLanOk, setControlLanOk] = useState(false)
+  const loadBootstrapRef = useRef<(() => Promise<void>) | null>(null)
   const [auditFocus, setAuditFocus] = useState<AuditFocus | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(loadNavCollapsed)
   const [anonOn, setAnonOn] = useState(isAnonymityOn)
@@ -240,7 +244,7 @@ function App() {
     async function load() {
       setNowMs(Date.now())
       try {
-        const [mRes, hRes, dRes, nRes, tRes, wRes, pRes, gRes, healthRes, dashRes, boxRes, modRes, uRes, aRes] =
+        const [mRes, hRes, dRes, nRes, tRes, wRes, pRes, gRes, healthRes, dashRes, boxRes, modRes, uRes, aRes, fwRes] =
           await Promise.all([
           api('/v1/metrics/latest'),
           api(`/v1/metrics/history?range=${chartRange}`),
@@ -256,8 +260,16 @@ function App() {
           api('/v1/modules'),
           api('/v1/unifi'),
           api('/v1/audit'),
+          api('/v1/fw-app/status'),
         ])
         if (!cancelled) setError(null)
+
+        if (fwRes.ok) {
+          const st = (await fwRes.json()) as { paired?: boolean; state?: string }
+          if (!cancelled) setControlLanOk(!!st.paired && st.state === 'lan-ok')
+        } else if (!cancelled) {
+          setControlLanOk(false)
+        }
 
         if (mRes.ok) {
           const data = (await mRes.json()) as LatestView
@@ -390,13 +402,34 @@ function App() {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       }
     }
+    loadBootstrapRef.current = load
     void load()
     const id = window.setInterval(load, 5000)
     return () => {
       cancelled = true
+      loadBootstrapRef.current = null
       window.clearInterval(id)
     }
   }, [chartRange, auth])
+
+  async function refreshFromControl() {
+    if (initRefreshing || !controlLanOk) return
+    setInitRefreshing(true)
+    setNotifOpen(false)
+    try {
+      const r = await api('/v1/fw-app/init/refresh', { method: 'POST' })
+      if (!r.ok) {
+        const msg = (await r.text().catch(() => '')) || `Refresh failed (${r.status})`
+        setError(msg)
+        return
+      }
+      await loadBootstrapRef.current?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInitRefreshing(false)
+    }
+  }
 
   const cidrs = useMemo(() => (anon ? lanCidrsFromNetwork(anon, network) : []), [anon, network])
   const showNetwork = useMemo(
@@ -883,6 +916,20 @@ function App() {
           ) : MODE_TABS.includes(tab) ? (
             <ViewToggle value={modes[tab]} onChange={setMode} />
           ) : null}
+          <button
+            type="button"
+            className="relative rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            aria-label="Refresh from Firewalla"
+            title={
+              controlLanOk
+                ? 'Pull live data from Firewalla control'
+                : 'Pair Firewalla control (LAN OK) to refresh'
+            }
+            disabled={!controlLanOk || initRefreshing}
+            onClick={() => void refreshFromControl()}
+          >
+            <RefreshCw className={cn('size-5', initRefreshing && 'animate-spin')} />
+          </button>
           <div className="relative" ref={notifRef}>
             <button
               type="button"
@@ -973,7 +1020,15 @@ function App() {
           </div>
         </header>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto">
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-x-auto">
+        {initRefreshing ? (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+            <div className="flex items-center gap-2 rounded-md border bg-background px-4 py-3 text-sm text-muted-foreground shadow-sm">
+              <RefreshCw className="size-4 animate-spin" />
+              Refreshing from Firewalla…
+            </div>
+          </div>
+        ) : null}
         <main
           className={cn(
             'mx-auto w-full px-5 py-5',

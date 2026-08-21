@@ -21,6 +21,14 @@ func Devices(ctx context.Context, deps Deps) (DevicesView, Provenance, bool) {
 	now := deps.now()
 	agentAge, haveAgent, cat := devicesCatalogAge(deps, now, CatalogTTL)
 
+	if deps.PreferInit {
+		snap, at, prov, ok := takeInit(ctx, deps)
+		if ok {
+			return devicesFromInit(snap, at), prov, true
+		}
+		return DevicesView{}, Provenance{Source: SourceEmpty}, false
+	}
+
 	if deps.AgentOnline && haveAgent && agentAge < CatalogTTL {
 		return DevicesView{TS: cat.TS, Host: cat.Host, Devices: cat.Devices}, Provenance{Source: SourceAgent}, true
 	}

@@ -18,6 +18,14 @@ func MetricsLatest(ctx context.Context, deps Deps) (store.LatestView, Provenance
 	now := deps.now()
 	agentAge, haveAgent, view := ingestAge(deps, now, IngestTTL)
 
+	if deps.PreferInit {
+		snap, at, prov, ok := takeInit(ctx, deps)
+		if ok {
+			return metricsFromInit(snap, at), prov, true
+		}
+		return store.LatestView{}, Provenance{Source: SourceEmpty}, false
+	}
+
 	if deps.AgentOnline && haveAgent && agentAge < IngestTTL {
 		return view, Provenance{Source: SourceAgent}, true
 	}

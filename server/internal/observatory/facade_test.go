@@ -56,6 +56,45 @@ func TestDashboardAgentOnlineUsesCatalog(t *testing.T) {
 	}
 }
 
+func TestDashboardPreferInitOverridesFreshAgent(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	initAt := now.Add(-30 * time.Second)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: true,
+		PreferInit:  true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS: now.Add(-time.Minute).Unix(),
+				Dashboard: &inventory.Dashboard{
+					AlarmCount: 999,
+					TopUpload:  []inventory.RankedFlow{{ID: "agent"}},
+				},
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{
+				AlarmCount:  3,
+				Transfer24h: inventory.Transfer{Upload: 10, Download: 20},
+			}, initAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("warm init should not EnsureInit")
+			return nil
+		},
+	}
+	dash, prov, ok := Dashboard(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceFWAppInit {
+		t.Fatalf("source=%q", prov.Source)
+	}
+	if dash.AlarmCount != 3 || len(dash.TopUpload) != 0 {
+		t.Fatalf("want init rollups without tops: %+v", dash)
+	}
+}
+
 func TestDashboardAgentOfflineWarmInit(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	initAt := now.Add(-2 * time.Minute)
