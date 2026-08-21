@@ -297,7 +297,7 @@ func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetw
 func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile, net *rawNetwork) []inventory.SpeedtestWAN {
 	byUUID := map[string][]inventory.SpeedtestPoint{}
 	for _, item := range raw {
-		r, err := parseSpeedtestReply(item, "")
+		r, err := parseSpeedtestHistoryReply(item, "")
 		if err != nil {
 			continue
 		}
@@ -305,7 +305,7 @@ func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile
 		if uuid == "" {
 			uuid = speedtestWanUUID(item)
 		}
-		if uuid == "" {
+		if uuid == "" || r.TS == 0 {
 			continue
 		}
 		byUUID[uuid] = append(byUUID[uuid], inventory.SpeedtestPoint{

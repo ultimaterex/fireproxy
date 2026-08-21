@@ -3,6 +3,7 @@ package fwapp
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestParseInitObservatoryFromFixture(t *testing.T) {
@@ -115,5 +116,36 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 	}
 	if len(obs.NICStates) != 1 || obs.NICStates[0].Name != "eth0" {
 		t.Fatalf("nics %+v", obs.NICStates)
+	}
+}
+
+func TestParseInitSpeedtestSkipsMissingTimestamp(t *testing.T) {
+	before := time.Now().Unix()
+	raw := []byte(`{
+		"internetSpeedtestResults":[
+			{"uuid":"wan-a","success":true,"result":{"download":100,"upload":50,"latency":5}},
+			{"uuid":"wan-a","success":true,"timestamp":1700000000,"result":{"download":200,"upload":80,"latency":6}}
+		],
+		"model":"gold"
+	}`)
+	obs, err := ParseInitObservatory(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(obs.Speedtest) != 1 {
+		t.Fatalf("speedtest=%+v", obs.Speedtest)
+	}
+	w := obs.Speedtest[0]
+	if len(w.Points) != 1 || w.Points[0].TS != 1700000000 || w.Points[0].Down != 200 {
+		t.Fatalf("points %+v", w.Points)
+	}
+	if w.Down != 200 {
+		t.Fatalf("latest %+v", w)
+	}
+	after := time.Now().Unix()
+	for _, p := range w.Points {
+		if p.TS >= before && p.TS <= after+1 {
+			t.Fatalf("history point stamped with wall clock: ts=%d before=%d after=%d", p.TS, before, after)
+		}
 	}
 }
