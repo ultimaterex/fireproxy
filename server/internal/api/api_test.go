@@ -7,16 +7,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"fireproxy/pkg/device"
 	"fireproxy/pkg/inventory"
 	"fireproxy/pkg/snapshot"
+	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/api"
 	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/modules"
+	"fireproxy/server/internal/observatory"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/unifi"
 )
+
+func onlineHub() *agenthub.Hub {
+	h := &agenthub.Hub{}
+	h.SetOnline(true)
+	return h
+}
 
 func TestHealthAndLatest(t *testing.T) {
 	mem := store.NewMemoryStore(8)
@@ -70,11 +79,17 @@ func TestHealthAndLatest(t *testing.T) {
 		t.Fatalf("want 404 got %d", rr.Code)
 	}
 
-	mem.Add(snapshot.Snapshot{TS: 1, Host: "a", Ifaces: map[string]snapshot.IfaceStats{}})
+	s.AgentHub = onlineHub()
+	mem.Add(snapshot.Snapshot{TS: time.Now().Unix(), Host: "a", Ifaces: map[string]snapshot.IfaceStats{}})
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/metrics/latest", nil))
 	if rr.Code != 200 {
 		t.Fatalf("latest %d %s", rr.Code, rr.Body.String())
+	}
+	var latest map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &latest)
+	if latest["source"] != observatory.SourceAgent {
+		t.Fatalf("source=%v", latest["source"])
 	}
 
 	rr = httptest.NewRecorder()
@@ -87,7 +102,7 @@ func TestHealthAndLatest(t *testing.T) {
 func TestDashboardFromCatalog(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
-		TS:       9,
+		TS:       time.Now().Unix(),
 		Host:     "Firewalla",
 		Devices:  []inventory.Device{{Device: device.Device{MAC: "aa"}}},
 		Policies: []inventory.Policy{{ID: "1"}, {ID: "2"}},
@@ -97,7 +112,7 @@ func TestDashboardFromCatalog(t *testing.T) {
 			Blocked:     inventory.BlockedMix{Blocked: 15, Allowed: 20},
 		},
 	})
-	s := &api.Server{CatalogStore: cat}
+	s := &api.Server{CatalogStore: cat, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -106,19 +121,24 @@ func TestDashboardFromCatalog(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Devices    int   `json:"devices"`
-		Rules      int   `json:"rules"`
-		AlarmCount int64 `json:"alarm_count"`
+		Devices    int    `json:"devices"`
+		Rules      int    `json:"rules"`
+		AlarmCount int64  `json:"alarm_count"`
+		Source     string `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if body.Devices != 1 || body.Rules != 2 || body.AlarmCount != 572 {
 		t.Fatalf("%+v", body)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
 	}
 }
 
 func TestDashboardIncludesSpeedtestAndDNS(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
+		TS: time.Now().Unix(),
 		Dashboard: &inventory.Dashboard{
 			Speedtest: []inventory.SpeedtestWAN{
 				{UUID: "wan-a", Name: "Telesur", Active: true, PlanDown: 1000, Down: 619, Up: 410},
@@ -128,7 +148,7 @@ func TestDashboardIncludesSpeedtestAndDNS(t *testing.T) {
 			},
 		},
 	})
-	s := &api.Server{CatalogStore: cat}
+	s := &api.Server{CatalogStore: cat, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -158,13 +178,14 @@ func (m mapGeo) Country(ip string) string { return m[ip] }
 func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
+		TS: time.Now().Unix(),
 		Dashboard: &inventory.Dashboard{
 			DestFlows: []inventory.RankedFlow{
 				{ID: "hf.co", Name: "hf.co", DestIP: "9.9.9.9", Download: 500, Bytes: 500},
 			},
 		},
 	})
-	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"9.9.9.9": "US"}}
+	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"9.9.9.9": "US"}, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -177,7 +198,8 @@ func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 			Name   string `json:"name"`
 			Region string `json:"region"`
 		} `json:"top_dest_download"`
-		DestFlows []any `json:"dest_flows"`
+		DestFlows []any  `json:"dest_flows"`
+		Source    string `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if len(body.TopDestDownload) != 1 || body.TopDestDownload[0].Region != "United States" {
@@ -185,6 +207,9 @@ func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 	}
 	if len(body.DestFlows) != 0 {
 		t.Fatalf("dest_flows leaked: %+v", body.DestFlows)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
 	}
 }
 

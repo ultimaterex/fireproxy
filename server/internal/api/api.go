@@ -18,6 +18,7 @@ import (
 	"fireproxy/server/internal/geo"
 	"fireproxy/server/internal/loghub"
 	"fireproxy/server/internal/modules"
+	"fireproxy/server/internal/observatory"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/tplink"
 	"fireproxy/server/internal/unifi"
@@ -174,12 +175,22 @@ func (s *Server) agentHealth() map[string]any {
 }
 
 func (s *Server) latest(w http.ResponseWriter, r *http.Request) {
-	view, ok := s.Store.Latest()
-	if !ok {
+	view, prov, ok := observatory.MetricsLatest(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no snapshots yet", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	out := map[string]any{
+		"snapshot":  view.Snapshot,
+		"rates":     view.Rates,
+		"have_prev": view.HavePrev,
+		"source":    prov.Source,
+	}
+	if view.UnboundHit != nil {
+		out["unbound_hit"] = view.UnboundHit
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
@@ -368,30 +379,48 @@ func (s *Server) unifi(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok || cat.Dashboard == nil {
+	view, prov, ok := observatory.Dashboard(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no dashboard yet", http.StatusNotFound)
 		return
 	}
-	dash := *cat.Dashboard
-	geo.Enrich(&dash, s.Geo)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":                cat.TS,
-		"host":              cat.Host,
-		"devices":           len(cat.Devices),
-		"rules":             len(cat.Policies),
-		"alarm_count":       dash.AlarmCount,
-		"transfer_24h":      dash.Transfer24h,
-		"monthly_wans":      dash.MonthlyWANs,
-		"blocked":           dash.Blocked,
-		"top_upload":        dash.TopUpload,
-		"top_download":      dash.TopDownload,
-		"top_dest_upload":   dash.TopDestUpload,
-		"top_dest_download": dash.TopDestDownload,
-		"top_regions":       dash.TopRegions,
-		"speedtest":         dash.Speedtest,
-		"dns":               dash.DNS,
-	})
+	if prov.Source == observatory.SourceAgent {
+		if cat, cok := s.getCatalog(); cok && cat.Dashboard != nil {
+			dash := *cat.Dashboard
+			geo.Enrich(&dash, s.Geo)
+			view.TopUpload = dash.TopUpload
+			view.TopDownload = dash.TopDownload
+			view.TopDestUpload = dash.TopDestUpload
+			view.TopDestDownload = dash.TopDestDownload
+			view.TopRegions = dash.TopRegions
+			view.Blocked = dash.Blocked
+			view.DNS = dash.DNS
+			view.Speedtest = dash.Speedtest
+			view.AlarmCount = dash.AlarmCount
+			view.Transfer24h = dash.Transfer24h
+			view.MonthlyWANs = dash.MonthlyWANs
+		}
+	}
+	out := map[string]any{
+		"ts":                view.TS,
+		"host":              view.Host,
+		"devices":           view.Devices,
+		"rules":             view.Rules,
+		"alarm_count":       view.AlarmCount,
+		"transfer_24h":      view.Transfer24h,
+		"monthly_wans":      view.MonthlyWANs,
+		"blocked":           view.Blocked,
+		"top_upload":        view.TopUpload,
+		"top_download":      view.TopDownload,
+		"top_dest_upload":   view.TopDestUpload,
+		"top_dest_download": view.TopDestDownload,
+		"top_regions":       view.TopRegions,
+		"speedtest":         view.Speedtest,
+		"dns":               view.DNS,
+		"source":            prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) box(w http.ResponseWriter, r *http.Request) {
@@ -736,6 +765,34 @@ func (s *Server) getCatalog() (inventory.Catalog, bool) {
 		return inventory.Catalog{}, false
 	}
 	return s.CatalogStore.Get()
+}
+
+func (s *Server) agentOnline() bool {
+	return s.AgentHub != nil && s.AgentHub.Online()
+}
+
+func (s *Server) obsDeps() observatory.Deps {
+	deps := observatory.Deps{AgentOnline: s.agentOnline()}
+	if s.CatalogStore != nil {
+		deps.Catalog = s.CatalogStore.Get
+	}
+	if s.Store != nil {
+		deps.Latest = s.Store.Latest
+	}
+	if s.FWApp != nil {
+		deps.ObservatorySnapshot = s.FWApp.ObservatorySnapshot
+		deps.EnsureInit = s.FWApp.EnsureInit
+	}
+	return deps
+}
+
+func attachProvenance(out map[string]any, prov observatory.Provenance) {
+	if !prov.FetchedAt.IsZero() {
+		out["fetched_at"] = prov.FetchedAt.UTC()
+	}
+	if prov.Stale {
+		out["stale"] = true
+	}
 }
 
 func (s *Server) persist() *store.Persist {

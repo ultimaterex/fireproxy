@@ -68,6 +68,17 @@ func (h *Hub) Online() bool {
 	return h.online
 }
 
+// SetOnline marks agent presence (hermetic tests / control). Does not open a socket.
+func (h *Hub) SetOnline(v bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.online = v
+	h.info.Online = v
+	if v {
+		h.info.LastSeen = time.Now().Unix()
+	}
+}
+
 func (h *Hub) Info() AgentInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
