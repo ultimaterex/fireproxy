@@ -334,3 +334,92 @@ func TestBoxUnpaired404(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestAlarmsOfflineUsesFWAppInit(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("44", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	if err := v.Save(fwapp.Creds{
+		PairedAt: time.Now().UTC(),
+		BoxIP:    "127.0.0.1",
+		Gid:      "g1",
+		Eid:      "e1",
+		SymKey:   strings.Repeat("s", 32),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"mtype":"init","data":{
+		"activeAlarmCount":4,
+		"newAlarms":[{"aid":42,"type":"ALARM_LARGE_UPLOAD","message":"big upload","timestamp":1700000000}]
+	}}`)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(raw), nil
+	})
+	if err := svc.EnsureInit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		TS: time.Now().Unix(),
+		Dashboard: &inventory.Dashboard{
+			AlarmCount: 999,
+		},
+	})
+
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: cat, FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/alarms", nil))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Source           string              `json:"source"`
+		ActiveAlarmCount int64               `json:"active_alarm_count"`
+		NewAlarms        []fwapp.AlarmSample `json:"new_alarms"`
+		FetchedAt        *time.Time          `json:"fetched_at"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != observatory.SourceFWAppInit {
+		t.Fatalf("source=%q", body.Source)
+	}
+	if body.ActiveAlarmCount != 4 {
+		t.Fatalf("active_alarm_count=%d", body.ActiveAlarmCount)
+	}
+	if len(body.NewAlarms) != 1 || body.NewAlarms[0].AID != 42 {
+		t.Fatalf("new_alarms %+v", body.NewAlarms)
+	}
+	if body.FetchedAt == nil || body.FetchedAt.IsZero() {
+		t.Fatal("expected fetched_at")
+	}
+}
+
+func TestAlarmsUnpaired404(t *testing.T) {
+	key, err := tplink.KeyFromEnv(strings.Repeat("55", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &fwapp.CredentialVault{Store: fwapp.NewMemStore(), Key: key}
+	svc := fwapp.NewServiceWithVault(v, nil)
+	hub := &agenthub.Hub{}
+	hub.SetOnline(false)
+	s := &api.Server{CatalogStore: store.NewCatalogStore(), FWApp: svc, AgentHub: hub}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/alarms", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+}

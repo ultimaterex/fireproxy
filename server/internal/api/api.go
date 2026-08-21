@@ -73,6 +73,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/unifi", s.unifi)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
 	mux.HandleFunc("GET /v1/box", s.box)
+	mux.HandleFunc("GET /v1/alarms", s.alarms)
 	mux.HandleFunc("GET /v1/modules", s.listModules)
 	mux.HandleFunc("PUT /v1/modules", s.putModule)
 	mux.HandleFunc("GET /v1/tplink/switches", s.listTPLinkSwitches)
@@ -440,6 +441,21 @@ func (s *Server) box(w http.ResponseWriter, r *http.Request) {
 		"host":   view.Host,
 		"box":    b,
 		"source": prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) alarms(w http.ResponseWriter, r *http.Request) {
+	view, prov, ok := observatory.Alarms(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
+		http.Error(w, "no alarms yet", http.StatusNotFound)
+		return
+	}
+	out := map[string]any{
+		"active_alarm_count": view.ActiveAlarmCount,
+		"new_alarms":         view.NewAlarms,
+		"source":             prov.Source,
 	}
 	attachProvenance(out, prov)
 	writeJSON(w, http.StatusOK, out)

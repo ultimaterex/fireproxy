@@ -480,3 +480,114 @@ func TestBoxUnpairedEmpty(t *testing.T) {
 		t.Fatalf("source=%q want %q", prov.Source, SourceEmpty)
 	}
 }
+
+func TestAlarmsAgentOnlineUsesCatalogCount(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	catTS := now.Add(-10 * time.Minute).Unix()
+	deps := Deps{
+		Now:         now,
+		AgentOnline: true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS:   catTS,
+				Host: "Box",
+				Dashboard: &inventory.Dashboard{
+					AlarmCount: 7,
+				},
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			t.Fatal("must not touch init when agent catalog is fresh")
+			return fwapp.ObservatorySnapshot{}, time.Time{}, false
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("must not EnsureInit when agent catalog is fresh")
+			return nil
+		},
+	}
+
+	view, prov, ok := Alarms(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceAgent {
+		t.Fatalf("source=%q want %q", prov.Source, SourceAgent)
+	}
+	if view.ActiveAlarmCount != 7 {
+		t.Fatalf("active_alarm_count=%d want 7", view.ActiveAlarmCount)
+	}
+	if len(view.NewAlarms) != 0 {
+		t.Fatalf("agent path has no newAlarms sample: %+v", view.NewAlarms)
+	}
+}
+
+func TestAlarmsAgentOfflineWarmInit(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	initAt := now.Add(-2 * time.Minute)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: false,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS: now.Add(-time.Minute).Unix(),
+				Dashboard: &inventory.Dashboard{
+					AlarmCount: 999,
+				},
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{
+				AlarmCount: 4,
+				NewAlarms: []fwapp.AlarmSample{
+					{AID: 1, Type: "ALARM_LARGE_UPLOAD", Message: "big upload"},
+				},
+			}, initAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("warm init must not EnsureInit")
+			return nil
+		},
+	}
+
+	view, prov, ok := Alarms(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceFWAppInit {
+		t.Fatalf("source=%q want %q", prov.Source, SourceFWAppInit)
+	}
+	if !prov.FetchedAt.Equal(initAt) {
+		t.Fatalf("fetched_at=%v want %v", prov.FetchedAt, initAt)
+	}
+	if view.ActiveAlarmCount != 4 {
+		t.Fatalf("active_alarm_count=%d want 4", view.ActiveAlarmCount)
+	}
+	if len(view.NewAlarms) != 1 || view.NewAlarms[0].AID != 1 || view.NewAlarms[0].Type != "ALARM_LARGE_UPLOAD" {
+		t.Fatalf("new_alarms %+v", view.NewAlarms)
+	}
+}
+
+func TestAlarmsUnpairedEmpty(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: false,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{}, false
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{}, time.Time{}, false
+		},
+		EnsureInit: func(ctx context.Context) error {
+			return fwapp.ErrNotPaired
+		},
+	}
+
+	_, prov, ok := Alarms(context.Background(), deps)
+	if ok {
+		t.Fatal("expected not ok")
+	}
+	if prov.Source != SourceEmpty {
+		t.Fatalf("source=%q want %q", prov.Source, SourceEmpty)
+	}
+}
