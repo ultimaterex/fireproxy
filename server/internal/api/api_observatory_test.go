@@ -73,13 +73,13 @@ func TestDashboardOfflineUsesFWAppInit(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Source     string                 `json:"source"`
-		AlarmCount int64                  `json:"alarm_count"`
-		Transfer   inventory.Transfer     `json:"transfer_24h"`
-		Monthly    []inventory.WANUsage   `json:"monthly_wans"`
+		Source     string                   `json:"source"`
+		AlarmCount int64                    `json:"alarm_count"`
+		Transfer   inventory.Transfer       `json:"transfer_24h"`
+		Monthly    []inventory.WANUsage     `json:"monthly_wans"`
 		Speedtest  []inventory.SpeedtestWAN `json:"speedtest"`
-		TopUpload  []inventory.RankedFlow `json:"top_upload"`
-		FetchedAt  *time.Time             `json:"fetched_at"`
+		TopUpload  []inventory.RankedFlow   `json:"top_upload"`
+		FetchedAt  *time.Time               `json:"fetched_at"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -140,9 +140,11 @@ func TestMetricsLatestOfflineUsesFWAppInit(t *testing.T) {
 		Source   string `json:"source"`
 		HavePrev bool   `json:"have_prev"`
 		Snapshot struct {
-			Load   struct{ M1 float64 `json:"m1"` } `json:"load"`
+			Load struct {
+				M1 float64 `json:"m1"`
+			} `json:"load"`
 			Ifaces map[string]struct {
-				Carrier bool `json:"carrier"`
+				Carrier bool   `json:"carrier"`
 				RxBytes uint64 `json:"rx_bytes"`
 			} `json:"ifaces"`
 		} `json:"snapshot"`
