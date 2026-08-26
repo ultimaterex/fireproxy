@@ -40,6 +40,8 @@ type ObservatorySnapshot struct {
 	WGClients          []InitWGClient
 	VIPs               []InitVIP
 	VirtWANs           []InitVirtWAN
+	WanFeatures        *WanFeatures
+	WanTest            *WanTest
 	TopUpload          []inventory.RankedFlow
 	TopDownload        []inventory.RankedFlow
 	TopDestUpload      []inventory.RankedFlow
@@ -125,6 +127,8 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		WGClients:          parseWGClients(root.WGVPNClientProfiles),
 		VIPs:               parseVIPs(root.VIPProfiles),
 		VirtWANs:           parseVirtWANs(root.VirtWanGroups),
+		WanFeatures:        parseWanFeatures(root.RuntimeFeatures),
+		WanTest:            parseWanTest(root.WanTestResult),
 	}
 	if root.MonthlyDataUsage != nil {
 		out.MonthlyBeginTS = int64(root.MonthlyDataUsage.MonthlyBeginTs)
@@ -162,6 +166,8 @@ type initObservatoryRoot struct {
 	WGVPNClientProfiles      []rawWGClient                 `json:"wgvpnClientProfiles"`
 	VIPProfiles              []rawVIP                      `json:"vipProfiles"`
 	VirtWanGroups            []rawVirtWAN                  `json:"virtWanGroups"`
+	RuntimeFeatures          map[string]bool               `json:"runtimeFeatures"`
+	WanTestResult            *WanTest                      `json:"wanTestResult"`
 
 	Model             string            `json:"model"`
 	Device            string            `json:"device"`
