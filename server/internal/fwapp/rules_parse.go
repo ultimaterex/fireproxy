@@ -546,6 +546,8 @@ func parseHostPolicies(hosts []rawHost, labels map[string]string) []HostPolicy {
 type rawHostPolicy struct {
 	Monitor   *bool        `json:"monitor"`
 	ACL       *bool        `json:"acl"`
+	Adblock   *bool        `json:"adblock"`
+	Family    *bool        `json:"family"`
 	Note      string       `json:"_note"`
 	Tags      []flexString `json:"tags"`
 	Isolation *struct {
@@ -570,6 +572,12 @@ func applyRawHostPolicy(hp *HostPolicy, raw json.RawMessage) {
 	}
 	if p.ACL != nil {
 		hp.Emergency = !*p.ACL
+	}
+	if p.Adblock != nil {
+		hp.Adblock = *p.Adblock
+	}
+	if p.Family != nil {
+		hp.Family = *p.Family
 	}
 	hp.Note = strings.TrimSpace(p.Note)
 	if len(p.Tags) > 0 {

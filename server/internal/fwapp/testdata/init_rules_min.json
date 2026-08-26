@@ -97,6 +97,8 @@
         "monitor": true,
         "isolation": {"external": true, "internal": false},
         "acl": true,
+        "adblock": true,
+        "family": true,
         "_note": "lab note",
         "tags": ["10"]
       }

@@ -99,7 +99,7 @@ func TestParseInitRules(t *testing.T) {
 			phone = h
 		}
 	}
-	if !phone.Monitor || !phone.Isolated || phone.Emergency || phone.Note != "lab note" {
+	if !phone.Monitor || !phone.Isolated || phone.Emergency || !phone.Adblock || !phone.Family || phone.Note != "lab note" {
 		t.Fatalf("host policy %+v hosts=%+v", phone, snap.Hosts)
 	}
 	if len(phone.Tags) != 1 || phone.Tags[0] != "10" {
