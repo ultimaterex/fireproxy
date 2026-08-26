@@ -156,12 +156,16 @@ func (g *initFlight) Do(key string, fn func() error) error {
 	g.m[key] = c
 	g.mu.Unlock()
 
-	c.err = fn()
+	// Wake waiters before deleting the map entry so a concurrent caller cannot
+	// miss this flight and start a duplicate while we still hold the result.
+	defer func() {
+		c.wg.Done()
+		g.mu.Lock()
+		delete(g.m, key)
+		g.mu.Unlock()
+	}()
 
-	g.mu.Lock()
-	delete(g.m, key)
-	g.mu.Unlock()
-	c.wg.Done()
+	c.err = fn()
 	return c.err
 }
 

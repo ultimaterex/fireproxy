@@ -110,7 +110,17 @@ func peekInit(deps Deps) (fwapp.ObservatorySnapshot, time.Time, bool) {
 	if deps.ObservatorySnapshot == nil {
 		return fwapp.ObservatorySnapshot{}, time.Time{}, false
 	}
-	return deps.ObservatorySnapshot()
+	snap, at, ok := deps.ObservatorySnapshot()
+	if !ok {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, false
+	}
+	// Enforce InitCacheTTL so facades refresh via EnsureInit instead of serving
+	// an arbitrarily old snapshot after the first successful init.
+	now := deps.now()
+	if at.IsZero() || now.Sub(at) >= fwapp.InitCacheTTL {
+		return snap, at, false
+	}
+	return snap, at, true
 }
 
 func ensureInitOnce(ctx context.Context, deps Deps) bool {

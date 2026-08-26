@@ -200,6 +200,43 @@ func TestDashboardEnsureInitErrorEmpty(t *testing.T) {
 	}
 }
 
+func TestDashboardExpiredInitTriggersEnsureInit(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	staleAt := now.Add(-fwapp.InitCacheTTL - time.Minute)
+	freshAt := now.Add(-30 * time.Second)
+	var ensured int
+	var useFresh bool
+	deps := Deps{
+		Now:         now,
+		AgentOnline: false,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{}, false
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			if useFresh {
+				return fwapp.ObservatorySnapshot{AlarmCount: 5}, freshAt, true
+			}
+			return fwapp.ObservatorySnapshot{AlarmCount: 1}, staleAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			ensured++
+			useFresh = true
+			return nil
+		},
+	}
+
+	dash, prov, ok := Dashboard(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok after EnsureInit")
+	}
+	if ensured != 1 {
+		t.Fatalf("EnsureInit calls=%d want 1", ensured)
+	}
+	if prov.Source != SourceFWAppInit || dash.AlarmCount != 5 {
+		t.Fatalf("prov=%+v dash=%+v", prov, dash)
+	}
+}
+
 func TestMetricsLatestAgentOnline(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	rx := 1.5
