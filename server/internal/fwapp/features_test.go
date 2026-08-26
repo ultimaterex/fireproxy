@@ -63,6 +63,25 @@ func TestParseInitFeatures_curated(t *testing.T) {
 	}
 }
 
+func TestParseInitFeatures_nonBoolFallsBackToDynamic(t *testing.T) {
+	raw := []byte(`{"mtype":"init","data":{
+		"runtimeFeatures":{"adblock":null,"safe_search":"0"},
+		"runtimeDynamicFeatures":{"adblock":"1","safe_search":"1"}
+	}}`)
+
+	view, err := ParseInitFeatures(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]Feature, len(view.Features))
+	for _, feature := range view.Features {
+		byID[feature.ID] = feature
+	}
+	if !byID["adblock"].Enabled || !byID["safe_search"].Enabled {
+		t.Fatalf("non-bool runtime values did not fall back: %+v", byID)
+	}
+}
+
 func TestSetFeature_sendShape(t *testing.T) {
 	svc, sent := pairedMutateService(t)
 	svc.SetFetchInit(func(context.Context, Creds) (json.RawMessage, error) {

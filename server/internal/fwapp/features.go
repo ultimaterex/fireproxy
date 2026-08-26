@@ -85,12 +85,8 @@ func ParseInitFeatures(raw []byte) (FeaturesView, error) {
 	features := make([]Feature, 0, len(curatedFeatures))
 	enabledByID := make(map[string]bool, len(curatedFeatures))
 	for _, meta := range curatedFeatures {
-		enabled := false
-		if rawValue, ok := root.RuntimeFeatures[meta.ID]; ok {
-			if err := json.Unmarshal(rawValue, &enabled); err != nil {
-				return FeaturesView{}, fmt.Errorf("fwapp: parse init feature %s: %w", meta.ID, err)
-			}
-		} else {
+		enabled, ok := runtimeFeatureBool(root.RuntimeFeatures[meta.ID])
+		if !ok {
 			enabled = root.RuntimeDynamicFeatures[meta.ID] == "1"
 		}
 		enabledByID[meta.ID] = enabled
@@ -125,6 +121,17 @@ func ParseInitFeatures(raw []byte) (FeaturesView, error) {
 			ConfigWritable: false,
 		},
 	}, nil
+}
+
+func runtimeFeatureBool(raw json.RawMessage) (bool, bool) {
+	switch strings.TrimSpace(string(raw)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // FeaturesCache holds the last successful init-backed features view.
