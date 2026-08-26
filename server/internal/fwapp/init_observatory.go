@@ -37,7 +37,9 @@ type ObservatorySnapshot struct {
 	NICMetrics         []InitNICMetric
 	WAN                map[string]snapshot.WANLink
 	WGPeers            []InitWGPeer
+	AWGPeers           []InitWGPeer
 	WGClients          []InitWGClient
+	ClientProfiles     []InitVPNClientFamily
 	VIPs               []InitVIP
 	VirtWANs           []InitVirtWAN
 	TopUpload          []inventory.RankedFlow
@@ -122,7 +124,9 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		NICMetrics:         parseNICMetrics(root.NetworkMetrics),
 		WAN:                parseStateWAN(root.LatestAllStateEvents),
 		WGPeers:            parseWGPeers(root.WGPeers),
+		AWGPeers:           parseWGPeers(root.AWGPeers),
 		WGClients:          parseWGClients(root.WGVPNClientProfiles),
+		ClientProfiles:     parseVPNClientFamilies(root),
 		VIPs:               parseVIPs(root.VIPProfiles),
 		VirtWANs:           parseVirtWANs(root.VirtWanGroups),
 	}
@@ -134,34 +138,47 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 }
 
 type initObservatoryRoot struct {
-	ActiveAlarmCount         flexFloat                     `json:"activeAlarmCount"`
-	PendingAlarmCount        flexFloat                     `json:"pendingAlarmCount"`
-	ArchivedAlarmCount       flexFloat                     `json:"archivedAlarmCount"`
-	NewAlarms                []json.RawMessage             `json:"newAlarms"`
-	PolicyRuleNumber         flexFloat                     `json:"policyRuleNumber"`
-	PolicyRules              []json.RawMessage             `json:"policyRules"`
-	NewLast24                *rawNewLast24                 `json:"newLast24"`
-	Last30                   map[string]json.RawMessage    `json:"last30"`
-	Last60                   map[string]json.RawMessage    `json:"last60"`
-	Last12Months             map[string]json.RawMessage    `json:"last12Months"`
-	MonthlyDataUsage         *rawMonthlyCycle              `json:"monthlyDataUsage"`
-	MonthlyDataUsageOnWans   map[string]rawMonthlyWANUsage `json:"monthlyDataUsageOnWans"`
-	InternetSpeedtestResults []json.RawMessage             `json:"internetSpeedtestResults"`
-	Hosts                    []rawObsHost                  `json:"hosts"`
-	Tags                     map[string]rawTagEntry        `json:"tags"`
-	UserTags                 map[string]rawTagEntry        `json:"userTags"`
-	DeviceTags               map[string]rawTagEntry        `json:"deviceTags"`
-	SysMetrics               *rawSysMetrics                `json:"sysMetrics"`
-	NICStates                map[string]rawNICState        `json:"nicStates"`
-	NetworkMetrics           map[string]rawNICPercentiles  `json:"networkMetrics"`
-	NetworkProfiles          map[string]rawNetProfile      `json:"networkProfiles"`
-	Network                  *rawNetwork                   `json:"network"`
-	NetworkConfig            json.RawMessage               `json:"networkConfig"`
-	LatestAllStateEvents     map[string]json.RawMessage    `json:"latestAllStateEvents"`
-	WGPeers                  []rawWGPeer                   `json:"wgPeers"`
-	WGVPNClientProfiles      []rawWGClient                 `json:"wgvpnClientProfiles"`
-	VIPProfiles              []rawVIP                      `json:"vipProfiles"`
-	VirtWanGroups            []rawVirtWAN                  `json:"virtWanGroups"`
+	ActiveAlarmCount          flexFloat                     `json:"activeAlarmCount"`
+	PendingAlarmCount         flexFloat                     `json:"pendingAlarmCount"`
+	ArchivedAlarmCount        flexFloat                     `json:"archivedAlarmCount"`
+	NewAlarms                 []json.RawMessage             `json:"newAlarms"`
+	PolicyRuleNumber          flexFloat                     `json:"policyRuleNumber"`
+	PolicyRules               []json.RawMessage             `json:"policyRules"`
+	NewLast24                 *rawNewLast24                 `json:"newLast24"`
+	Last30                    map[string]json.RawMessage    `json:"last30"`
+	Last60                    map[string]json.RawMessage    `json:"last60"`
+	Last12Months              map[string]json.RawMessage    `json:"last12Months"`
+	MonthlyDataUsage          *rawMonthlyCycle              `json:"monthlyDataUsage"`
+	MonthlyDataUsageOnWans    map[string]rawMonthlyWANUsage `json:"monthlyDataUsageOnWans"`
+	InternetSpeedtestResults  []json.RawMessage             `json:"internetSpeedtestResults"`
+	Hosts                     []rawObsHost                  `json:"hosts"`
+	Tags                      map[string]rawTagEntry        `json:"tags"`
+	UserTags                  map[string]rawTagEntry        `json:"userTags"`
+	DeviceTags                map[string]rawTagEntry        `json:"deviceTags"`
+	SysMetrics                *rawSysMetrics                `json:"sysMetrics"`
+	NICStates                 map[string]rawNICState        `json:"nicStates"`
+	NetworkMetrics            map[string]rawNICPercentiles  `json:"networkMetrics"`
+	NetworkProfiles           map[string]rawNetProfile      `json:"networkProfiles"`
+	Network                   *rawNetwork                   `json:"network"`
+	NetworkConfig             json.RawMessage               `json:"networkConfig"`
+	LatestAllStateEvents      map[string]json.RawMessage    `json:"latestAllStateEvents"`
+	WGPeers                   []rawWGPeer                   `json:"wgPeers"`
+	AWGPeers                  []rawWGPeer                   `json:"awgPeers"`
+	WGVPNClientProfiles       []rawVPNClient                `json:"wgvpnClientProfiles"`
+	AWGVPNClientProfiles      []rawVPNClient                `json:"awgvpnClientProfiles"`
+	OVPNClientProfiles        []rawVPNClient                `json:"ovpnClientProfiles"`
+	SSLVPNClientProfiles      []rawVPNClient                `json:"sslvpnClientProfiles"`
+	IPSecVPNClientProfiles    []rawVPNClient                `json:"ipsecvpnClientProfiles"`
+	TrojanVPNClientProfiles   []rawVPNClient                `json:"trojanvpnClientProfiles"`
+	ClashVPNClientProfiles    []rawVPNClient                `json:"clashvpnClientProfiles"`
+	NebulaVPNClientProfiles   []rawVPNClient                `json:"nebulavpnClientProfiles"`
+	TSVPNClientProfiles       []rawVPNClient                `json:"tsvpnClientProfiles"`
+	ZTVPNClientProfiles       []rawVPNClient                `json:"ztvpnClientProfiles"`
+	GostVPNClientProfiles     []rawVPNClient                `json:"gostVpnClientProfiles"`
+	HysteriaVPNClientProfiles []rawVPNClient                `json:"hysteriaVpnClientProfiles"`
+	VPNProfiles               []rawVPNClient                `json:"vpnProfiles"`
+	VIPProfiles               []rawVIP                      `json:"vipProfiles"`
+	VirtWanGroups             []rawVirtWAN                  `json:"virtWanGroups"`
 
 	Model             string            `json:"model"`
 	Device            string            `json:"device"`
