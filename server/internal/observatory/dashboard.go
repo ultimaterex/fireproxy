@@ -179,10 +179,12 @@ func dashboardFromInit(snap fwapp.ObservatorySnapshot, at time.Time) DashboardVi
 		TS:          ts,
 		Host:        host,
 		Devices:     len(snap.Devices),
-		Rules:       0,
+		Rules:       snap.RuleCount,
 		AlarmCount:  snap.AlarmCount,
 		Transfer24h: snap.Transfer24h,
 		MonthlyWANs: snap.MonthlyWANs,
+		Blocked:     snap.Blocked,
+		DNS:         snap.DNS,
 		// top_* intentionally empty — init has no ranked flows
 		Speedtest: snap.Speedtest,
 	}

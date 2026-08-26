@@ -2,6 +2,7 @@ package fwapp
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,6 +55,27 @@ func TestParseInitObservatoryFromFixture(t *testing.T) {
 			t.Fatalf("speedtest %s missing points", w.UUID)
 		}
 	}
+	if obs.RuleCount <= 0 {
+		t.Fatalf("rule_count=%d", obs.RuleCount)
+	}
+	if obs.Blocked.Blocked <= 0 || obs.Blocked.Allowed <= 0 {
+		t.Fatalf("blocked mix %+v", obs.Blocked)
+	}
+	if obs.DNS == nil || len(obs.DNS.Queries) == 0 {
+		t.Fatalf("dns %+v", obs.DNS)
+	}
+	var sawFriendly bool
+	for _, w := range obs.MonthlyWANs {
+		if w.Name == "" || w.Name == w.UUID {
+			t.Fatalf("monthly WAN needs display name: %+v", w)
+		}
+		if strings.HasPrefix(w.Name, "WAN (") || (!strings.HasPrefix(strings.ToLower(w.Name), "eth") && w.Name != "") {
+			sawFriendly = true
+		}
+	}
+	if !sawFriendly {
+		t.Fatalf("expected at least one friendly monthly WAN name: %+v", obs.MonthlyWANs)
+	}
 	// Ranked flows stay empty — systemFlows.flows is empty in lab; do not invent.
 	if len(obs.TopUpload) != 0 || len(obs.TopDownload) != 0 ||
 		len(obs.TopDestUpload) != 0 || len(obs.TopDestDownload) != 0 ||
@@ -69,9 +91,15 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 		"activeAlarmCount":2,
 		"pendingAlarmCount":1,
 		"archivedAlarmCount":3,
+		"policyRuleNumber":7,
 		"newAlarms":[{"aid":9,"type":"ALARM_INTEL","message":"hi","timestamp":1}],
-		"newLast24":{"totalUpload":10,"totalDownload":20,"upload":[[100,1]],"download":[[100,2]],"conn":[[100,3]]},
+		"newLast24":{
+			"totalUpload":10,"totalDownload":20,"totalConn":100,"totalDnsB":3,"totalIpB":4,
+			"upload":[[100,1]],"download":[[100,2]],"conn":[[100,3]],
+			"dns":[[100,50],[200,60]]
+		},
 		"monthlyDataUsageOnWans":{"u1":{"totalUpload":4,"totalDownload":5}},
+		"networkProfiles":{"u1":{"uuid":"u1","type":"wan","intf":"eth2"}},
 		"internetSpeedtestResults":[],
 		"model":"gold",
 		"device":"Box",
@@ -87,6 +115,9 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 	if obs.AlarmCount != 2 || obs.PendingAlarmCount != 1 || obs.ArchivedAlarmCount != 3 {
 		t.Fatalf("counts %+v", obs)
 	}
+	if obs.RuleCount != 7 {
+		t.Fatalf("rules=%d", obs.RuleCount)
+	}
 	if len(obs.NewAlarms) != 1 || obs.NewAlarms[0].AID != 9 {
 		t.Fatalf("alarms %+v", obs.NewAlarms)
 	}
@@ -97,7 +128,13 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 		obs.Transfer24h.Points[0].Download != 2 || obs.Transfer24h.Points[0].Conn != 3 {
 		t.Fatalf("point %+v", obs.Transfer24h.Points[0])
 	}
-	if len(obs.MonthlyWANs) != 1 || obs.MonthlyWANs[0].UUID != "u1" {
+	if obs.Blocked.Blocked != 7 || obs.Blocked.Allowed != 100 {
+		t.Fatalf("blocked %+v", obs.Blocked)
+	}
+	if obs.DNS == nil || len(obs.DNS.Queries) != 2 || obs.DNS.Queries[0].Count != 50 {
+		t.Fatalf("dns %+v", obs.DNS)
+	}
+	if len(obs.MonthlyWANs) != 1 || obs.MonthlyWANs[0].UUID != "u1" || obs.MonthlyWANs[0].Name != "WAN (eth2)" {
 		t.Fatalf("monthly %+v", obs.MonthlyWANs)
 	}
 	if obs.Box == nil || obs.Box.Model != "gold" || obs.Box.Name != "Box" {

@@ -17,7 +17,10 @@ type ObservatorySnapshot struct {
 	PendingAlarmCount  int64
 	ArchivedAlarmCount int64
 	NewAlarms          []AlarmSample
+	RuleCount          int
 	Transfer24h        inventory.Transfer
+	Blocked            inventory.BlockedMix
+	DNS                *inventory.DNSHealth
 	MonthlyWANs        []inventory.WANUsage
 	Speedtest          []inventory.SpeedtestWAN
 	Box                *inventory.Box
@@ -74,12 +77,16 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		return ObservatorySnapshot{}, fmt.Errorf("fwapp: parse init observatory: %w", err)
 	}
 
+	transfer, blocked, dns := parseNewLast24(root.NewLast24)
 	out := ObservatorySnapshot{
 		AlarmCount:         int64(root.ActiveAlarmCount),
 		PendingAlarmCount:  int64(root.PendingAlarmCount),
 		ArchivedAlarmCount: int64(root.ArchivedAlarmCount),
 		NewAlarms:          parseAlarmSamples(root.NewAlarms),
-		Transfer24h:        parseNewLast24(root.NewLast24),
+		RuleCount:          parseRuleCount(root),
+		Transfer24h:        transfer,
+		Blocked:            blocked,
+		DNS:                dns,
 		MonthlyWANs:        parseMonthlyWANs(root.MonthlyDataUsageOnWans, root.NetworkProfiles, root.Network),
 		Speedtest:          parseInitSpeedtest(root.InternetSpeedtestResults, root.NetworkProfiles, root.Network),
 		Box:                parseInitBox(root),
@@ -95,6 +102,8 @@ type initObservatoryRoot struct {
 	PendingAlarmCount        flexFloat                     `json:"pendingAlarmCount"`
 	ArchivedAlarmCount       flexFloat                     `json:"archivedAlarmCount"`
 	NewAlarms                []json.RawMessage             `json:"newAlarms"`
+	PolicyRuleNumber         flexFloat                     `json:"policyRuleNumber"`
+	PolicyRules              []json.RawMessage             `json:"policyRules"`
 	NewLast24                *rawNewLast24                 `json:"newLast24"`
 	MonthlyDataUsageOnWans   map[string]rawMonthlyWANUsage `json:"monthlyDataUsageOnWans"`
 	InternetSpeedtestResults []json.RawMessage             `json:"internetSpeedtestResults"`
@@ -121,9 +130,13 @@ type initObservatoryRoot struct {
 type rawNewLast24 struct {
 	TotalUpload   flexFloat     `json:"totalUpload"`
 	TotalDownload flexFloat     `json:"totalDownload"`
+	TotalConn     flexFloat     `json:"totalConn"`
+	TotalDnsB     flexFloat     `json:"totalDnsB"`
+	TotalIpB      flexFloat     `json:"totalIpB"`
 	Upload        [][]flexFloat `json:"upload"`
 	Download      [][]flexFloat `json:"download"`
 	Conn          [][]flexFloat `json:"conn"`
+	DNS           [][]flexFloat `json:"dns"`
 }
 
 type rawMonthlyWANUsage struct {
@@ -200,9 +213,16 @@ func parseAlarmSamples(raw []json.RawMessage) []AlarmSample {
 	return out
 }
 
-func parseNewLast24(src *rawNewLast24) inventory.Transfer {
+func parseRuleCount(root initObservatoryRoot) int {
+	if n := int(root.PolicyRuleNumber); n > 0 {
+		return n
+	}
+	return len(root.PolicyRules)
+}
+
+func parseNewLast24(src *rawNewLast24) (inventory.Transfer, inventory.BlockedMix, *inventory.DNSHealth) {
 	if src == nil {
-		return inventory.Transfer{}
+		return inventory.Transfer{}, inventory.BlockedMix{}, nil
 	}
 	upByTS := tsSeriesMap(src.Upload)
 	downByTS := tsSeriesMap(src.Download)
@@ -231,11 +251,39 @@ func parseNewLast24(src *rawNewLast24) inventory.Transfer {
 			Conn:     connByTS[ts],
 		})
 	}
-	return inventory.Transfer{
+	transfer := inventory.Transfer{
 		Upload:   int64(src.TotalUpload),
 		Download: int64(src.TotalDownload),
 		Points:   pts,
 	}
+	// Match agent collectDashboard: blocked = dnsB+ipB; allowed = conn volume.
+	blocked := inventory.BlockedMix{
+		Blocked: int64(src.TotalDnsB) + int64(src.TotalIpB),
+		Allowed: int64(src.TotalConn),
+	}
+	var dns *inventory.DNSHealth
+	if queries := parseDNSQueries(src.DNS); len(queries) > 0 {
+		dns = &inventory.DNSHealth{Queries: queries}
+	}
+	return transfer, blocked, dns
+}
+
+func parseDNSQueries(series [][]flexFloat) []inventory.DNSQuery {
+	if len(series) == 0 {
+		return nil
+	}
+	out := make([]inventory.DNSQuery, 0, len(series))
+	for _, row := range series {
+		if len(row) < 2 {
+			continue
+		}
+		out = append(out, inventory.DNSQuery{
+			TS:    int64(row[0]),
+			Count: int64(row[1]),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TS < out[j].TS })
+	return out
 }
 
 func tsSeriesMap(series [][]flexFloat) map[int64]int64 {
@@ -277,7 +325,7 @@ func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetw
 			return n
 		}
 		if n := strings.TrimSpace(net.Name); n != "" {
-			return n
+			return friendlyWANLabel(n)
 		}
 	}
 	if p, ok := profiles[uuid]; ok {
@@ -288,10 +336,38 @@ func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetw
 			return n
 		}
 		if n := strings.TrimSpace(p.Intf); n != "" {
-			return n
+			return friendlyWANLabel(n)
 		}
 	}
 	return uuid
+}
+
+// friendlyWANLabel turns bare iface names (eth1) into labels the Metrics UI
+// keeps after isISPLabel filtering ("WAN (eth1)").
+func friendlyWANLabel(name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return n
+	}
+	lower := strings.ToLower(n)
+	switch {
+	case strings.HasPrefix(lower, "eth"),
+		strings.HasPrefix(lower, "enp"),
+		strings.HasPrefix(lower, "ens"),
+		strings.HasPrefix(lower, "enx"),
+		strings.HasPrefix(lower, "wlan"),
+		strings.HasPrefix(lower, "wlp"),
+		strings.HasPrefix(lower, "br"),
+		strings.HasPrefix(lower, "bond"),
+		strings.HasPrefix(lower, "vlan"),
+		strings.HasPrefix(lower, "wg"),
+		strings.HasPrefix(lower, "tun"),
+		lower == "wan",
+		strings.HasPrefix(lower, "wan") && len(lower) <= 4:
+		return "WAN (" + n + ")"
+	default:
+		return n
+	}
 }
 
 func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile, net *rawNetwork) []inventory.SpeedtestWAN {

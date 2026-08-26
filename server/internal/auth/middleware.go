@@ -212,16 +212,41 @@ func (m *Middleware) originAllowed(r *http.Request, origin string) bool {
 func (m *Middleware) hostAllowed(r *http.Request, host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	reqHost := strings.ToLower(strings.TrimSpace(r.Host))
-	if host == reqHost {
+	if hostsMatch(host, reqHost) {
 		return true
 	}
 	if po := strings.TrimSpace(m.Cfg.PublicOrigin); po != "" {
 		u, err := url.Parse(po)
-		if err == nil && u.Host != "" && strings.EqualFold(host, u.Host) {
+		if err == nil && u.Host != "" && hostsMatch(host, strings.ToLower(u.Host)) {
 			return true
 		}
 	}
 	return false
+}
+
+// hostsMatch compares request Host / Origin hosts. nginx $host strips the port,
+// so "localhost" must match Origin "localhost:3080".
+func hostsMatch(a, b string) bool {
+	a = strings.ToLower(strings.TrimSpace(a))
+	b = strings.ToLower(strings.TrimSpace(b))
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	ah, ap, aErr := net.SplitHostPort(a)
+	bh, bp, bErr := net.SplitHostPort(b)
+	switch {
+	case aErr == nil && bErr == nil:
+		return ah == bh && ap == bp
+	case aErr == nil && bErr != nil:
+		return ah == b
+	case aErr != nil && bErr == nil:
+		return a == bh
+	default:
+		return false
+	}
 }
 
 func isMutating(method string) bool {
@@ -390,12 +415,12 @@ func CheckOriginSameHost(publicOrigin string) func(*http.Request) bool {
 		if err != nil || u.Host == "" {
 			return false
 		}
-		if strings.EqualFold(u.Host, r.Host) {
+		if hostsMatch(u.Host, r.Host) {
 			return true
 		}
 		if po := strings.TrimSpace(publicOrigin); po != "" {
 			pu, err := url.Parse(po)
-			if err == nil && pu.Host != "" && strings.EqualFold(u.Host, pu.Host) {
+			if err == nil && pu.Host != "" && hostsMatch(u.Host, pu.Host) {
 				return true
 			}
 		}
