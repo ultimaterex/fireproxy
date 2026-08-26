@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/ultimaterex/fireproxy/compare/v0.3.0...v0.4.0) (2026-08-26)
+
+
+### Features
+
+* observatory dual-source (agent + fw-app init fallback) ([#23](https://github.com/ultimaterex/fireproxy/issues/23)) ([8556c11](https://github.com/ultimaterex/fireproxy/commit/8556c11ddf6b0ca8b2b0412a2e35a1dbd5c5c6c4))
+
 ## [0.3.0](https://github.com/ultimaterex/fireproxy/compare/v0.2.0...v0.3.0) (2026-08-19)
 
 
