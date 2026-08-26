@@ -51,6 +51,10 @@ func Alarms(ctx context.Context, deps Deps) (AlarmsView, Provenance, bool) {
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok {
+		return alarmsFromInit(snap), staleInitProvenance(at), true
+	}
+
 	return AlarmsView{}, Provenance{Source: SourceEmpty}, false
 }
 

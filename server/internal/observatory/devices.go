@@ -48,6 +48,10 @@ func Devices(ctx context.Context, deps Deps) (DevicesView, Provenance, bool) {
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok {
+		return devicesFromInit(snap, at), staleInitProvenance(at), true
+	}
+
 	return DevicesView{}, Provenance{Source: SourceEmpty}, false
 }
 

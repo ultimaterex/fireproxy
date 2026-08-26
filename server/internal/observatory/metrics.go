@@ -51,6 +51,12 @@ func MetricsLatest(ctx context.Context, deps Deps) (store.LatestView, Provenance
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok {
+		v := metricsFromInit(snap, at)
+		v, filled := gapFillMetrics(v, deps)
+		return v, markEnriched(staleInitProvenance(at), filled), true
+	}
+
 	return store.LatestView{}, Provenance{Source: SourceEmpty}, false
 }
 
