@@ -74,11 +74,13 @@ export function NetworkTab({
             </div>
           </CardAction>
         </CardHeader>
-        <CardContent className="divide-y px-0">
+        <CardContent className="px-0">
           {wans.length === 0 ? (
             <p className="px-6 py-6 text-sm text-muted-foreground">No WAN</p>
           ) : (
-            wans.map((n) => <WanRow key={n.uuid || n.name} n={n} />)
+            <div className="divide-y">
+              {wans.map((n) => <WanRow key={n.uuid || n.name} n={n} />)}
+            </div>
           )}
           {virtWans?.length ? <VirtWanStrip virtWans={virtWans} /> : null}
           {wanTest ? <WanTestStrip wanTest={wanTest} /> : null}
@@ -118,7 +120,7 @@ function WanTestStrip({ wanTest }: { wanTest: WanTest }) {
   const [nowMs] = useState(() => Date.now())
 
   return (
-    <div className="space-y-1 px-6 py-3 text-xs text-muted-foreground">
+    <div className="space-y-1 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
       <div>
         <span className="font-medium text-foreground">Last test</span>
         <span className="mx-1.5">·</span>
