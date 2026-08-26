@@ -13,6 +13,27 @@ type Snapshot struct {
 	Unbound        *Unbound              `json:"unbound,omitempty"`
 	Ifaces         map[string]IfaceStats `json:"ifaces"`
 	WAN            map[string]WANLink    `json:"wan"`
+	Disks          []Disk                `json:"disks,omitempty"`
+	NICMetrics     []NICMetric           `json:"nic_metrics,omitempty"`
+}
+
+// Disk is one filesystem mount (init fallback / optional agent).
+type Disk struct {
+	Mount      string  `json:"mount"`
+	Filesystem string  `json:"filesystem,omitempty"`
+	Capacity   float64 `json:"capacity"` // used fraction 0–1
+	Size       int64   `json:"size,omitempty"`
+	Used       int64   `json:"used,omitempty"`
+	Available  int64   `json:"available,omitempty"`
+}
+
+// NICMetric is coarse rx/tx percentile traffic (bytes), not live Mbps.
+type NICMetric struct {
+	Name     string `json:"name"`
+	RxMedian int64  `json:"rx_median,omitempty"`
+	TxMedian int64  `json:"tx_median,omitempty"`
+	RxPt90   int64  `json:"rx_pt90,omitempty"`
+	TxPt90   int64  `json:"tx_pt90,omitempty"`
 }
 
 // Unbound is cache stats from unbound-control stats_noreset.

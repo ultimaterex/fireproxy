@@ -159,6 +159,25 @@ func TestMiddlewareSessionSameOriginPOSTAllowed(t *testing.T) {
 	}
 }
 
+// nginx $host strips the port; Origin keeps it. CSRF must still allow the POST.
+func TestMiddlewareSessionCSRFOriginPortVsHostWithoutPort(t *testing.T) {
+	p := middlewarePersist(t)
+	cfg := auth.Config{Password: "x", SessionAbs: time.Hour, SessionIdle: time.Hour}
+	h := wrapMux(t, cfg, p, &auth.AgentCreds{Persist: p, Cfg: cfg})
+	sid := mintSession(t, p, cfg)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/agent/enroll/code", strings.NewReader(`{}`))
+	req.Host = "localhost" // as forwarded by nginx $host
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookie, Value: sid})
+	req.Header.Set("Origin", "http://localhost:3080")
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d want 200 body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestMiddlewareAgentTokenOnHealth401OnIngestOK(t *testing.T) {
 	p := middlewarePersist(t)
 	cfg := auth.Config{Password: "x", SessionAbs: time.Hour, SessionIdle: time.Hour}
