@@ -1164,14 +1164,14 @@ function App() {
                   ? 'port'
                   : undefined
               }
-              onGroup={(id) => {
+              onGroup={(id, tagType = 'group') => {
                 if (!id) {
                   setStack(resetTab(tab === 'groups' ? 'groups' : 'devices'))
                   return
                 }
                 setStack([
                   { kind: 'tab', tab: tab === 'groups' ? 'groups' : 'devices' },
-                  { kind: 'group', id, label: labelTag(id, 'group'), tagType: 'group' },
+                  { kind: 'group', id, label: labelTag(id, tagType), tagType },
                 ])
               }}
               onLan={(uuid) => {
@@ -1383,12 +1383,12 @@ function App() {
                   ? 'port'
                   : undefined
               }
-              onGroup={(id) =>
+              onGroup={(id, tagType = 'group') =>
                 setStack(
                   id
                     ? [
                         { kind: 'tab', tab: 'devices' },
-                        { kind: 'group', id, label: labelTag(id, 'group'), tagType: 'group' },
+                        { kind: 'group', id, label: labelTag(id, tagType), tagType },
                       ]
                     : resetTab('devices'),
                 )
@@ -1458,7 +1458,6 @@ function App() {
 
           {tab === 'groups' && (
             <GroupsTab
-              mode={modes.groups}
               groups={groups}
               devices={showDevices}
               onViewInDevices={goDevicesGroup}

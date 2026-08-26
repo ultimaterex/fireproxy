@@ -17,7 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { preferredName } from '@/lib/format'
-import type { Device, Tag, ViewMode } from '@/lib/types'
+import type { Device, Tag } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type TagKind = 'group' | 'user' | 'device'
@@ -66,19 +66,16 @@ function KindIcon({ kind, className }: { kind: TagKind; className?: string }) {
 }
 
 export function GroupsTab({
-  mode: _mode,
   groups,
   devices,
   onViewInDevices,
 }: {
-  mode?: ViewMode
   groups: GroupRow[]
   devices: Device[]
   onViewInDevices: (id: string, tagType: TagKind) => void
 }) {
-  void _mode
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     if (typeFilter === 'all') return groups
@@ -86,8 +83,12 @@ export function GroupsTab({
   }, [groups, typeFilter])
 
   const selected = useMemo(
-    () => (selectedId ? filtered.find((g) => g.id === selectedId) ?? groups.find((g) => g.id === selectedId) : undefined),
-    [selectedId, filtered, groups],
+    () =>
+      selectedKey
+        ? filtered.find((g) => `${tagTypeOf(g)}:${g.id}` === selectedKey) ??
+          groups.find((g) => `${tagTypeOf(g)}:${g.id}` === selectedKey)
+        : undefined,
+    [selectedKey, filtered, groups],
   )
 
   const members = useMemo(() => {
@@ -131,12 +132,13 @@ export function GroupsTab({
             <TableBody>
               {filtered.map((g) => {
                 const kind = tagKind(g)
-                const active = selectedId === g.id
+                const key = `${tagTypeOf(g)}:${g.id}`
+                const active = selectedKey === key
                 return (
                   <TableRow
-                    key={`${kind}:${g.id}`}
+                    key={key}
                     className={cn('cursor-pointer', active && 'bg-accent/50')}
-                    onClick={() => setSelectedId(g.id)}
+                    onClick={() => setSelectedKey(key)}
                   >
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5">
@@ -165,7 +167,7 @@ export function GroupsTab({
             size="xs"
             variant="ghost"
             className="sm:hidden"
-            onClick={() => setSelectedId(null)}
+            onClick={() => setSelectedKey(null)}
           >
             <ArrowLeft className="size-4" />
             Back

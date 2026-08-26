@@ -90,7 +90,7 @@ export function DevicesTab({
   uuidToNet: Map<string, NetIface>
   tags: Tag[]
   groupByHint?: DeviceGroupBy
-  onGroup: (id: string) => void
+  onGroup: (id: string, tagType?: 'group' | 'user' | 'device') => void
   onLan: (uuid: string) => void
   onSwitchMacs: (macs: string[]) => void
   onQuery: (q: string) => void
@@ -195,8 +195,7 @@ export function DevicesTab({
               ? (d.device_tag_ids ?? []).includes(groupFilter)
               : groupTagType === 'user'
                 ? (d.user_tag_ids ?? []).includes(groupFilter)
-                : (d.tag_ids ?? []).includes(groupFilter) ||
-                  (d.user_tag_ids ?? []).includes(groupFilter)
+                : (d.tag_ids ?? []).includes(groupFilter)
           if (!inTag) return false
         }
         if (lanFilter && d.intf_uuid !== lanFilter) return false
@@ -461,7 +460,7 @@ function DeviceGroup({
   open: boolean
   groupFilter: string
   onToggle: () => void
-  onGroup: (id: string) => void
+  onGroup: (id: string, tagType?: 'group' | 'user' | 'device') => void
   onLan: (uuid: string) => void
   onPort: (macs: string[]) => void
   onSelectDevice?: (d: Device) => void
@@ -480,7 +479,7 @@ function DeviceGroup({
       return
     }
     if (group.tagId) {
-      onGroup(group.tagId === groupFilter ? '' : group.tagId)
+      onGroup(group.tagId === groupFilter ? '' : group.tagId, group.tagType)
     }
   }
   const canFilter = group.clients.length > 0 || !!group.lanUuid || !!group.tagId
@@ -567,7 +566,7 @@ function renderCell(
   row: Row,
   ctx: {
     groupFilter: string
-    onGroup: (id: string) => void
+    onGroup: (id: string, tagType?: 'group' | 'user' | 'device') => void
     onLan: (uuid: string) => void
     onPort: (macs: string[]) => void
   },
@@ -588,7 +587,10 @@ function renderCell(
           className="inline-flex items-center gap-1.5 text-[#027BFF] hover:underline"
           onClick={(e) => {
             e.stopPropagation()
-            ctx.onGroup(membership.id === ctx.groupFilter ? '' : membership.id)
+            ctx.onGroup(
+              membership.id === ctx.groupFilter ? '' : membership.id,
+              membership.kind,
+            )
           }}
         >
           {membership.kind === 'user' ? <User className="size-3.5" /> : <TagIcon className="size-3.5" />}
