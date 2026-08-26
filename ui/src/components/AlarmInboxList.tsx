@@ -23,6 +23,7 @@ function deviceLabel(a: AlarmSample): string {
 
 export function AlarmInboxList({
   alarms,
+  activeCount = 0,
   nowMs,
   controlLanOk,
   busyAid,
@@ -30,6 +31,8 @@ export function AlarmInboxList({
   onIgnore,
 }: {
   alarms: AlarmSample[]
+  /** Active inbox count; used when samples are missing. */
+  activeCount?: number
   nowMs: number
   controlLanOk: boolean
   busyAid?: number | null
@@ -37,7 +40,11 @@ export function AlarmInboxList({
   onIgnore?: (aid: number) => void
 }) {
   if (alarms.length === 0) {
-    return <p className="px-1 py-6 text-sm text-muted-foreground">No alarms</p>
+    return (
+      <p className="px-1 py-6 text-sm text-muted-foreground">
+        {activeCount > 0 ? 'No alarm details' : 'No alarms'}
+      </p>
+    )
   }
 
   return (
@@ -86,7 +93,7 @@ export function AlarmInboxList({
                   type="button"
                   size={compact ? 'xs' : 'sm'}
                   variant="outline"
-                  disabled={!controlLanOk || busyAid === a.aid}
+                  disabled={!controlLanOk || busyAid != null}
                   onClick={() => onIgnore(a.aid)}
                 >
                   Ignore

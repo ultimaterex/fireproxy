@@ -78,9 +78,9 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
   }
 
   const ignoreAll = async () => {
-    if (!controlLanOk) return
+    if (!controlLanOk || busyAid != null) return
     setConfirmAll(false)
-    setBusy(true)
+    setBusyAid(-1)
     setError(null)
     try {
       const r = await api('/v1/fw-app/alarms/ignore-all', { method: 'POST' })
@@ -91,7 +91,8 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-      setBusy(false)
+    } finally {
+      setBusyAid(null)
     }
   }
 
@@ -120,8 +121,11 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
             type="button"
             size="sm"
             variant="outline"
-            disabled={!controlLanOk || busy || count === 0}
-            onClick={() => setConfirmAll(true)}
+            disabled={!controlLanOk || busy || busyAid != null || count === 0}
+            onClick={() => {
+              if (busyAid != null) return
+              setConfirmAll(true)
+            }}
           >
             Ignore all
           </Button>
@@ -135,6 +139,7 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
           {view ? (
             <AlarmInboxList
               alarms={alarms}
+              activeCount={count}
               nowMs={nowMs}
               controlLanOk={controlLanOk}
               busyAid={busyAid}
@@ -174,7 +179,7 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
               <Button
                 type="button"
                 size="sm"
-                disabled={!controlLanOk || busy}
+                disabled={!controlLanOk || busy || busyAid != null}
                 onClick={() => void ignoreAll()}
               >
                 Ignore all
