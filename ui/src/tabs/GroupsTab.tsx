@@ -77,12 +77,18 @@ export function GroupsTab({
   groups,
   devices,
   canEditGroupMembers = false,
+  canCreateTag = false,
+  canRenameTag = false,
+  canDeleteTag = false,
   onSetHostTags,
   onViewInDevices,
 }: {
   groups: GroupRow[]
   devices: Device[]
   canEditGroupMembers?: boolean
+  canCreateTag?: boolean
+  canRenameTag?: boolean
+  canDeleteTag?: boolean
   onSetHostTags?: (mac: string, tags: string[]) => Promise<void>
   onViewInDevices: (id: string, tagType: TagKind) => void
 }) {
@@ -152,6 +158,9 @@ export function GroupsTab({
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-sm">Groups</CardTitle>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">{filtered.length}</span>
+          <Button type="button" size="xs" variant="outline" disabled={!canCreateTag}>
+            New
+          </Button>
           <div className="ml-auto flex flex-wrap gap-1">
             {TYPE_FILTERS.map((f) => (
               <Button
@@ -232,14 +241,22 @@ export function GroupsTab({
               <span className="font-mono">{selected.id}</span>
             </div>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => onViewInDevices(selected.id, tagTypeOf(selected))}
-          >
-            View in Devices
-          </Button>
+          <div className="flex shrink-0 flex-wrap items-center gap-1">
+            <Button type="button" size="sm" variant="outline" disabled={!canRenameTag}>
+              Rename
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={!canDeleteTag}>
+              Delete
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onViewInDevices(selected.id, tagTypeOf(selected))}
+            >
+              View in Devices
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-0">

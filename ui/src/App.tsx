@@ -1483,6 +1483,9 @@ function App() {
               groups={groups}
               devices={showDevices}
               canEditGroupMembers={!!tagCaps['host.group']}
+              canCreateTag={!!tagCaps['tag.create']}
+              canRenameTag={!!tagCaps['tag.rename']}
+              canDeleteTag={!!tagCaps['tag.delete']}
               onSetHostTags={setHostTags}
               onViewInDevices={goDevicesGroup}
             />
