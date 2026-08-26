@@ -116,6 +116,32 @@ func TestParseInitRules(t *testing.T) {
 	}
 }
 
+func TestParseInitRulesTagScopeLabel(t *testing.T) {
+	raw := []byte(`{
+		"policyRules":[{"pid":"1","action":"block","type":"dns","target":"x.test","tag":["tag:10"],"hitCount":"1"}],
+		"exceptionRules":[],
+		"screentimeRules":[],
+		"hosts":[],
+		"tags":{"10":{"uid":"10","name":"Routers"}}
+	}`)
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var label string
+	for _, c := range snap.Scopes {
+		if c.Kind == ScopeChipTag && c.ID == "tag:10" {
+			label = c.Label
+		}
+	}
+	if label != "Routers" {
+		t.Fatalf("want tag name Routers, got %q scopes=%+v", label, snap.Scopes)
+	}
+	if snap.Rules[0].ScopeLabel != "Routers" {
+		t.Fatalf("rule ScopeLabel=%q", snap.Rules[0].ScopeLabel)
+	}
+}
+
 func TestParseInitRulesUserTagLabels(t *testing.T) {
 	raw := []byte(`{
 		"policyRules":[{"pid":"1","action":"block","type":"dns","target":"x.test","tag":["tag:2"],"hitCount":"1"}],
