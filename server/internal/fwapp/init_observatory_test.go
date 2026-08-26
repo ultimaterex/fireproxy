@@ -64,6 +64,36 @@ func TestParseInitObservatoryFromFixture(t *testing.T) {
 	if obs.DNS == nil || len(obs.DNS.Queries) == 0 {
 		t.Fatalf("dns %+v", obs.DNS)
 	}
+	if len(obs.DNS.Resolvers) == 0 {
+		t.Fatal("expected dns resolvers from latestAllStateEvents")
+	}
+	if obs.SysMetrics == nil || obs.SysMetrics.CPU == nil {
+		t.Fatalf("expected cpu from sysMetrics: %+v", obs.SysMetrics)
+	}
+	if len(obs.SysMetrics.Disks) == 0 {
+		t.Fatal("expected diskInfo")
+	}
+	if len(obs.WAN) == 0 {
+		t.Fatal("expected wan_state map")
+	}
+	if obs.Box == nil || obs.Box.UptimeSec == nil || obs.Box.CloudConnected == nil {
+		t.Fatalf("expected box uptime/cloud: %+v", obs.Box)
+	}
+	if len(obs.Tags) == 0 {
+		t.Fatal("expected tags")
+	}
+	if obs.Transfer30d.Upload == 0 && obs.Transfer30d.Download == 0 {
+		t.Fatalf("expected last30 totals %+v", obs.Transfer30d)
+	}
+	if obs.MonthlyBeginTS == 0 || obs.MonthlyEndTS == 0 {
+		t.Fatalf("monthly cycle begin=%d end=%d", obs.MonthlyBeginTS, obs.MonthlyEndTS)
+	}
+	if len(obs.NICMetrics) == 0 {
+		t.Fatal("expected networkMetrics")
+	}
+	if len(obs.WGPeers) == 0 && len(obs.WGClients) == 0 {
+		t.Fatal("expected wg peers or clients")
+	}
 	var sawFriendly bool
 	for _, w := range obs.MonthlyWANs {
 		if w.Name == "" || w.Name == w.UUID {

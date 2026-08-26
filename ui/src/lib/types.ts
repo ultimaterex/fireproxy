@@ -22,6 +22,25 @@ export type Snapshot = {
   unbound?: Unbound
   ifaces: Record<string, IfaceStats>
   wan: Record<string, WANLink>
+  disks?: DiskMount[]
+  nic_metrics?: NICMetric[]
+}
+
+export type DiskMount = {
+  mount: string
+  filesystem?: string
+  capacity: number
+  size?: number
+  used?: number
+  available?: number
+}
+
+export type NICMetric = {
+  name: string
+  rx_median?: number
+  tx_median?: number
+  rx_pt90?: number
+  tx_pt90?: number
 }
 
 export type UnboundHit = {
@@ -505,6 +524,7 @@ export type BoxMAC = { name: string; mac: string }
 export type BoxInfo = {
   name: string
   public_ip?: string
+  public_ips?: Record<string, string>
   ddns?: string
   macs?: Array<BoxMAC | string>
   version?: string
@@ -517,6 +537,9 @@ export type BoxInfo = {
   region?: string
   wan_type?: string
   local_domain_suffix?: string
+  uptime_sec?: number
+  os_uptime_sec?: number
+  cloud_connected?: boolean
 }
 export type ViewMode = 'visual' | 'list'
 
@@ -593,7 +616,12 @@ export type Dashboard = {
   rules: number
   alarm_count: number
   transfer_24h: Transfer24h
+  transfer_30d?: Transfer24h
+  transfer_60?: Transfer24h
+  transfer_12m?: Transfer24h
   monthly_wans?: WANUsage[]
+  monthly_begin_ts?: number
+  monthly_end_ts?: number
   blocked: BlockedMix
   top_upload?: RankedFlow[]
   top_download?: RankedFlow[]

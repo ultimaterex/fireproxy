@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"fireproxy/pkg/inventory"
+	"fireproxy/pkg/snapshot"
 )
 
 // ObservatorySnapshot is typed observatory data extracted from fw-app init.
@@ -19,14 +20,26 @@ type ObservatorySnapshot struct {
 	NewAlarms          []AlarmSample
 	RuleCount          int
 	Transfer24h        inventory.Transfer
+	Transfer30d        inventory.Transfer
+	Transfer60         inventory.Transfer // last60 window (finer grain)
+	Transfer12m        inventory.Transfer
 	Blocked            inventory.BlockedMix
 	DNS                *inventory.DNSHealth
 	MonthlyWANs        []inventory.WANUsage
+	MonthlyBeginTS     int64
+	MonthlyEndTS       int64
 	Speedtest          []inventory.SpeedtestWAN
 	Box                *inventory.Box
 	Devices            []inventory.Device
+	Tags               []inventory.Tag
 	SysMetrics         *InitSysMetrics
 	NICStates          []InitNICState
+	NICMetrics         []InitNICMetric
+	WAN                map[string]snapshot.WANLink
+	WGPeers            []InitWGPeer
+	WGClients          []InitWGClient
+	VIPs               []InitVIP
+	VirtWANs           []InitVirtWAN
 	TopUpload          []inventory.RankedFlow
 	TopDownload        []inventory.RankedFlow
 	TopDestUpload      []inventory.RankedFlow
@@ -48,11 +61,13 @@ type AlarmSample struct {
 
 // InitSysMetrics is a one-shot sysMetrics sample from init.
 type InitSysMetrics struct {
-	Load1    float64 `json:"load1"`
-	Load5    float64 `json:"load5"`
-	Load15   float64 `json:"load15"`
-	MemUsage float64 `json:"mem_usage"`
-	TotalMem float64 `json:"total_mem"`
+	Load1    float64       `json:"load1"`
+	Load5    float64       `json:"load5"`
+	Load15   float64       `json:"load15"`
+	MemUsage float64       `json:"mem_usage"`
+	TotalMem float64       `json:"total_mem"`
+	CPU      *snapshot.CPU `json:"cpu,omitempty"`
+	Disks    []InitDisk    `json:"disks,omitempty"`
 }
 
 // InitNICState is carrier/speed state for one NIC from init nicStates.
@@ -78,6 +93,12 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 	}
 
 	transfer, blocked, dns := parseNewLast24(root.NewLast24)
+	if resolvers := parseStateDNSResolvers(root.LatestAllStateEvents); len(resolvers) > 0 {
+		if dns == nil {
+			dns = &inventory.DNSHealth{}
+		}
+		dns.Resolvers = resolvers
+	}
 	out := ObservatorySnapshot{
 		AlarmCount:         int64(root.ActiveAlarmCount),
 		PendingAlarmCount:  int64(root.PendingAlarmCount),
@@ -85,14 +106,28 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		NewAlarms:          parseAlarmSamples(root.NewAlarms),
 		RuleCount:          parseRuleCount(root),
 		Transfer24h:        transfer,
+		Transfer30d:        parseTransferWindow(root.Last30),
+		Transfer60:         parseTransferWindow(root.Last60),
+		Transfer12m:        parseTransferWindow(root.Last12Months),
 		Blocked:            blocked,
 		DNS:                dns,
 		MonthlyWANs:        parseMonthlyWANs(root.MonthlyDataUsageOnWans, root.NetworkProfiles, root.Network),
 		Speedtest:          parseInitSpeedtest(root.InternetSpeedtestResults, root.NetworkProfiles, root.Network),
 		Box:                parseInitBox(root),
 		Devices:            parseInitDevices(root.Hosts),
+		Tags:               parseInitTags(root.Tags, root.UserTags, root.DeviceTags),
 		SysMetrics:         parseInitSysMetrics(root.SysMetrics),
 		NICStates:          parseInitNICStates(root.NICStates),
+		NICMetrics:         parseNICMetrics(root.NetworkMetrics),
+		WAN:                parseStateWAN(root.LatestAllStateEvents),
+		WGPeers:            parseWGPeers(root.WGPeers),
+		WGClients:          parseWGClients(root.WGVPNClientProfiles),
+		VIPs:               parseVIPs(root.VIPProfiles),
+		VirtWANs:           parseVirtWANs(root.VirtWanGroups),
+	}
+	if root.MonthlyDataUsage != nil {
+		out.MonthlyBeginTS = int64(root.MonthlyDataUsage.MonthlyBeginTs)
+		out.MonthlyEndTS = int64(root.MonthlyDataUsage.MonthlyEndTs)
 	}
 	return out, nil
 }
@@ -105,26 +140,43 @@ type initObservatoryRoot struct {
 	PolicyRuleNumber         flexFloat                     `json:"policyRuleNumber"`
 	PolicyRules              []json.RawMessage             `json:"policyRules"`
 	NewLast24                *rawNewLast24                 `json:"newLast24"`
+	Last30                   map[string]json.RawMessage    `json:"last30"`
+	Last60                   map[string]json.RawMessage    `json:"last60"`
+	Last12Months             map[string]json.RawMessage    `json:"last12Months"`
+	MonthlyDataUsage         *rawMonthlyCycle              `json:"monthlyDataUsage"`
 	MonthlyDataUsageOnWans   map[string]rawMonthlyWANUsage `json:"monthlyDataUsageOnWans"`
 	InternetSpeedtestResults []json.RawMessage             `json:"internetSpeedtestResults"`
 	Hosts                    []rawObsHost                  `json:"hosts"`
+	Tags                     map[string]rawTagEntry        `json:"tags"`
+	UserTags                 map[string]rawTagEntry        `json:"userTags"`
+	DeviceTags               map[string]rawTagEntry        `json:"deviceTags"`
 	SysMetrics               *rawSysMetrics                `json:"sysMetrics"`
 	NICStates                map[string]rawNICState        `json:"nicStates"`
+	NetworkMetrics           map[string]rawNICPercentiles  `json:"networkMetrics"`
 	NetworkProfiles          map[string]rawNetProfile      `json:"networkProfiles"`
 	Network                  *rawNetwork                   `json:"network"`
+	LatestAllStateEvents     map[string]json.RawMessage    `json:"latestAllStateEvents"`
+	WGPeers                  []rawWGPeer                   `json:"wgPeers"`
+	WGVPNClientProfiles      []rawWGClient                 `json:"wgvpnClientProfiles"`
+	VIPProfiles              []rawVIP                      `json:"vipProfiles"`
+	VirtWanGroups            []rawVirtWAN                  `json:"virtWanGroups"`
 
-	Model             string    `json:"model"`
-	Device            string    `json:"device"`
-	GroupName         string    `json:"groupName"`
-	PublicIP          string    `json:"publicIp"`
-	DDNS              string    `json:"ddns"`
-	Mode              string    `json:"mode"`
-	Timezone          string    `json:"timezone"`
-	LocalDomainSuffix string    `json:"localDomainSuffix"`
-	VersionStr        string    `json:"versionStr"`
-	LongVersion       string    `json:"longVersion"`
-	Version           flexFloat `json:"version"`
-	EID               string    `json:"eid"`
+	Model             string            `json:"model"`
+	Device            string            `json:"device"`
+	GroupName         string            `json:"groupName"`
+	PublicIP          string            `json:"publicIp"`
+	PublicIPs         map[string]string `json:"publicIps"`
+	DDNS              string            `json:"ddns"`
+	Mode              string            `json:"mode"`
+	Timezone          string            `json:"timezone"`
+	LocalDomainSuffix string            `json:"localDomainSuffix"`
+	VersionStr        string            `json:"versionStr"`
+	LongVersion       string            `json:"longVersion"`
+	Version           flexFloat         `json:"version"`
+	EID               string            `json:"eid"`
+	Uptime            flexFloat         `json:"uptime"`
+	OsUptime          flexFloat         `json:"osUptime"`
+	CloudConnected    *bool             `json:"cloudConnected"`
 }
 
 type rawNewLast24 struct {
@@ -151,6 +203,8 @@ type rawObsHost struct {
 	IP          string          `json:"ip"`
 	MacVendor   string          `json:"macVendor"`
 	Tags        []flexString    `json:"tags"`
+	DeviceTags  []flexString    `json:"deviceTags"`
+	UserTags    []flexString    `json:"userTags"`
 	LastActive  flexFloat       `json:"lastActive"`
 	LocalDomain string          `json:"localDomain"`
 	FlowSummary *rawFlowSummary `json:"flowsummary"`
@@ -163,11 +217,13 @@ type rawFlowSummary struct {
 }
 
 type rawSysMetrics struct {
-	Load1    flexFloat `json:"load1"`
-	Load5    flexFloat `json:"load5"`
-	Load15   flexFloat `json:"load15"`
-	MemUsage flexFloat `json:"memUsage"`
-	TotalMem flexFloat `json:"totalMem"`
+	Load1     flexFloat      `json:"load1"`
+	Load5     flexFloat      `json:"load5"`
+	Load15    flexFloat      `json:"load15"`
+	MemUsage  flexFloat      `json:"memUsage"`
+	TotalMem  flexFloat      `json:"totalMem"`
+	CPUUsage1 []rawCPUSample `json:"cpuUsage1"`
+	DiskInfo  []rawDiskInfo  `json:"diskInfo"`
 }
 
 type rawNICState struct {
@@ -437,7 +493,7 @@ func parseInitBox(root initObservatoryRoot) *inventory.Box {
 	if name == "" && model == "" && version == "" {
 		return nil
 	}
-	return &inventory.Box{
+	box := &inventory.Box{
 		Name:              name,
 		PublicIP:          strings.TrimSpace(root.PublicIP),
 		DDNS:              strings.TrimSpace(root.DDNS),
@@ -448,6 +504,21 @@ func parseInitBox(root initObservatoryRoot) *inventory.Box {
 		Timezone:          strings.TrimSpace(root.Timezone),
 		LocalDomainSuffix: strings.TrimSpace(root.LocalDomainSuffix),
 	}
+	if root.Uptime > 0 {
+		u := int64(root.Uptime)
+		box.UptimeSec = &u
+	}
+	if root.OsUptime > 0 {
+		u := int64(root.OsUptime)
+		box.OsUptimeSec = &u
+	}
+	if root.CloudConnected != nil {
+		box.CloudConnected = root.CloudConnected
+	}
+	if len(root.PublicIPs) > 0 {
+		box.PublicIPs = root.PublicIPs
+	}
+	return box
 }
 
 func parseInitDevices(hosts []rawObsHost) []inventory.Device {
@@ -464,14 +535,6 @@ func parseInitDevices(hosts []rawObsHost) []inventory.Device {
 		if name == "" {
 			name = mac
 		}
-		tags := make([]string, 0, len(h.Tags))
-		for _, t := range h.Tags {
-			s := strings.TrimSpace(string(t))
-			if s == "" {
-				continue
-			}
-			tags = append(tags, s)
-		}
 		dev := inventory.Device{}
 		dev.MAC = mac
 		dev.Name = name
@@ -479,7 +542,9 @@ func parseInitDevices(hosts []rawObsHost) []inventory.Device {
 		dev.Vendor = strings.TrimSpace(h.MacVendor)
 		dev.LocalDomain = strings.TrimSpace(h.LocalDomain)
 		dev.LastActiveTS = float64(h.LastActive)
-		dev.TagIDs = tags
+		dev.TagIDs = flexIDList(h.Tags)
+		dev.DeviceTagIDs = flexIDList(h.DeviceTags)
+		dev.UserTagIDs = flexIDList(h.UserTags)
 		if h.FlowSummary != nil {
 			// inbytes = download into the host; outbytes = upload from the host.
 			dev.Download = int64(h.FlowSummary.InBytes)
@@ -514,6 +579,8 @@ func parseInitSysMetrics(src *rawSysMetrics) *InitSysMetrics {
 		Load15:   float64(src.Load15),
 		MemUsage: float64(src.MemUsage),
 		TotalMem: float64(src.TotalMem),
+		CPU:      parseInitCPU(src.CPUUsage1),
+		Disks:    parseInitDisks(src.DiskInfo),
 	}
 }
 

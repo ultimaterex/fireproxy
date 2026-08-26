@@ -127,7 +127,27 @@ function FirewallaPane({
 
   const rows: { label: string; value: ReactNode }[] = []
   if (box.public_ip) rows.push({ label: 'Public IP', value: <CopyText value={box.public_ip} /> })
+  if (box.public_ips && Object.keys(box.public_ips).length) {
+    rows.push({
+      label: 'Public IPs',
+      value: (
+        <span className="space-y-1">
+          {Object.entries(box.public_ips).map(([iface, ip]) => (
+            <div key={iface} className="flex items-center gap-2">
+              <span className="text-muted-foreground">{iface}</span>
+              <CopyText value={ip} />
+            </div>
+          ))}
+        </span>
+      ),
+    })
+  }
   if (wanValue) rows.push({ label: 'WAN', value: wanValue })
+  if (box.cloud_connected != null) {
+    rows.push({ label: 'Cloud', value: box.cloud_connected ? 'Connected' : 'Disconnected' })
+  }
+  if (box.uptime_sec != null) rows.push({ label: 'Uptime', value: formatUptime(box.uptime_sec) })
+  if (box.os_uptime_sec != null) rows.push({ label: 'OS uptime', value: formatUptime(box.os_uptime_sec) })
   if (box.version) rows.push({ label: 'Version', value: box.version })
   if (box.mode) rows.push({ label: 'Mode', value: modeLabel(box.mode) })
   if (box.region) {

@@ -80,6 +80,17 @@ func metricsFromInit(obs fwapp.ObservatorySnapshot, at time.Time) store.LatestVi
 			M5:  obs.SysMetrics.Load5,
 			M15: obs.SysMetrics.Load15,
 		}
+		snap.CPU = obs.SysMetrics.CPU
+		for _, d := range obs.SysMetrics.Disks {
+			snap.Disks = append(snap.Disks, snapshot.Disk{
+				Mount:      d.Mount,
+				Filesystem: d.Filesystem,
+				Capacity:   d.Capacity,
+				Size:       d.Size,
+				Used:       d.Used,
+				Available:  d.Available,
+			})
+		}
 	}
 	for _, n := range obs.NICStates {
 		st := snapshot.IfaceStats{
@@ -90,6 +101,27 @@ func metricsFromInit(obs fwapp.ObservatorySnapshot, at time.Time) store.LatestVi
 		}
 		// RxBytes/TxBytes stay zero — do not invent counters or rates.
 		snap.Ifaces[n.Name] = st
+	}
+	for iface, link := range obs.WAN {
+		snap.WAN[iface] = link
+	}
+	for _, m := range obs.NICMetrics {
+		snap.NICMetrics = append(snap.NICMetrics, snapshot.NICMetric{
+			Name:     m.Name,
+			RxMedian: m.RxMedian,
+			TxMedian: m.TxMedian,
+			RxPt90:   m.RxPt90,
+			TxPt90:   m.TxPt90,
+		})
+	}
+	// Synthesize dns_svcs chips from resolver probes when process health is absent.
+	if obs.DNS != nil {
+		for _, r := range obs.DNS.Resolvers {
+			snap.DNSSvcs = append(snap.DNSSvcs, snapshot.DNSSvc{
+				Name: r.Server,
+				OK:   r.OK,
+			})
+		}
 	}
 	return store.LatestView{
 		Snapshot: snap,

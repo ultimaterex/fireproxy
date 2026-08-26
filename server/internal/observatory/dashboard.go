@@ -42,7 +42,12 @@ type DashboardView struct {
 	Rules           int                      `json:"rules"`
 	AlarmCount      int64                    `json:"alarm_count"`
 	Transfer24h     inventory.Transfer       `json:"transfer_24h"`
+	Transfer30d     inventory.Transfer       `json:"transfer_30d,omitempty"`
+	Transfer60      inventory.Transfer       `json:"transfer_60,omitempty"`
+	Transfer12m     inventory.Transfer       `json:"transfer_12m,omitempty"`
 	MonthlyWANs     []inventory.WANUsage     `json:"monthly_wans"`
+	MonthlyBeginTS  int64                    `json:"monthly_begin_ts,omitempty"`
+	MonthlyEndTS    int64                    `json:"monthly_end_ts,omitempty"`
 	Blocked         inventory.BlockedMix     `json:"blocked"`
 	TopUpload       []inventory.RankedFlow   `json:"top_upload"`
 	TopDownload     []inventory.RankedFlow   `json:"top_download"`
@@ -176,15 +181,20 @@ func dashboardFromInit(snap fwapp.ObservatorySnapshot, at time.Time) DashboardVi
 		ts = at.Unix()
 	}
 	return DashboardView{
-		TS:          ts,
-		Host:        host,
-		Devices:     len(snap.Devices),
-		Rules:       snap.RuleCount,
-		AlarmCount:  snap.AlarmCount,
-		Transfer24h: snap.Transfer24h,
-		MonthlyWANs: snap.MonthlyWANs,
-		Blocked:     snap.Blocked,
-		DNS:         snap.DNS,
+		TS:             ts,
+		Host:           host,
+		Devices:        len(snap.Devices),
+		Rules:          snap.RuleCount,
+		AlarmCount:     snap.AlarmCount,
+		Transfer24h:    snap.Transfer24h,
+		Transfer30d:    snap.Transfer30d,
+		Transfer60:     snap.Transfer60,
+		Transfer12m:    snap.Transfer12m,
+		MonthlyWANs:    snap.MonthlyWANs,
+		MonthlyBeginTS: snap.MonthlyBeginTS,
+		MonthlyEndTS:   snap.MonthlyEndTS,
+		Blocked:        snap.Blocked,
+		DNS:            snap.DNS,
 		// top_* intentionally empty — init has no ranked flows
 		Speedtest: snap.Speedtest,
 	}

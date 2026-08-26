@@ -99,12 +99,23 @@ export function MetricsTab({
   }
 
   const cpuPct = snap?.cpu ? cpuBusy(snap.cpu) : null
+  const disks = snap?.disks ?? []
+  const worstDisk = disks.reduce<(typeof disks)[number] | null>((best, d) => {
+    if (!d.mount || d.mount.includes('root-ro') || d.mount.includes('home-ro')) return best
+    if (!best || d.capacity > best.capacity) return d
+    return best
+  }, null)
 
   const wans = snap
     ? Object.entries(snap.wan ?? {})
         .filter(([iface]) => !iface.includes('.'))
         .sort(([a], [b]) => a.localeCompare(b))
     : []
+
+  const monthlyCycle =
+    dashboard?.monthly_begin_ts && dashboard?.monthly_end_ts
+      ? `${fmtTime(dashboard.monthly_begin_ts)} – ${fmtTime(dashboard.monthly_end_ts)}`
+      : null
 
   // Prefer dashboard provenance; fall back to metrics/latest (old servers omit both).
   const dataSource = dashboard?.source ?? latest?.source
@@ -145,6 +156,13 @@ export function MetricsTab({
           {cpuPct != null ? (
             <StatusGroup label="CPU">
               <StatusChip tone={cpuTone(cpuPct)}>{cpuPct.toFixed(0)}%</StatusChip>
+            </StatusGroup>
+          ) : null}
+          {worstDisk ? (
+            <StatusGroup label="Disk">
+              <StatusChip tone={cpuTone(worstDisk.capacity * 100)}>
+                {worstDisk.mount} {(worstDisk.capacity * 100).toFixed(0)}%
+              </StatusChip>
             </StatusGroup>
           ) : null}
           {(snap?.dns_svcs?.length ?? 0) > 0 ? (
@@ -213,6 +231,9 @@ export function MetricsTab({
           <Card className="gap-2 py-4">
             <CardHeader className="px-5">
               <CardTitle className="text-sm">Monthly data usage</CardTitle>
+              {monthlyCycle ? (
+                <CardDescription>{monthlyCycle}</CardDescription>
+              ) : null}
             </CardHeader>
             <CardContent className="space-y-3 px-5">
               {monthly.length === 0 ? (
