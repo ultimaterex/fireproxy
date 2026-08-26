@@ -98,6 +98,12 @@ func Dashboard(ctx context.Context, deps Deps) (DashboardView, Provenance, bool)
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok {
+		view := dashboardFromInit(snap, at)
+		view, filled := gapFillDashboard(view, deps)
+		return view, markEnriched(staleInitProvenance(at), filled), true
+	}
+
 	return DashboardView{}, Provenance{Source: SourceEmpty}, false
 }
 
@@ -132,6 +138,35 @@ func peekInit(deps Deps) (fwapp.ObservatorySnapshot, time.Time, bool) {
 		return snap, at, false
 	}
 	return snap, at, true
+}
+
+// peekInitStale returns a past-TTL snapshot that is still within InitPersistMaxAge.
+// PreferInit / takeInit must not use this — warm only.
+func peekInitStale(deps Deps) (fwapp.ObservatorySnapshot, time.Time, bool) {
+	if deps.ObservatorySnapshot == nil {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, false
+	}
+	snap, at, ok := deps.ObservatorySnapshot()
+	if !ok || at.IsZero() {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, false
+	}
+	age := deps.now().Sub(at)
+	if age < fwapp.InitCacheTTL {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, false
+	}
+	if age > fwapp.InitPersistMaxAge {
+		return fwapp.ObservatorySnapshot{}, time.Time{}, false
+	}
+	return snap, at, true
+}
+
+func staleInitProvenance(at time.Time) Provenance {
+	return Provenance{
+		Source:    SourceFWAppInit,
+		FetchedAt: at,
+		Reason:    ReasonFallback,
+		Stale:     true,
+	}
 }
 
 func ensureInitOnce(ctx context.Context, deps Deps) bool {

@@ -47,6 +47,10 @@ func Tags(ctx context.Context, deps Deps) (TagsView, Provenance, bool) {
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok {
+		return tagsFromInit(snap, at), staleInitProvenance(at), true
+	}
+
 	return TagsView{}, Provenance{Source: SourceEmpty}, false
 }
 
