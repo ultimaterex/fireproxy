@@ -592,7 +592,6 @@ function App() {
       })
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
   }, [showTags, showDevices, afUsers])
-  void tagCaps
 
   const setMode = (mode: ViewMode) => {
     setModes((prev) => ({ ...prev, [tab]: mode }))
@@ -673,6 +672,29 @@ function App() {
       { kind: 'tab', tab: 'groups' },
       { kind: 'group', id, label: labelTag(id, tagType), tagType },
     ])
+  }
+
+  async function setHostTags(mac: string, tags: string[]) {
+    const res = await api('/v1/fw-app/hosts/policy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac, tags }),
+      cache: 'no-store',
+    })
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string
+      policy?: { tags?: string[] }
+    }
+    if (!res.ok) {
+      const msg = body.error || `Update failed (${res.status})`
+      setError(msg)
+      throw new Error(msg)
+    }
+    const nextTags = body.policy?.tags ?? tags
+    const key = mac.toUpperCase()
+    setDevices((prev) =>
+      prev.map((d) => (d.mac.toUpperCase() === key ? { ...d, tag_ids: nextTags } : d)),
+    )
   }
 
   const goDevicesSwitch = (info: { macs: string[]; switchMac: string; switchName: string }) => {
@@ -1460,6 +1482,8 @@ function App() {
             <GroupsTab
               groups={groups}
               devices={showDevices}
+              canEditGroupMembers={!!tagCaps['host.group']}
+              onSetHostTags={setHostTags}
               onViewInDevices={goDevicesGroup}
             />
           )}

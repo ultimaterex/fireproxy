@@ -9,6 +9,13 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -17,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { preferredName } from '@/lib/format'
+import { hostTagsAdd, hostTagsRemove } from '@/lib/host-tags'
 import type { Device, Tag } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -68,14 +76,20 @@ function KindIcon({ kind, className }: { kind: TagKind; className?: string }) {
 export function GroupsTab({
   groups,
   devices,
+  canEditGroupMembers = false,
+  onSetHostTags,
   onViewInDevices,
 }: {
   groups: GroupRow[]
   devices: Device[]
+  canEditGroupMembers?: boolean
+  onSetHostTags?: (mac: string, tags: string[]) => Promise<void>
   onViewInDevices: (id: string, tagType: TagKind) => void
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [busyMac, setBusyMac] = useState<string | null>(null)
+  const [addKey, setAddKey] = useState(0)
 
   const filtered = useMemo(() => {
     if (typeFilter === 'all') return groups
@@ -91,10 +105,46 @@ export function GroupsTab({
     [selectedKey, filtered, groups],
   )
 
+  const selectedType = selected ? tagTypeOf(selected) : null
+  const writable =
+    !!selected && selectedType === 'group' && canEditGroupMembers && !!onSetHostTags
+
   const members = useMemo(() => {
-    if (!selected) return []
-    return membersOf(devices, selected.id, tagTypeOf(selected))
-  }, [devices, selected])
+    if (!selected || !selectedType) return []
+    return membersOf(devices, selected.id, selectedType)
+  }, [devices, selected, selectedType])
+
+  const candidates = useMemo(() => {
+    if (!writable || !selected) return []
+    const inGroup = new Set(members.map((d) => d.mac.toUpperCase()))
+    return devices
+      .filter((d) => !inGroup.has(d.mac.toUpperCase()))
+      .slice()
+      .sort((a, b) => preferredName(a).localeCompare(preferredName(b)))
+  }, [writable, selected, members, devices])
+
+  async function setMembership(device: Device, next: string[]) {
+    if (!onSetHostTags) return
+    setBusyMac(device.mac)
+    try {
+      await onSetHostTags(device.mac, next)
+    } finally {
+      setBusyMac(null)
+    }
+  }
+
+  async function assign(mac: string) {
+    if (!selected || !writable) return
+    const device = devices.find((d) => d.mac.toUpperCase() === mac.toUpperCase())
+    if (!device) return
+    await setMembership(device, hostTagsAdd(device.tag_ids ?? [], selected.id))
+    setAddKey((k) => k + 1)
+  }
+
+  async function unassign(device: Device) {
+    if (!selected || !writable) return
+    await setMembership(device, hostTagsRemove(device.tag_ids ?? [], selected.id))
+  }
 
   const list = (
     <Card className="gap-0 py-0">
@@ -193,6 +243,26 @@ export function GroupsTab({
         </div>
       </CardHeader>
       <CardContent className="px-0">
+        {writable ? (
+          <div className="flex items-center gap-2 border-b px-6 py-3">
+            <Select
+              key={addKey}
+              disabled={!!busyMac || candidates.length === 0}
+              onValueChange={(mac) => void assign(mac)}
+            >
+              <SelectTrigger size="sm" className="w-full max-w-xs">
+                <SelectValue placeholder="Add device" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {candidates.map((d) => (
+                  <SelectItem key={d.mac} value={d.mac}>
+                    {preferredName(d)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
         {members.length === 0 ? (
           <p className="px-6 py-8 text-sm text-muted-foreground">No devices</p>
         ) : (
@@ -201,6 +271,7 @@ export function GroupsTab({
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>MAC</TableHead>
+                {writable ? <TableHead className="w-[1%] text-right" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -208,6 +279,19 @@ export function GroupsTab({
                 <TableRow key={d.mac}>
                   <TableCell>{preferredName(d)}</TableCell>
                   <TableCell className="font-mono text-muted-foreground">{d.mac}</TableCell>
+                  {writable ? (
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={!!busyMac}
+                        onClick={() => void unassign(d)}
+                      >
+                        Remove
+                      </Button>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>
