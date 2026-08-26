@@ -1,0 +1,27 @@
+{
+  "mtype": "init",
+  "data": {
+    "tags": {
+      "10": {"uid": "10", "name": "Routers"},
+      "2": {"uid": "2", "name": "user-affiliated-group"}
+    },
+    "userTags": {
+      "1": {"uid": "1", "name": "Selby USA", "affiliatedTag": "2"}
+    },
+    "deviceTags": {
+      "16": {"uid": "16", "name": "tv", "type": "device"}
+    },
+    "hosts": [
+      {
+        "mac": "aa:bb:cc:dd:ee:01",
+        "name": "UDM",
+        "tags": ["10"],
+        "deviceTags": ["16"],
+        "userTags": ["1"]
+      }
+    ],
+    "policyRules": [],
+    "exceptionRules": [],
+    "screentimeRules": []
+  }
+}
