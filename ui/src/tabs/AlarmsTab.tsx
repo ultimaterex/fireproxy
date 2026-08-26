@@ -14,7 +14,14 @@ const emptyView = (): AlarmsView => ({
   new_alarms: [],
 })
 
-export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
+export function AlarmsTab({
+  controlLanOk,
+  onAlarmCount,
+}: {
+  controlLanOk: boolean
+  /** Push active count to the notifications bell after load/mutate. */
+  onAlarmCount?: (count: number) => void
+}) {
   const [view, setView] = useState<AlarmsView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -30,12 +37,14 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
       const r = await api('/v1/alarms')
       if (r.status === 404) {
         setView(emptyView())
+        onAlarmCount?.(0)
         return
       }
       if (!r.ok) throw new Error(`alarms ${r.status}`)
       const data = (await r.json()) as AlarmsView
+      const count = data.active_alarm_count ?? 0
       setView({
-        active_alarm_count: data.active_alarm_count ?? 0,
+        active_alarm_count: count,
         new_alarms: data.new_alarms ?? [],
         source: data.source,
         fetched_at: data.fetched_at,
@@ -43,13 +52,14 @@ export function AlarmsTab({ controlLanOk }: { controlLanOk: boolean }) {
         reason: data.reason,
         enriched_from: data.enriched_from,
       })
+      onAlarmCount?.(count)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setView(null)
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [onAlarmCount])
 
   useEffect(() => {
     void load()

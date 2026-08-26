@@ -1279,7 +1279,15 @@ function App() {
             />
           )}
 
-          {tab === 'alarms' && <AlarmsTab controlLanOk={controlLanOk} />}
+          {tab === 'alarms' && (
+            <AlarmsTab
+              controlLanOk={controlLanOk}
+              onAlarmCount={(count) => {
+                setAlarmNotifCount(count)
+                setAlarmNotifFromApi(true)
+              }}
+            />
+          )}
 
           {tab === 'inventory' && (
             <InventoryTab
