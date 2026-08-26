@@ -21,5 +21,8 @@ func DefaultRulesCapabilities() RulesCapabilities {
 		"host.emergency":        true,
 		"host.note":             true,
 		"host.group":            true,
+		"tag.create":            false,
+		"tag.rename":            false,
+		"tag.delete":            false,
 	}
 }
