@@ -9,12 +9,14 @@ import (
 
 // VPNView is a read-only VPN / VIP / virt-WAN inventory from init (no agent equivalent yet).
 type VPNView struct {
-	TS        int64                `json:"ts"`
-	Host      string               `json:"host,omitempty"`
-	WGPeers   []fwapp.InitWGPeer   `json:"wg_peers,omitempty"`
-	WGClients []fwapp.InitWGClient `json:"wg_clients,omitempty"`
-	VIPs      []fwapp.InitVIP      `json:"vips,omitempty"`
-	VirtWANs  []fwapp.InitVirtWAN  `json:"virt_wans,omitempty"`
+	TS             int64                       `json:"ts"`
+	Host           string                      `json:"host,omitempty"`
+	WGPeers        []fwapp.InitWGPeer          `json:"wg_peers,omitempty"`
+	AWGPeers       []fwapp.InitWGPeer          `json:"awg_peers,omitempty"`
+	WGClients      []fwapp.InitWGClient        `json:"wg_clients,omitempty"`
+	ClientProfiles []fwapp.InitVPNClientFamily `json:"client_profiles,omitempty"`
+	VIPs           []fwapp.InitVIP             `json:"vips,omitempty"`
+	VirtWANs       []fwapp.InitVirtWAN         `json:"virt_wans,omitempty"`
 }
 
 // VPN resolves WireGuard / VIP / virt-WAN inventory from fw-app init.
@@ -51,12 +53,22 @@ func vpnFromInit(snap fwapp.ObservatorySnapshot, at time.Time) VPNView {
 	if !at.IsZero() {
 		ts = at.Unix()
 	}
+	awg := snap.AWGPeers
+	if awg == nil {
+		awg = []fwapp.InitWGPeer{}
+	}
+	families := snap.ClientProfiles
+	if families == nil {
+		families = []fwapp.InitVPNClientFamily{}
+	}
 	return VPNView{
-		TS:        ts,
-		Host:      host,
-		WGPeers:   snap.WGPeers,
-		WGClients: snap.WGClients,
-		VIPs:      snap.VIPs,
-		VirtWANs:  snap.VirtWANs,
+		TS:             ts,
+		Host:           host,
+		WGPeers:        snap.WGPeers,
+		AWGPeers:       awg,
+		WGClients:      snap.WGClients,
+		ClientProfiles: families,
+		VIPs:           snap.VIPs,
+		VirtWANs:       snap.VirtWANs,
 	}
 }

@@ -473,13 +473,15 @@ func (s *Server) vpn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"ts":         view.TS,
-		"host":       view.Host,
-		"wg_peers":   view.WGPeers,
-		"wg_clients": view.WGClients,
-		"vips":       view.VIPs,
-		"virt_wans":  view.VirtWANs,
-		"source":     prov.Source,
+		"ts":              view.TS,
+		"host":            view.Host,
+		"wg_peers":        view.WGPeers,
+		"awg_peers":       view.AWGPeers,
+		"wg_clients":      view.WGClients,
+		"client_profiles": view.ClientProfiles,
+		"vips":            view.VIPs,
+		"virt_wans":       view.VirtWANs,
+		"source":          prov.Source,
 	}
 	attachProvenance(out, prov)
 	writeJSON(w, http.StatusOK, out)

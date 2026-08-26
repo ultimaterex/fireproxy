@@ -1,6 +1,7 @@
 package fwapp
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"strconv"
@@ -39,12 +40,32 @@ type InitWGPeer struct {
 	LastActive float64 `json:"last_active,omitempty"`
 }
 
-// InitWGClient is a WireGuard VPN client profile.
+// InitWGClient is a WireGuard VPN client profile (legacy flat list).
 type InitWGClient struct {
-	ProfileID string `json:"profile_id,omitempty"`
-	Status    string `json:"status,omitempty"`
-	RemoteIP  string `json:"remote_ip,omitempty"`
-	LocalIP   string `json:"local_ip,omitempty"`
+	ProfileID   string `json:"profile_id,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Type        string `json:"type,omitempty"`
+	RemoteIP    string `json:"remote_ip,omitempty"`
+	LocalIP     string `json:"local_ip,omitempty"`
+	Message     string `json:"message,omitempty"`
+}
+
+// InitVPNClientProfile is one VPN client profile row (any family).
+type InitVPNClientProfile struct {
+	ProfileID   string `json:"profile_id,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Type        string `json:"type,omitempty"`
+	RemoteIP    string `json:"remote_ip,omitempty"`
+	LocalIP     string `json:"local_ip,omitempty"`
+	Message     string `json:"message,omitempty"`
+}
+
+// InitVPNClientFamily groups client profiles by init family id.
+type InitVPNClientFamily struct {
+	Family   string                 `json:"family"`
+	Profiles []InitVPNClientProfile `json:"profiles"`
 }
 
 // InitVIP is a VIP profile from init.
@@ -127,12 +148,18 @@ type rawWGPeer struct {
 	LastActiveTimestamp flexFloat `json:"lastActiveTimestamp"`
 }
 
-type rawWGClient struct {
-	ProfileID string     `json:"profileId"`
-	Status    flexString `json:"status"`
-	RemoteIP  string     `json:"remoteIP"`
-	LocalIP   string     `json:"localIP"`
-	Message   string     `json:"message"`
+type rawVPNClient struct {
+	ProfileID string          `json:"profileId"`
+	Status    json.RawMessage `json:"status"`
+	Type      string          `json:"type"`
+	RemoteIP  flexString      `json:"remoteIP"`
+	LocalIP   string          `json:"localIP"`
+	Message   string          `json:"message"`
+	Settings  *rawVPNSettings `json:"settings"`
+}
+
+type rawVPNSettings struct {
+	DisplayName string `json:"displayName"`
 }
 
 type rawVIP struct {
@@ -376,20 +403,100 @@ func parseWGPeers(raw []rawWGPeer) []InitWGPeer {
 	return out
 }
 
-func parseWGClients(raw []rawWGClient) []InitWGClient {
-	if len(raw) == 0 {
-		return nil
-	}
-	out := make([]InitWGClient, 0, len(raw))
-	for _, p := range raw {
-		out = append(out, InitWGClient{
-			ProfileID: strings.TrimSpace(p.ProfileID),
-			Status:    strings.TrimSpace(string(p.Status)),
-			RemoteIP:  strings.TrimSpace(p.RemoteIP),
-			LocalIP:   strings.TrimSpace(p.LocalIP),
+// vpnClientFamilyOrder is the stable catalog order for /v1/vpn client_profiles.
+var vpnClientFamilyOrder = []struct {
+	Family string
+	Field  func(r initObservatoryRoot) []rawVPNClient
+}{
+	{"wireguard", func(r initObservatoryRoot) []rawVPNClient { return r.WGVPNClientProfiles }},
+	{"amneziawg", func(r initObservatoryRoot) []rawVPNClient { return r.AWGVPNClientProfiles }},
+	{"openvpn", func(r initObservatoryRoot) []rawVPNClient { return r.OVPNClientProfiles }},
+	{"ssl", func(r initObservatoryRoot) []rawVPNClient { return r.SSLVPNClientProfiles }},
+	{"ipsec", func(r initObservatoryRoot) []rawVPNClient { return r.IPSecVPNClientProfiles }},
+	{"trojan", func(r initObservatoryRoot) []rawVPNClient { return r.TrojanVPNClientProfiles }},
+	{"clash", func(r initObservatoryRoot) []rawVPNClient { return r.ClashVPNClientProfiles }},
+	{"nebula", func(r initObservatoryRoot) []rawVPNClient { return r.NebulaVPNClientProfiles }},
+	{"tailscale", func(r initObservatoryRoot) []rawVPNClient { return r.TSVPNClientProfiles }},
+	{"zerotier", func(r initObservatoryRoot) []rawVPNClient { return r.ZTVPNClientProfiles }},
+	{"gost", func(r initObservatoryRoot) []rawVPNClient { return r.GostVPNClientProfiles }},
+	{"hysteria", func(r initObservatoryRoot) []rawVPNClient { return r.HysteriaVPNClientProfiles }},
+	{"generic", func(r initObservatoryRoot) []rawVPNClient { return r.VPNProfiles }},
+}
+
+func parseVPNClientFamilies(root initObservatoryRoot) []InitVPNClientFamily {
+	out := make([]InitVPNClientFamily, 0, len(vpnClientFamilyOrder))
+	for _, e := range vpnClientFamilyOrder {
+		out = append(out, InitVPNClientFamily{
+			Family:   e.Family,
+			Profiles: parseVPNClientProfiles(e.Field(root)),
 		})
 	}
 	return out
+}
+
+func parseVPNClientProfiles(raw []rawVPNClient) []InitVPNClientProfile {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]InitVPNClientProfile, 0, len(raw))
+	for _, p := range raw {
+		id := strings.TrimSpace(p.ProfileID)
+		name := ""
+		if p.Settings != nil {
+			name = strings.TrimSpace(p.Settings.DisplayName)
+		}
+		if name == "" {
+			name = id
+		}
+		out = append(out, InitVPNClientProfile{
+			ProfileID:   id,
+			DisplayName: name,
+			Status:      normalizeVPNStatus(p.Status),
+			Type:        strings.TrimSpace(p.Type),
+			RemoteIP:    strings.TrimSpace(string(p.RemoteIP)),
+			LocalIP:     strings.TrimSpace(p.LocalIP),
+			Message:     strings.TrimSpace(p.Message),
+		})
+	}
+	return out
+}
+
+func parseWGClients(raw []rawVPNClient) []InitWGClient {
+	profs := parseVPNClientProfiles(raw)
+	if len(profs) == 0 {
+		return nil
+	}
+	out := make([]InitWGClient, 0, len(profs))
+	for _, p := range profs {
+		out = append(out, InitWGClient{
+			ProfileID:   p.ProfileID,
+			DisplayName: p.DisplayName,
+			Status:      p.Status,
+			Type:        p.Type,
+			RemoteIP:    p.RemoteIP,
+			LocalIP:     p.LocalIP,
+			Message:     p.Message,
+		})
+	}
+	return out
+}
+
+func normalizeVPNStatus(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	b := bytes.TrimSpace(raw)
+	if string(b) == "true" {
+		return "connected"
+	}
+	if string(b) == "false" {
+		return "disconnected"
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		return strings.ToLower(strings.TrimSpace(s))
+	}
+	return strings.ToLower(strings.TrimSpace(string(b)))
 }
 
 func parseVIPs(raw []rawVIP) []InitVIP {

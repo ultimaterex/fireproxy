@@ -1,10 +1,20 @@
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowLeftRight, EthernetPort, Shuffle, Wifi } from 'lucide-react'
 
+import { SourceBadge } from '@/components/SourceBadge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { netLabel } from '@/lib/format'
+import { api } from '@/lib/api'
+import { fmtBytes, netLabel } from '@/lib/format'
 import { managerKind, portChips, wanTypeLabel, type PortChip } from '@/lib/ports'
-import type { NetIface } from '@/lib/types'
+import type {
+  NetIface,
+  VPNClientFamily,
+  VPNInventory,
+  VPNPeer,
+  VPNVIP,
+  VPNVirtWAN,
+} from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -13,6 +23,24 @@ const LAN_GRID =
   'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_5.5rem_1.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
 const WAN_GRID =
   'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_4.5rem_5.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
+const VPN_GRID =
+  'grid w-full grid-cols-[minmax(8rem,1fr)_minmax(6rem,10rem)_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
+
+const FAMILY_LABEL: Record<string, string> = {
+  wireguard: 'WireGuard clients',
+  amneziawg: 'AmneziaWG clients',
+  openvpn: 'OpenVPN clients',
+  ssl: 'SSL VPN clients',
+  ipsec: 'IPSec clients',
+  trojan: 'Trojan clients',
+  clash: 'Clash clients',
+  nebula: 'Nebula clients',
+  tailscale: 'Tailscale clients',
+  zerotier: 'ZeroTier clients',
+  gost: 'Gost clients',
+  hysteria: 'Hysteria clients',
+  generic: 'VPN profiles',
+}
 
 export function NetworkTab({
   network,
@@ -25,6 +53,44 @@ export function NetworkTab({
 }) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
   const wans = network.filter((n) => managerKind(n) === 'wan')
+  const [vpn, setVpn] = useState<VPNInventory | null>(null)
+  const [vpnErr, setVpnErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api('/v1/vpn')
+        if (r.status === 404) {
+          if (!cancelled) {
+            setVpn(null)
+            setVpnErr('Not in init')
+          }
+          return
+        }
+        if (!r.ok) {
+          if (!cancelled) {
+            setVpn(null)
+            setVpnErr(await r.text())
+          }
+          return
+        }
+        const data = (await r.json()) as VPNInventory
+        if (!cancelled) {
+          setVpn(data)
+          setVpnErr(null)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setVpn(null)
+          setVpnErr(e instanceof Error ? e.message : 'VPN load failed')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -65,6 +131,123 @@ export function NetworkTab({
           )}
         </CardContent>
       </Card>
+
+      <VPNRegion vpn={vpn} err={vpnErr} />
+    </div>
+  )
+}
+
+function VPNRegion({ vpn, err }: { vpn: VPNInventory | null; err: string | null }) {
+  const peers = [...(vpn?.wg_peers ?? []), ...(vpn?.awg_peers ?? [])]
+  const families = (vpn?.client_profiles ?? []).filter((f) => (f.profiles?.length ?? 0) > 0)
+  const vips = vpn?.vips ?? []
+  const virt = vpn?.virt_wans ?? []
+  const hasData = peers.length > 0 || families.length > 0 || vips.length > 0 || virt.length > 0
+
+  return (
+    <Card className="gap-0 py-0">
+      <CardHeader className={`${SECTION_HEADER} items-center`}>
+        <CardTitle className={SECTION_TITLE}>VPN</CardTitle>
+        <CardAction>
+          <SourceBadge source={vpn?.source} stale={vpn?.stale} reason={vpn?.reason} />
+        </CardAction>
+      </CardHeader>
+      <CardContent className="space-y-4 px-0 pb-4">
+        {err && !hasData ? (
+          <p className="px-6 py-2 text-sm text-muted-foreground">{err}</p>
+        ) : null}
+        {!err && !hasData ? (
+          <p className="px-6 py-2 text-sm text-muted-foreground">Not in init</p>
+        ) : null}
+        {peers.length > 0 ? (
+          <VPNSection title="WireGuard peers">
+            {peers.map((p, i) => (
+              <PeerRow key={`${p.name}-${p.intf}-${i}`} p={p} />
+            ))}
+          </VPNSection>
+        ) : null}
+        {families.map((f) => (
+          <VPNSection key={f.family} title={FAMILY_LABEL[f.family] || f.family}>
+            {f.profiles.map((p) => (
+              <ProfileRow key={p.profile_id || p.display_name} p={p} />
+            ))}
+          </VPNSection>
+        ))}
+        {vips.length > 0 ? (
+          <VPNSection title="VIP">
+            {vips.map((v) => (
+              <VIPRow key={v.uid || v.ip || v.name} v={v} />
+            ))}
+          </VPNSection>
+        ) : null}
+        {virt.length > 0 ? (
+          <VPNSection title="Virt WAN">
+            {virt.map((v) => (
+              <VirtRow key={v.uuid || v.name} v={v} />
+            ))}
+          </VPNSection>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function VPNSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="px-6 pb-2 text-sm font-medium text-muted-foreground">{title}</div>
+      <div className="divide-y">{children}</div>
+    </div>
+  )
+}
+
+function PeerRow({ p }: { p: VPNPeer }) {
+  const key = p.public_key ? `${p.public_key.slice(0, 8)}…` : '—'
+  const meta = [
+    p.intf,
+    p.rx_bytes || p.tx_bytes ? `${fmtBytes(p.rx_bytes)} ↓ / ${fmtBytes(p.tx_bytes)} ↑` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <div className={VPN_GRID}>
+      <div className="truncate font-medium">{p.name || '—'}</div>
+      <div className="truncate font-mono text-muted-foreground">{key}</div>
+      <div className="truncate text-muted-foreground">{meta || null}</div>
+    </div>
+  )
+}
+
+function ProfileRow({ p }: { p: VPNClientFamily['profiles'][number] }) {
+  const label = p.display_name || p.profile_id || '—'
+  const status = p.status || '—'
+  return (
+    <div className={VPN_GRID}>
+      <div className="truncate font-medium">{label}</div>
+      <div>
+        <Badge variant={status === 'connected' ? 'default' : 'secondary'}>{status}</Badge>
+      </div>
+      <div className="truncate font-mono text-muted-foreground">{p.remote_ip || p.local_ip || null}</div>
+    </div>
+  )
+}
+
+function VIPRow({ v }: { v: VPNVIP }) {
+  return (
+    <div className={VPN_GRID}>
+      <div className="truncate font-medium">{v.name || v.uid || '—'}</div>
+      <div className="truncate font-mono text-muted-foreground">{v.ip || '—'}</div>
+      <div />
+    </div>
+  )
+}
+
+function VirtRow({ v }: { v: VPNVirtWAN }) {
+  return (
+    <div className={VPN_GRID}>
+      <div className="truncate font-medium">{v.name || v.uuid || '—'}</div>
+      <div className="truncate text-muted-foreground">{v.type || '—'}</div>
+      <div className="truncate text-muted-foreground">{v.conn_state || null}</div>
     </div>
   )
 }
