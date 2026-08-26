@@ -80,13 +80,13 @@ Lazy hydrate on `ObservatorySnapshot()` remains (mirrors `RulesSnapshot()`) so l
 | Path | Behavior |
 |---|---|
 | Agent online + fresh | Agent wins; no init touch |
-| PreferInit | Warm init only (≤ `InitCacheTTL`) **or** EnsureInit that rewarms. Disk-only past TTL ≠ prefer |
+| PreferInit | Warm init only (≤ `InitCacheTTL`) **or** EnsureInit that rewarms. Disk-only past TTL ≠ prefer. If PreferInit is set and rewarm fails → **empty** (no stale-fallback on the prefer path). |
 | Warm init (≤ 5m) | Existing: `fw-app-init` + `prefer` / `fallback` as today |
 | Past TTL | Try EnsureInit once (existing) |
-| Stale fallback (new) | Only if warm peek fails **and** EnsureInit did not rewarm **and** age ≤ 24h → serve with `stale=true`, `reason=fallback` |
+| Stale fallback (new) | On the **non-PreferInit** path only: warm peek fails **and** EnsureInit did not rewarm **and** age ≤ 24h → serve with `stale=true`, `reason=fallback`. Applies anytime (running process or post-restart), so all `peekInit` facades share the helper — not boot-only. |
 | Age > 24h | Miss — do not paint |
 
-Never bump `refreshedAt` on hydrate. Never set PreferInit from disk alone.
+Never bump `refreshedAt` on hydrate. Never set PreferInit from disk alone. Existing UI badges may still show Fallback for `fw-app-init` even when `stale=true` (badge tweak out of scope).
 
 ### Wiring notes
 
