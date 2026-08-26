@@ -42,6 +42,22 @@ func TestParseMultiWANFromCommittedFixture(t *testing.T) {
 	}
 }
 
+func TestParseMultiWANPreservesISPLabels(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "init_multi_wan_isp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs, err := ParseInitObservatory(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eth1 := obs.WAN["eth1"]
+	eth2 := obs.WAN["eth2"]
+	if eth1.Name != "Telesur" || eth2.Name != "Digicel" {
+		t.Fatalf("ISP labels regressed: eth1=%q eth2=%q", eth1.Name, eth2.Name)
+	}
+}
+
 func TestParseWanTestNonEmpty(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "init_wan_test_nonempty.json"))
 	if err != nil {

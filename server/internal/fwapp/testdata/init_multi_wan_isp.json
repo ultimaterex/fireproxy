@@ -1,0 +1,17 @@
+{
+  "networkConfig": {
+    "interface": {
+      "phy": {
+        "eth1": {"meta": {"name": "Telesur", "type": "wan", "uuid": "ad5959cc-d9da-4b81-93f6-4b5e49a02202"}},
+        "eth2": {"meta": {"name": "Digicel", "type": "wan", "uuid": "3a6d4b13-615e-4a9a-b3a8-13b9d1a0b4ee"}}
+      }
+    }
+  },
+  "latestAllStateEvents": {
+    "wan_state:eth1": {"labels": {"ready": true, "active": true, "wan_intf_name": "Telesur", "wan_intf_uuid": "ad5959cc-d9da-4b81-93f6-4b5e49a02202"}},
+    "wan_state:eth2": {"labels": {"ready": true, "active": false, "wan_intf_name": "Digicel", "wan_intf_uuid": "3a6d4b13-615e-4a9a-b3a8-13b9d1a0b4ee"}}
+  },
+  "runtimeFeatures": {"dual_wan": true, "single_wan_conn_check": false},
+  "virtWanGroups": [],
+  "wanTestResult": {"connected": false, "wans": {}}
+}
