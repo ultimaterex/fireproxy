@@ -73,13 +73,14 @@ func TestDashboardOfflineUsesFWAppInit(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Source     string                   `json:"source"`
-		AlarmCount int64                    `json:"alarm_count"`
-		Transfer   inventory.Transfer       `json:"transfer_24h"`
-		Monthly    []inventory.WANUsage     `json:"monthly_wans"`
-		Speedtest  []inventory.SpeedtestWAN `json:"speedtest"`
-		TopUpload  []inventory.RankedFlow   `json:"top_upload"`
-		FetchedAt  *time.Time               `json:"fetched_at"`
+		Source       string                   `json:"source"`
+		EnrichedFrom string                   `json:"enriched_from"`
+		AlarmCount   int64                    `json:"alarm_count"`
+		Transfer     inventory.Transfer       `json:"transfer_24h"`
+		Monthly      []inventory.WANUsage     `json:"monthly_wans"`
+		Speedtest    []inventory.SpeedtestWAN `json:"speedtest"`
+		TopUpload    []inventory.RankedFlow   `json:"top_upload"`
+		FetchedAt    *time.Time               `json:"fetched_at"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -87,11 +88,16 @@ func TestDashboardOfflineUsesFWAppInit(t *testing.T) {
 	if body.Source != observatory.SourceFWAppInit {
 		t.Fatalf("source=%q", body.Source)
 	}
+	// Shared fields stay from init (alarm_count 4, not catalog 999).
 	if body.AlarmCount != 4 || body.Transfer.Upload != 11 || len(body.Monthly) != 1 || len(body.Speedtest) == 0 {
 		t.Fatalf("%+v", body)
 	}
-	if len(body.TopUpload) != 0 {
-		t.Fatalf("top_upload must be empty: %+v", body.TopUpload)
+	// Agent-only ranked tops gap-fill from fresh catalog while source stays fw-app-init.
+	if len(body.TopUpload) != 1 || body.TopUpload[0].ID != "nope" {
+		t.Fatalf("top_upload gap-fill: %+v", body.TopUpload)
+	}
+	if body.EnrichedFrom != observatory.SourceAgent {
+		t.Fatalf("enriched_from=%q", body.EnrichedFrom)
 	}
 	if body.FetchedAt == nil || body.FetchedAt.IsZero() {
 		t.Fatal("expected fetched_at")

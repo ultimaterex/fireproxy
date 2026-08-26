@@ -54,6 +54,7 @@ export type Provenance = {
   source?: string
   fetched_at?: string
   stale?: boolean
+  enriched_from?: string
 }
 
 export type DataSource = 'agent' | 'fw-app-init' | 'empty' | (string & {})
@@ -66,6 +67,7 @@ export type LatestView = {
   source?: DataSource
   fetched_at?: string
   stale?: boolean
+  enriched_from?: string
 }
 
 export type HistoryPoint = {
@@ -633,6 +635,7 @@ export type Dashboard = {
   source?: DataSource
   fetched_at?: string
   stale?: boolean
+  enriched_from?: string
 }
 
 export type PersistInfo = {

@@ -120,6 +120,7 @@ export function MetricsTab({
   // Prefer dashboard provenance; fall back to metrics/latest (old servers omit both).
   const dataSource = dashboard?.source ?? latest?.source
   const dataStale = dashboard?.stale ?? latest?.stale
+  const enrichedFrom = dashboard?.enriched_from ?? latest?.enriched_from
   const fromControl = dataSource === 'fw-app-init'
   const emptyHint = fromControl ? 'Not available from control' : 'Waiting on catalog'
   const dnsResolvers = dashboard?.dns?.resolvers ?? []
@@ -153,7 +154,7 @@ export function MetricsTab({
           </StatusGroup>
           {(dataSource === 'agent' || dataSource === 'fw-app-init') ? (
             <StatusGroup label="Source">
-              <SourceBadge source={dataSource} stale={dataStale} />
+              <SourceBadge source={dataSource} stale={dataStale} enrichedFrom={enrichedFrom} />
             </StatusGroup>
           ) : null}
           {cpuPct != null ? (

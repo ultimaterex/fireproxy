@@ -5,10 +5,12 @@ import { cn } from '@/lib/utils'
 export function SourceBadge({
   source,
   stale,
+  enrichedFrom,
   className,
 }: {
   source?: string | null
   stale?: boolean
+  enrichedFrom?: string | null
   className?: string
 }) {
   if (!source || source === 'empty') return null
@@ -41,7 +43,7 @@ export function SourceBadge({
         variant="outline"
         className={cn('border-amber-500/40 bg-amber-500/15 text-amber-400', className)}
       >
-        Fallback · control
+        {enrichedFrom === 'agent' ? 'Fallback · control + agent' : 'Fallback · control'}
       </Badge>
     )
   }

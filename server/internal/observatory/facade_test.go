@@ -90,8 +90,14 @@ func TestDashboardPreferInitOverridesFreshAgent(t *testing.T) {
 	if prov.Source != SourceFWAppInit {
 		t.Fatalf("source=%q", prov.Source)
 	}
-	if dash.AlarmCount != 3 || len(dash.TopUpload) != 0 {
-		t.Fatalf("want init rollups without tops: %+v", dash)
+	if dash.AlarmCount != 3 {
+		t.Fatalf("want init alarm_count=3: %+v", dash)
+	}
+	if len(dash.TopUpload) != 1 || dash.TopUpload[0].ID != "agent" {
+		t.Fatalf("want agent tops gap-filled under PreferInit: %+v", dash.TopUpload)
+	}
+	if prov.EnrichedFrom != SourceAgent {
+		t.Fatalf("enriched_from=%q want %q", prov.EnrichedFrom, SourceAgent)
 	}
 }
 
@@ -140,10 +146,12 @@ func TestDashboardAgentOfflineWarmInit(t *testing.T) {
 	if dash.AlarmCount != 3 || dash.Transfer24h.Upload != 10 || len(dash.MonthlyWANs) != 1 || len(dash.Speedtest) != 1 {
 		t.Fatalf("init fields: %+v", dash)
 	}
-	if len(dash.TopUpload) != 0 || len(dash.TopDownload) != 0 ||
-		len(dash.TopDestUpload) != 0 || len(dash.TopDestDownload) != 0 ||
-		len(dash.TopRegions) != 0 {
-		t.Fatalf("top_* must stay empty on init fallback: %+v", dash)
+	// Fresh catalog (1m) still within CatalogTTL → gap-fill ranked tops even when agent is offline.
+	if len(dash.TopUpload) != 1 || dash.TopUpload[0].ID != "stale" {
+		t.Fatalf("want gap-filled tops from recent catalog: %+v", dash.TopUpload)
+	}
+	if prov.EnrichedFrom != SourceAgent {
+		t.Fatalf("enriched_from=%q", prov.EnrichedFrom)
 	}
 	if dash.Devices != 2 {
 		t.Fatalf("devices=%d want 2", dash.Devices)
@@ -665,5 +673,88 @@ func TestAlarmsUnpairedEmpty(t *testing.T) {
 	}
 	if prov.Source != SourceEmpty {
 		t.Fatalf("source=%q want %q", prov.Source, SourceEmpty)
+	}
+}
+
+func TestDashboardInitSkipsStaleCatalogGapFill(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	initAt := now.Add(-time.Minute)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: true,
+		PreferInit:  true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS: now.Add(-2 * time.Hour).Unix(), // past CatalogTTL
+				Dashboard: &inventory.Dashboard{
+					TopUpload: []inventory.RankedFlow{{ID: "old"}},
+				},
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{AlarmCount: 1}, initAt, true
+		},
+	}
+	dash, prov, ok := Dashboard(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if len(dash.TopUpload) != 0 {
+		t.Fatalf("stale catalog must not gap-fill: %+v", dash.TopUpload)
+	}
+	if prov.EnrichedFrom != "" {
+		t.Fatalf("enriched_from=%q want empty", prov.EnrichedFrom)
+	}
+}
+
+func TestMetricsPreferInitGapFillsRates(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	initAt := now.Add(-20 * time.Second)
+	rx, tx := 1.5, 0.5
+	deps := Deps{
+		Now:         now,
+		AgentOnline: true,
+		PreferInit:  true,
+		Latest: func() (store.LatestView, bool) {
+			return store.LatestView{
+				Snapshot: snapshot.Snapshot{
+					TS: now.Add(-30 * time.Second).Unix(),
+					DNSSvcs: []snapshot.DNSSvc{{Name: "unbound", OK: true}},
+					Ifaces: map[string]snapshot.IfaceStats{
+						"eth0": {RxBytes: 100, TxBytes: 50, Carrier: true},
+					},
+				},
+				Rates:    map[string]store.Rates{"eth0": {RxMbps: &rx, TxMbps: &tx}},
+				HavePrev: true,
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{
+				SysMetrics: &fwapp.InitSysMetrics{Load1: 2},
+				NICStates:  []fwapp.InitNICState{{Name: "eth0", Carrier: "1", Speed: "1000"}},
+			}, initAt, true
+		},
+	}
+	view, prov, ok := MetricsLatest(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceFWAppInit {
+		t.Fatalf("source=%q", prov.Source)
+	}
+	if view.Snapshot.Load.M1 != 2 {
+		t.Fatalf("load should stay from init: %+v", view.Snapshot.Load)
+	}
+	if view.Rates["eth0"].RxMbps == nil || *view.Rates["eth0"].RxMbps != 1.5 {
+		t.Fatalf("want agent rates gap-filled: %+v", view.Rates)
+	}
+	if len(view.Snapshot.DNSSvcs) != 1 || view.Snapshot.DNSSvcs[0].Name != "unbound" {
+		t.Fatalf("want agent dns_svcs: %+v", view.Snapshot.DNSSvcs)
+	}
+	if view.Snapshot.Ifaces["eth0"].RxBytes != 100 {
+		t.Fatalf("want agent iface bytes: %+v", view.Snapshot.Ifaces["eth0"])
+	}
+	if prov.EnrichedFrom != SourceAgent {
+		t.Fatalf("enriched_from=%q", prov.EnrichedFrom)
 	}
 }

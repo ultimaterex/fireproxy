@@ -21,7 +21,9 @@ func MetricsLatest(ctx context.Context, deps Deps) (store.LatestView, Provenance
 	if deps.PreferInit {
 		snap, at, prov, ok := takeInit(ctx, deps)
 		if ok {
-			return metricsFromInit(snap, at), prov, true
+			view := metricsFromInit(snap, at)
+			view, filled := gapFillMetrics(view, deps)
+			return view, markEnriched(prov, filled), true
 		}
 		return store.LatestView{}, Provenance{Source: SourceEmpty}, false
 	}
@@ -34,14 +36,18 @@ func MetricsLatest(ctx context.Context, deps Deps) (store.LatestView, Provenance
 	prov, _ := Pick(deps.AgentOnline, agentAge, IngestTTL, initOK, at)
 
 	if prov.Source == SourceFWAppInit && initOK {
-		return metricsFromInit(snap, at), prov, true
+		v := metricsFromInit(snap, at)
+		v, filled := gapFillMetrics(v, deps)
+		return v, markEnriched(prov, filled), true
 	}
 
 	if ensureInitOnce(ctx, deps) {
 		snap, at, initOK = peekInit(deps)
 		prov, _ = Pick(deps.AgentOnline, agentAge, IngestTTL, initOK, at)
 		if prov.Source == SourceFWAppInit && initOK {
-			return metricsFromInit(snap, at), prov, true
+			v := metricsFromInit(snap, at)
+			v, filled := gapFillMetrics(v, deps)
+			return v, markEnriched(prov, filled), true
 		}
 	}
 

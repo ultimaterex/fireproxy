@@ -10,7 +10,8 @@ const (
 
 // Provenance describes which backend filled an observatory DTO.
 type Provenance struct {
-	Source    string    `json:"source"`
-	FetchedAt time.Time `json:"fetched_at,omitempty"`
-	Stale     bool      `json:"stale,omitempty"`
+	Source       string    `json:"source"`
+	FetchedAt    time.Time `json:"fetched_at,omitempty"`
+	Stale        bool      `json:"stale,omitempty"`
+	EnrichedFrom string    `json:"enriched_from,omitempty"` // e.g. "agent" when gap-filled
 }

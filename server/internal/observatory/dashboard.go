@@ -66,7 +66,9 @@ func Dashboard(ctx context.Context, deps Deps) (DashboardView, Provenance, bool)
 	if deps.PreferInit {
 		snap, at, prov, ok := takeInit(ctx, deps)
 		if ok {
-			return dashboardFromInit(snap, at), prov, true
+			view := dashboardFromInit(snap, at)
+			view, filled := gapFillDashboard(view, deps)
+			return view, markEnriched(prov, filled), true
 		}
 		return DashboardView{}, Provenance{Source: SourceEmpty}, false
 	}
@@ -80,7 +82,9 @@ func Dashboard(ctx context.Context, deps Deps) (DashboardView, Provenance, bool)
 	prov, _ := Pick(deps.AgentOnline, agentAge, CatalogTTL, initOK, at)
 
 	if prov.Source == SourceFWAppInit && initOK {
-		return dashboardFromInit(snap, at), prov, true
+		view := dashboardFromInit(snap, at)
+		view, filled := gapFillDashboard(view, deps)
+		return view, markEnriched(prov, filled), true
 	}
 
 	// Cold init: one bounded on-demand fetch when paired/LAN-OK, then re-resolve.
@@ -88,7 +92,9 @@ func Dashboard(ctx context.Context, deps Deps) (DashboardView, Provenance, bool)
 		snap, at, initOK = peekInit(deps)
 		prov, _ = Pick(deps.AgentOnline, agentAge, CatalogTTL, initOK, at)
 		if prov.Source == SourceFWAppInit && initOK {
-			return dashboardFromInit(snap, at), prov, true
+			view := dashboardFromInit(snap, at)
+			view, filled := gapFillDashboard(view, deps)
+			return view, markEnriched(prov, filled), true
 		}
 	}
 

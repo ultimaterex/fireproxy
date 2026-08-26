@@ -841,6 +841,9 @@ func attachProvenance(out map[string]any, prov observatory.Provenance) {
 	if prov.Stale {
 		out["stale"] = true
 	}
+	if prov.EnrichedFrom != "" {
+		out["enriched_from"] = prov.EnrichedFrom
+	}
 }
 
 func (s *Server) persist() *store.Persist {
