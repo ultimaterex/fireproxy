@@ -108,7 +108,7 @@ Preserve existing row grid and Multi-WAN Failover chip.
 |---|---|
 | Ready | Quiet muted text `ready` / `not ready` from `wan_ready` when set; blank when nil |
 | Feature chips | Show a chip only when `*bool` is non-nil. Label encodes state: `dual_wan` / `dual_wan off`, `conn_check` / `conn_check off`. Never show a chip that could be read as “on” when the value is false |
-| Virt strip | Dashed line under WAN rows when `virt_wans` present: name · type · conn_state · failback/strictVPN |
+| Virt strip | Dashed line under WAN rows when `virt_wans` key is present (non-empty). Per group: name · type · conn_state; append `failback` / `failback off` only when Failback non-nil; append `strictVPN` / `strictVPN off` only when StrictVPN non-nil |
 | Last test | Only when `wan_test` present. Show: `connected` yes/no; per-iface ready/active if set; first failure string if any; relative time from `ts` using **ms if value > 1e12, else seconds** (Unix). If `ts` nil, omit time |
 | Writes | Never shown this PR |
 
@@ -124,7 +124,7 @@ Parent epic allows prefer WAN / failback / enable `dual_wan` only with proven cm
 |---|---|
 | Agent online, init missing | Today’s Network (Active/Standby + Failover); omit features / virt / wan_test keys |
 | Init present, empty wan test | Omit `wan_test` key and last-test UI |
-| No virtWanGroups | Omit strip; omit or empty `virt_wans` |
+| No virtWanGroups | Omit strip; omit `virt_wans` key |
 | Features absent | Omit `features` object; do not invent `dual_wan` |
 | Known false flag | Include `"single_wan_conn_check": false` (distinct from absent) |
 
