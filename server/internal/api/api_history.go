@@ -120,6 +120,8 @@ func (s *Server) getControlHistory(w http.ResponseWriter, r *http.Request) {
 				controlhist.ActionRuleDelete,
 				controlhist.ActionHostPolicy,
 				controlhist.ActionRuleEmergency,
+				controlhist.ActionAlarmIgnore,
+				controlhist.ActionAlarmIgnoreAll,
 			},
 			controlhist.SchemeUnifi: {
 				controlhist.ActionClientRename,

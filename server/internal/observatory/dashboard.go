@@ -19,6 +19,10 @@ type Deps struct {
 	// PreferInit forces fw-app init when warm (or after one EnsureInit), even if
 	// the agent catalog/ingest is still within TTL. Set after an explicit control refresh.
 	PreferInit bool
+	// ControlLANOK is true when fw-app is paired and control path is lan-ok.
+	ControlLANOK bool
+	// GetAlarms fetches live alarms via fw-app get item "alarms" (preferred when ControlLANOK).
+	GetAlarms func(ctx context.Context) (count int64, alarms []fwapp.AlarmSample, err error)
 
 	Catalog func() (inventory.Catalog, bool)
 	Latest  func() (store.LatestView, bool)

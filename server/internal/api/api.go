@@ -108,6 +108,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/fw-app/rules/reset-hits", s.postFWAppRulesResetHits)
 	mux.HandleFunc("POST /v1/fw-app/rules/emergency", s.postFWAppRulesEmergency)
 	mux.HandleFunc("POST /v1/fw-app/rules/diagnose", s.postFWAppRulesDiagnose)
+	mux.HandleFunc("POST /v1/fw-app/alarms/ignore", s.postFWAppAlarmIgnore)
+	mux.HandleFunc("POST /v1/fw-app/alarms/ignore-all", s.postFWAppAlarmIgnoreAll)
 	mux.HandleFunc("GET /v1/unifi/name-sync", s.getNameSync)
 	mux.HandleFunc("PUT /v1/unifi/name-sync", s.putNameSync)
 	mux.HandleFunc("POST /v1/unifi/name-sync/apply", s.applyNameSync)
@@ -830,6 +832,15 @@ func (s *Server) obsDeps() observatory.Deps {
 		deps.ObservatorySnapshot = s.FWApp.ObservatorySnapshot
 		deps.EnsureInit = s.FWApp.EnsureInit
 		deps.PreferInit = s.FWApp.PreferInit()
+		st := s.FWApp.Status()
+		deps.ControlLANOK = st.Paired && st.State == "lan-ok"
+		deps.GetAlarms = func(ctx context.Context) (int64, []fwapp.AlarmSample, error) {
+			list, err := s.FWApp.GetAlarms(ctx)
+			if err != nil {
+				return 0, nil, err
+			}
+			return list.Count, list.Alarms, nil
+		}
 	}
 	return deps
 }

@@ -8,16 +8,18 @@ const (
 
 // Action verbs (scheme-local; uniqueness is scheme+action).
 const (
-	ActionHostRename    = "host.rename"
-	ActionHostDNS       = "host.dns"
-	ActionHostWOL       = "host.wol"
-	ActionHostPolicy    = "host.policy"
-	ActionSpeedtestRun  = "speedtest.run"
-	ActionRuleCreate    = "rule.create"
-	ActionRulePause     = "rule.pause"
-	ActionRuleDelete    = "rule.delete"
-	ActionRuleEmergency = "rule.emergency"
-	ActionClientRename  = "client.rename"
+	ActionHostRename     = "host.rename"
+	ActionHostDNS        = "host.dns"
+	ActionHostWOL        = "host.wol"
+	ActionHostPolicy     = "host.policy"
+	ActionSpeedtestRun   = "speedtest.run"
+	ActionRuleCreate     = "rule.create"
+	ActionRulePause      = "rule.pause"
+	ActionRuleDelete     = "rule.delete"
+	ActionRuleEmergency  = "rule.emergency"
+	ActionAlarmIgnore    = "alarm.ignore"
+	ActionAlarmIgnoreAll = "alarm.ignore_all"
+	ActionClientRename   = "client.rename"
 )
 
 // Actor kind values stored in control_events.actor_kind.

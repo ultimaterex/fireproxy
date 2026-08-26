@@ -16,10 +16,12 @@ import {
   ScrollText,
   Settings,
   Shield,
+  ShieldAlert,
   Users,
   Wifi,
 } from 'lucide-react'
 
+import { AlarmInboxList } from '@/components/AlarmInboxList'
 import { ViewToggle } from '@/components/ViewToggle'
 import { Breadcrumb } from '@/components/Breadcrumb'
 import { UpdateBanner } from '@/components/UpdateBanner'
@@ -76,6 +78,8 @@ import {
   type AgentHealth,
   type Policy,
   type Provenance,
+  type AlarmSample,
+  type AlarmsView,
   type SeenId,
   type Tab,
   type Tag,
@@ -98,6 +102,7 @@ import { DevicesTab } from '@/tabs/DevicesTab'
 import { InventoryTab } from '@/tabs/InventoryTab'
 import { GroupsTab } from '@/tabs/GroupsTab'
 import { LegacyTab, type LegacyPage } from '@/tabs/LegacyTab'
+import { AlarmsTab } from '@/tabs/AlarmsTab'
 import { MetricsTab } from '@/tabs/MetricsTab'
 import { NetworkTab } from '@/tabs/NetworkTab'
 import { RulesTab } from '@/tabs/RulesTab'
@@ -121,6 +126,7 @@ const NAV: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: 'audit', label: 'Audit', icon: ClipboardList },
   { id: 'history', label: 'History', icon: History },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
+  { id: 'alarms', label: 'Alarms', icon: ShieldAlert },
   { id: 'rules', label: 'Rules', icon: Shield },
   { id: 'groups', label: 'Groups', icon: Users },
   { id: 'logs', label: 'Logs', icon: ScrollText },
@@ -173,6 +179,10 @@ function App() {
   const [unifiConsole, setUnifiConsole] = useState<UnifiConsole | null>(null)
   const [settingsOpen, setSettingsOpen] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [alarmNotifCount, setAlarmNotifCount] = useState(0)
+  const [alarmNotifFromApi, setAlarmNotifFromApi] = useState(false)
+  const [alarmNotifLoading, setAlarmNotifLoading] = useState(false)
+  const [alarmPreview, setAlarmPreview] = useState<AlarmSample[]>([])
   const [initRefreshing, setInitRefreshing] = useState(false)
   const [controlLanOk, setControlLanOk] = useState(false)
   const loadBootstrapRef = useRef<(() => Promise<void>) | null>(null)
@@ -597,6 +607,11 @@ function App() {
   }, [offlineMacs, unifiMod?.audit_offline, snoozeRev])
   // Unknown is soft: Audit tab only, never the bell.
   const notifCount = names + vlan + stp + offline + pending
+  // Seed from dashboard until first /v1/alarms open-fetch (no metrics-tick poll).
+  const alarmBellCount = alarmNotifFromApi
+    ? alarmNotifCount
+    : (dashboard?.alarm_count ?? 0)
+  const bellCount = notifCount + alarmBellCount
   const notifRef = useRef<HTMLDivElement>(null)
 
   const openAudit = (section: AuditSectionId, mac?: string) => {
@@ -615,6 +630,40 @@ function App() {
     const hit = rows.find((r) => !isOfflineSnoozed(r.mac))
     return hit?.mac
   }
+
+  useEffect(() => {
+    if (!notifOpen) return
+    let cancelled = false
+    setAlarmNotifLoading(true)
+    void (async () => {
+      try {
+        const r = await api('/v1/alarms')
+        if (cancelled) return
+        if (r.status === 404 || !r.ok) {
+          setAlarmNotifCount(0)
+          setAlarmPreview([])
+          setAlarmNotifFromApi(true)
+          return
+        }
+        const data = (await r.json()) as AlarmsView
+        if (cancelled) return
+        setAlarmNotifCount(data.active_alarm_count ?? 0)
+        setAlarmPreview((data.new_alarms ?? []).slice(0, 5))
+        setAlarmNotifFromApi(true)
+      } catch {
+        if (!cancelled) {
+          setAlarmNotifCount(0)
+          setAlarmPreview([])
+          setAlarmNotifFromApi(true)
+        }
+      } finally {
+        if (!cancelled) setAlarmNotifLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [notifOpen])
 
   useEffect(() => {
     if (!notifOpen) return
@@ -942,70 +991,110 @@ function App() {
               onClick={() => setNotifOpen((o) => !o)}
             >
               <Bell className="size-5" />
-              {notifCount > 0 ? (
+              {bellCount > 0 ? (
                 <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-medium text-white">
-                  {notifCount > 99 ? '99+' : notifCount}
+                  {bellCount > 99 ? '99+' : bellCount}
                 </span>
               ) : null}
             </button>
             {notifOpen ? (
-              <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-md border bg-background shadow-md">
+              <div className="absolute right-0 top-full z-30 mt-1 w-80 rounded-md border bg-background shadow-md">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-sm font-medium">Notifications</span>
-                  {notifCount > 0 ? (
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">{notifCount}</span>
+                  {bellCount > 0 ? (
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">{bellCount}</span>
                   ) : null}
                 </div>
-                {notifCount > 0 ? (
-                  <div className="py-1">
-                    {names > 0 ? (
-                      <button
-                        type="button"
-                        className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
-                        onClick={() => openAudit('names')}
-                      >
-                        {names} {names === 1 ? 'name' : 'names'} to review
-                      </button>
+                {bellCount > 0 ? (
+                  <div className="max-h-[28rem] overflow-y-auto">
+                    {alarmBellCount > 0 ? (
+                      <div className="border-b py-1">
+                        <div className="flex items-center justify-between px-3 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground">Alarms</span>
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {alarmBellCount}
+                          </span>
+                        </div>
+                        <div className="px-1">
+                          {alarmNotifLoading && alarmPreview.length === 0 ? (
+                            <p className="px-1 py-2 text-sm text-muted-foreground">Loading…</p>
+                          ) : (
+                            <AlarmInboxList
+                              alarms={alarmPreview}
+                              activeCount={alarmBellCount}
+                              nowMs={nowMs}
+                              controlLanOk={controlLanOk}
+                              compact
+                            />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                          onClick={() => {
+                            setNotifOpen(false)
+                            selectTab('alarms')
+                          }}
+                        >
+                          Open Alarms
+                        </button>
+                      </div>
                     ) : null}
-                    {vlan > 0 ? (
-                      <button
-                        type="button"
-                        className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
-                        onClick={() => openAudit('vlan')}
-                      >
-                        {vlan} VLAN {vlan === 1 ? 'mismatch' : 'mismatches'}
-                      </button>
-                    ) : null}
-                    {stp > 0 ? (
-                      <button
-                        type="button"
-                        className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
-                        onClick={() => openAudit('stp')}
-                      >
-                        {stp} STP
-                      </button>
-                    ) : null}
-                    {offline > 0 ? (
-                      <button
-                        type="button"
-                        className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
-                        onClick={() => openAudit('offline', firstUnsnoozedOfflineMac())}
-                      >
-                        {offline} offline
-                      </button>
-                    ) : null}
-                    {pending > 0 ? (
-                      <button
-                        type="button"
-                        className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
-                        onClick={() => openAudit('pending')}
-                      >
-                        {pending} pending
-                      </button>
+                    {notifCount > 0 ? (
+                      <div className="py-1">
+                        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Audit</div>
+                        {names > 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                            onClick={() => openAudit('names')}
+                          >
+                            {names} {names === 1 ? 'name' : 'names'} to review
+                          </button>
+                        ) : null}
+                        {vlan > 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                            onClick={() => openAudit('vlan')}
+                          >
+                            {vlan} VLAN {vlan === 1 ? 'mismatch' : 'mismatches'}
+                          </button>
+                        ) : null}
+                        {stp > 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                            onClick={() => openAudit('stp')}
+                          >
+                            {stp} STP
+                          </button>
+                        ) : null}
+                        {offline > 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                            onClick={() => openAudit('offline', firstUnsnoozedOfflineMac())}
+                          >
+                            {offline} offline
+                          </button>
+                        ) : null}
+                        {pending > 0 ? (
+                          <button
+                            type="button"
+                            className="flex w-full px-3 py-2.5 text-left text-sm hover:bg-muted"
+                            onClick={() => openAudit('pending')}
+                          >
+                            {pending} pending
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
+                ) : alarmNotifLoading ? (
+                  <div className="px-3 py-2.5 text-sm text-muted-foreground">Loading…</div>
                 ) : (
-                  <div className="px-3 py-2.5 text-sm text-muted-foreground">No findings</div>
+                  <div className="px-3 py-2.5 text-sm text-muted-foreground">No notifications</div>
                 )}
                 <div className="border-t">
                   <button
@@ -1183,9 +1272,20 @@ function App() {
               ruleCount={policies.length}
               onOpenDevices={() => selectTab('devices')}
               onOpenRules={() => selectTab('rules')}
+              onOpenAlarms={() => selectTab('alarms')}
               onSelectDevice={(mac, label) => openDevice(mac, label)}
               onSelectRegion={(cc, label) => openRegion(cc, label)}
               onDashboard={setDashboard}
+            />
+          )}
+
+          {tab === 'alarms' && (
+            <AlarmsTab
+              controlLanOk={controlLanOk}
+              onAlarmCount={(count) => {
+                setAlarmNotifCount(count)
+                setAlarmNotifFromApi(true)
+              }}
             />
           )}
 

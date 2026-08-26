@@ -65,5 +65,16 @@ export function SourceBadge({
     )
   }
 
+  if (source === 'fw-app-get') {
+    return (
+      <Badge
+        variant="outline"
+        className={cn('border-emerald-500/40 bg-emerald-500/15 text-emerald-400', className)}
+      >
+        Live · control
+      </Badge>
+    )
+  }
+
   return null
 }
