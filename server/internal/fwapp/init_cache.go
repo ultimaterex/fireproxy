@@ -169,7 +169,7 @@ func (g *initFlight) Do(key string, fn func() error) error {
 	return c.err
 }
 
-// EnsureInit fills rules + observatory caches from one LAN init when cold or past TTL.
+// EnsureInit fills rules, observatory, and features caches from one LAN init when cold or past TTL.
 // Concurrent callers share a single in-flight FetchInit.
 func (s *Service) EnsureInit(ctx context.Context) error {
 	if !s.secretsReady() {
@@ -206,8 +206,8 @@ func (s *Service) initCacheWarm() bool {
 	return time.Since(at) < InitCacheTTL
 }
 
-// fetchAndApplyInit performs one LAN FetchInit, parses rules + observatory, updates both caches,
-// and persists the Rules snapshot (observatory is memory-only for now).
+// fetchAndApplyInit performs one LAN FetchInit, parses the init-backed views, updates their caches,
+// and persists the Rules snapshot (other views are memory-only for now).
 func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
@@ -237,6 +237,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	featuresView, err := ParseInitFeatures(raw)
+	if err != nil {
+		return err
+	}
 	at := time.Now().UTC()
 	// Re-check pairing under the same lock Unpair uses so a concurrent
 	// Unpair cannot Clear then lose to a late Set.
@@ -252,6 +256,7 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	}
 	s.rules.Set(rulesSnap, at)
 	s.obsCache.Set(obsSnap, at)
+	s.features.Set(featuresView, at)
 	s.lastPingOK = true
 	s.lastPingAt = at
 	s.state = "lan-ok"
