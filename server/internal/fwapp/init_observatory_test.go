@@ -94,17 +94,23 @@ func TestParseInitObservatoryFromFixture(t *testing.T) {
 	if len(obs.WGPeers) == 0 && len(obs.WGClients) == 0 {
 		t.Fatal("expected wg peers or clients")
 	}
-	var sawFriendly bool
+	var sawDigicel, sawTelesur bool
 	for _, w := range obs.MonthlyWANs {
 		if w.Name == "" || w.Name == w.UUID {
 			t.Fatalf("monthly WAN needs display name: %+v", w)
 		}
-		if strings.HasPrefix(w.Name, "WAN (") || (!strings.HasPrefix(strings.ToLower(w.Name), "eth") && w.Name != "") {
-			sawFriendly = true
+		if strings.Contains(strings.ToLower(w.Name), "digicel") {
+			sawDigicel = true
+		}
+		if strings.Contains(strings.ToLower(w.Name), "telesur") {
+			sawTelesur = true
+		}
+		if strings.HasPrefix(w.Name, "WAN (") {
+			t.Fatalf("monthly WAN still iface-fallback: %+v", w)
 		}
 	}
-	if !sawFriendly {
-		t.Fatalf("expected at least one friendly monthly WAN name: %+v", obs.MonthlyWANs)
+	if !sawDigicel || !sawTelesur {
+		t.Fatalf("expected Digicel + Telesur monthly names: %+v", obs.MonthlyWANs)
 	}
 	// Ranked flows stay empty — systemFlows.flows is empty in lab; do not invent.
 	if len(obs.TopUpload) != 0 || len(obs.TopDownload) != 0 ||
@@ -130,6 +136,7 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 		},
 		"monthlyDataUsageOnWans":{"u1":{"totalUpload":4,"totalDownload":5}},
 		"networkProfiles":{"u1":{"uuid":"u1","type":"wan","intf":"eth2"}},
+		"networkConfig":{"interface":{"phy":{"eth2":{"meta":{"name":"Digicel","type":"wan","uuid":"u1"}}}}},
 		"internetSpeedtestResults":[],
 		"model":"gold",
 		"device":"Box",
@@ -164,7 +171,7 @@ func TestParseInitObservatoryEnvelope(t *testing.T) {
 	if obs.DNS == nil || len(obs.DNS.Queries) != 2 || obs.DNS.Queries[0].Count != 50 {
 		t.Fatalf("dns %+v", obs.DNS)
 	}
-	if len(obs.MonthlyWANs) != 1 || obs.MonthlyWANs[0].UUID != "u1" || obs.MonthlyWANs[0].Name != "WAN (eth2)" {
+	if len(obs.MonthlyWANs) != 1 || obs.MonthlyWANs[0].UUID != "u1" || obs.MonthlyWANs[0].Name != "Digicel" {
 		t.Fatalf("monthly %+v", obs.MonthlyWANs)
 	}
 	if obs.Box == nil || obs.Box.Model != "gold" || obs.Box.Name != "Box" {

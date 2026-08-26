@@ -120,6 +120,9 @@ export function MetricsTab({
   // Prefer dashboard provenance; fall back to metrics/latest (old servers omit both).
   const dataSource = dashboard?.source ?? latest?.source
   const dataStale = dashboard?.stale ?? latest?.stale
+  const fromControl = dataSource === 'fw-app-init'
+  const emptyHint = fromControl ? 'Not available from control' : 'Waiting on catalog'
+  const dnsResolvers = dashboard?.dns?.resolvers ?? []
 
   const meta = (
     <p className="text-xs text-muted-foreground">
@@ -170,6 +173,14 @@ export function MetricsTab({
               {(snap?.dns_svcs ?? []).map((s) => (
                 <StatusChip key={s.name} tone={s.ok ? 'ok' : 'bad'}>
                   {dnsSvcLabel(s.name)} {s.ok ? (s.since ? fmtRelative(s.since, Date.now()) : 'up') : 'down'}
+                </StatusChip>
+              ))}
+            </StatusGroup>
+          ) : dnsResolvers.length > 0 ? (
+            <StatusGroup label="DNS">
+              {dnsResolvers.map((r) => (
+                <StatusChip key={r.server} tone={r.ok ? 'ok' : 'bad'}>
+                  {r.server} {r.ok ? 'ok' : 'down'}
                 </StatusChip>
               ))}
             </StatusGroup>
@@ -237,7 +248,7 @@ export function MetricsTab({
             </CardHeader>
             <CardContent className="space-y-3 px-5">
               {monthly.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Waiting on catalog</p>
+                <p className="text-sm text-muted-foreground">{emptyHint}</p>
               ) : (
                 monthly.map((w) => {
                   const used = w.upload + w.download
@@ -301,7 +312,7 @@ export function MetricsTab({
             </CardHeader>
             <CardContent className="space-y-5 px-5">
               {speed.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Waiting on catalog</p>
+                <p className="text-sm text-muted-foreground">{emptyHint}</p>
               ) : (
                 speed.map((w, i) => (
                   <div key={w.uuid}>
@@ -368,7 +379,7 @@ export function MetricsTab({
         </CardHeader>
         <CardContent className="px-4">
           {!dashboard?.top_regions?.length ? (
-            <p className="py-6 text-sm text-muted-foreground">Waiting on catalog</p>
+            <p className="py-6 text-sm text-muted-foreground">{emptyHint}</p>
           ) : (
             <div className="grid gap-4 lg:grid-cols-2 lg:items-center">
               <div className="flex justify-center">
@@ -427,6 +438,7 @@ export function MetricsTab({
           rows={dashboard?.top_upload}
           kind="device"
           metric="upload"
+          emptyHint={emptyHint}
           onSelectDevice={onSelectDevice}
         />
         <RankTable
@@ -434,6 +446,7 @@ export function MetricsTab({
           rows={dashboard?.top_download}
           kind="device"
           metric="download"
+          emptyHint={emptyHint}
           onSelectDevice={onSelectDevice}
         />
         <RankTable
@@ -441,12 +454,14 @@ export function MetricsTab({
           rows={dashboard?.top_dest_upload}
           kind="dest"
           metric="upload"
+          emptyHint={emptyHint}
         />
         <RankTable
           title="Top destinations by download"
           rows={dashboard?.top_dest_download}
           kind="dest"
           metric="download"
+          emptyHint={emptyHint}
         />
       </div>
     </div>
@@ -1027,12 +1042,14 @@ function RankTable({
   rows,
   kind,
   metric,
+  emptyHint = 'Waiting on catalog',
   onSelectDevice,
 }: {
   title: string
   rows?: RankedFlow[]
   kind: 'device' | 'dest'
   metric: 'upload' | 'download'
+  emptyHint?: string
   onSelectDevice?: (mac: string, label: string) => void
 }) {
   const singleMetric = kind === 'dest'
@@ -1045,7 +1062,7 @@ function RankTable({
       </CardHeader>
       <CardContent className="px-0">
         {!rows?.length ? (
-          <p className="px-6 py-6 text-sm text-muted-foreground">Waiting on catalog</p>
+          <p className="px-6 py-6 text-sm text-muted-foreground">{emptyHint}</p>
         ) : (
           <Table>
             <TableHeader>

@@ -1022,7 +1022,7 @@ function App() {
 
         <div className="relative min-h-0 min-w-0 flex-1 overflow-x-auto">
         {initRefreshing ? (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
             <div className="flex items-center gap-2 rounded-md border bg-background px-4 py-3 text-sm text-muted-foreground shadow-sm">
               <RefreshCw className="size-4 animate-spin" />
               Refreshing from Firewalla…

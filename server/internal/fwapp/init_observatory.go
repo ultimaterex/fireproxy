@@ -99,6 +99,7 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		}
 		dns.Resolvers = resolvers
 	}
+	wanNames := wanNameIndex(root.NetworkConfig, root.LatestAllStateEvents, root.NetworkProfiles)
 	out := ObservatorySnapshot{
 		AlarmCount:         int64(root.ActiveAlarmCount),
 		PendingAlarmCount:  int64(root.PendingAlarmCount),
@@ -111,8 +112,8 @@ func ParseInitObservatory(raw []byte) (ObservatorySnapshot, error) {
 		Transfer12m:        parseTransferWindow(root.Last12Months),
 		Blocked:            blocked,
 		DNS:                dns,
-		MonthlyWANs:        parseMonthlyWANs(root.MonthlyDataUsageOnWans, root.NetworkProfiles, root.Network),
-		Speedtest:          parseInitSpeedtest(root.InternetSpeedtestResults, root.NetworkProfiles, root.Network),
+		MonthlyWANs:        parseMonthlyWANs(root.MonthlyDataUsageOnWans, root.NetworkProfiles, root.Network, wanNames),
+		Speedtest:          parseInitSpeedtest(root.InternetSpeedtestResults, root.NetworkProfiles, root.Network, wanNames),
 		Box:                parseInitBox(root),
 		Devices:            parseInitDevices(root.Hosts),
 		Tags:               parseInitTags(root.Tags, root.UserTags, root.DeviceTags),
@@ -155,6 +156,7 @@ type initObservatoryRoot struct {
 	NetworkMetrics           map[string]rawNICPercentiles  `json:"networkMetrics"`
 	NetworkProfiles          map[string]rawNetProfile      `json:"networkProfiles"`
 	Network                  *rawNetwork                   `json:"network"`
+	NetworkConfig            json.RawMessage               `json:"networkConfig"`
 	LatestAllStateEvents     map[string]json.RawMessage    `json:"latestAllStateEvents"`
 	WGPeers                  []rawWGPeer                   `json:"wgPeers"`
 	WGVPNClientProfiles      []rawWGClient                 `json:"wgvpnClientProfiles"`
@@ -353,7 +355,7 @@ func tsSeriesMap(series [][]flexFloat) map[int64]int64 {
 	return out
 }
 
-func parseMonthlyWANs(src map[string]rawMonthlyWANUsage, profiles map[string]rawNetProfile, net *rawNetwork) []inventory.WANUsage {
+func parseMonthlyWANs(src map[string]rawMonthlyWANUsage, profiles map[string]rawNetProfile, net *rawNetwork, wanNames map[string]string) []inventory.WANUsage {
 	if len(src) == 0 {
 		return nil
 	}
@@ -367,7 +369,7 @@ func parseMonthlyWANs(src map[string]rawMonthlyWANUsage, profiles map[string]raw
 		u := src[id]
 		out = append(out, inventory.WANUsage{
 			UUID:     id,
-			Name:     wanDisplayName(id, profiles, net),
+			Name:     wanDisplayName(id, profiles, net, wanNames),
 			Upload:   int64(u.TotalUpload),
 			Download: int64(u.TotalDownload),
 		})
@@ -375,7 +377,10 @@ func parseMonthlyWANs(src map[string]rawMonthlyWANUsage, profiles map[string]raw
 	return out
 }
 
-func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetwork) string {
+func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetwork, wanNames map[string]string) string {
+	if n := strings.TrimSpace(wanNames[uuid]); n != "" {
+		return n
+	}
 	if net != nil && strings.TrimSpace(net.UUID) == uuid {
 		if n := strings.TrimSpace(net.Desc); n != "" {
 			return n
@@ -389,6 +394,9 @@ func wanDisplayName(uuid string, profiles map[string]rawNetProfile, net *rawNetw
 			return n
 		}
 		if n := strings.TrimSpace(p.Desc); n != "" {
+			return n
+		}
+		if n := strings.TrimSpace(wanNames[strings.TrimSpace(p.Intf)]); n != "" {
 			return n
 		}
 		if n := strings.TrimSpace(p.Intf); n != "" {
@@ -426,7 +434,7 @@ func friendlyWANLabel(name string) string {
 	}
 }
 
-func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile, net *rawNetwork) []inventory.SpeedtestWAN {
+func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile, net *rawNetwork, wanNames map[string]string) []inventory.SpeedtestWAN {
 	byUUID := map[string][]inventory.SpeedtestPoint{}
 	for _, item := range raw {
 		r, err := parseSpeedtestHistoryReply(item, "")
@@ -464,7 +472,7 @@ func parseInitSpeedtest(raw []json.RawMessage, profiles map[string]rawNetProfile
 		sort.Slice(pts, func(i, j int) bool { return pts[i].TS < pts[j].TS })
 		row := inventory.SpeedtestWAN{
 			UUID:   id,
-			Name:   wanDisplayName(id, profiles, net),
+			Name:   wanDisplayName(id, profiles, net, wanNames),
 			Points: pts,
 		}
 		if n := len(pts); n > 0 {

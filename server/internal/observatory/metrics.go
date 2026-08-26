@@ -114,15 +114,8 @@ func metricsFromInit(obs fwapp.ObservatorySnapshot, at time.Time) store.LatestVi
 			TxPt90:   m.TxPt90,
 		})
 	}
-	// Synthesize dns_svcs chips from resolver probes when process health is absent.
-	if obs.DNS != nil {
-		for _, r := range obs.DNS.Resolvers {
-			snap.DNSSvcs = append(snap.DNSSvcs, snapshot.DNSSvc{
-				Name: r.Server,
-				OK:   r.OK,
-			})
-		}
-	}
+	// Resolver probes stay on dashboard.dns; do not synthesize dns_svcs process chips
+	// from upstream IPs (that regresses Unbound/Dnsmasq UI under control fallback).
 	return store.LatestView{
 		Snapshot: snap,
 		Rates:    map[string]store.Rates{},

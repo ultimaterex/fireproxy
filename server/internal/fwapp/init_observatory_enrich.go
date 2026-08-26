@@ -479,3 +479,85 @@ func flexIDList(src []flexString) []string {
 	}
 	return out
 }
+
+// wanNameIndex maps WAN uuid (and iface name) → friendly ISP label.
+// Prefers networkConfig.interface.phy.*.meta.name, then wan_state wan_intf_name.
+func wanNameIndex(networkConfig json.RawMessage, events map[string]json.RawMessage, profiles map[string]rawNetProfile) map[string]string {
+	out := map[string]string{}
+	set := func(key, name string) {
+		key = strings.TrimSpace(key)
+		name = strings.TrimSpace(name)
+		if key == "" || name == "" {
+			return
+		}
+		if cur, ok := out[key]; ok {
+			if !looksLikeIfaceName(cur) {
+				return // keep ISP label
+			}
+			if looksLikeIfaceName(name) {
+				return
+			}
+		}
+		out[key] = name
+	}
+
+	var cfg struct {
+		Interface struct {
+			Phy map[string]struct {
+				Meta *struct {
+					Name string `json:"name"`
+					UUID string `json:"uuid"`
+					Type string `json:"type"`
+				} `json:"meta"`
+			} `json:"phy"`
+		} `json:"interface"`
+	}
+	if len(networkConfig) > 0 && json.Unmarshal(networkConfig, &cfg) == nil {
+		for intf, phy := range cfg.Interface.Phy {
+			if phy.Meta == nil {
+				continue
+			}
+			name := strings.TrimSpace(phy.Meta.Name)
+			uuid := strings.TrimSpace(phy.Meta.UUID)
+			if name == "" {
+				continue
+			}
+			set(uuid, name)
+			set(intf, name)
+		}
+	}
+
+	for k, raw := range events {
+		if !strings.HasPrefix(k, "wan_state:") {
+			continue
+		}
+		var ev rawStateEvent
+		if json.Unmarshal(raw, &ev) != nil || ev.Labels == nil {
+			continue
+		}
+		name := strings.TrimSpace(ev.Labels.WanIntfName)
+		if name == "" {
+			continue
+		}
+		iface := strings.TrimPrefix(k, "wan_state:")
+		set(iface, name)
+		// Prefer uuid from profiles when intf matches.
+		for uuid, p := range profiles {
+			if strings.TrimSpace(p.Intf) == iface {
+				set(uuid, name)
+			}
+		}
+	}
+	return out
+}
+
+func looksLikeIfaceName(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	prefixes := []string{"eth", "enp", "ens", "enx", "wlan", "wlp", "br", "bond", "vlan", "wg", "tun"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return n == "wan" || (strings.HasPrefix(n, "wan") && len(n) <= 4)
+}
