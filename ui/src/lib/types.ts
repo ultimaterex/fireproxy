@@ -59,7 +59,27 @@ export type Provenance = {
   reason?: string
 }
 
-export type DataSource = 'agent' | 'fw-app-init' | 'empty' | (string & {})
+export type DataSource = 'agent' | 'fw-app-init' | 'fw-app-get' | 'empty' | (string & {})
+
+export type AlarmSample = {
+  aid: number
+  type?: string
+  message?: string
+  timestamp?: number
+  device_mac?: string
+  device_ip?: string
+  device_name?: string
+}
+
+export type AlarmsView = {
+  active_alarm_count: number
+  new_alarms: AlarmSample[]
+  source?: string
+  fetched_at?: string
+  stale?: boolean
+  reason?: string
+  enriched_from?: string
+}
 
 export type LatestView = {
   snapshot: Snapshot
@@ -517,6 +537,7 @@ export type Tab =
   | 'audit'
   | 'history'
   | 'devices'
+  | 'alarms'
   | 'rules'
   | 'groups'
   | 'logs'

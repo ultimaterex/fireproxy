@@ -16,6 +16,7 @@ import {
   ScrollText,
   Settings,
   Shield,
+  ShieldAlert,
   Users,
   Wifi,
 } from 'lucide-react'
@@ -98,6 +99,7 @@ import { DevicesTab } from '@/tabs/DevicesTab'
 import { InventoryTab } from '@/tabs/InventoryTab'
 import { GroupsTab } from '@/tabs/GroupsTab'
 import { LegacyTab, type LegacyPage } from '@/tabs/LegacyTab'
+import { AlarmsTab } from '@/tabs/AlarmsTab'
 import { MetricsTab } from '@/tabs/MetricsTab'
 import { NetworkTab } from '@/tabs/NetworkTab'
 import { RulesTab } from '@/tabs/RulesTab'
@@ -121,6 +123,7 @@ const NAV: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: 'audit', label: 'Audit', icon: ClipboardList },
   { id: 'history', label: 'History', icon: History },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
+  { id: 'alarms', label: 'Alarms', icon: ShieldAlert },
   { id: 'rules', label: 'Rules', icon: Shield },
   { id: 'groups', label: 'Groups', icon: Users },
   { id: 'logs', label: 'Logs', icon: ScrollText },
@@ -1183,11 +1186,14 @@ function App() {
               ruleCount={policies.length}
               onOpenDevices={() => selectTab('devices')}
               onOpenRules={() => selectTab('rules')}
+              onOpenAlarms={() => selectTab('alarms')}
               onSelectDevice={(mac, label) => openDevice(mac, label)}
               onSelectRegion={(cc, label) => openRegion(cc, label)}
               onDashboard={setDashboard}
             />
           )}
+
+          {tab === 'alarms' && <AlarmsTab controlLanOk={controlLanOk} />}
 
           {tab === 'inventory' && (
             <InventoryTab
