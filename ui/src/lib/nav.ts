@@ -5,7 +5,7 @@ export type WirelessMode = 'radios' | 'networks' | 'clients'
 export type NavFrame =
   | { kind: 'tab'; tab: Tab }
   | { kind: 'lan'; uuid: string; label: string }
-  | { kind: 'group'; id: string; label: string }
+  | { kind: 'group'; id: string; label: string; tagType?: 'group' | 'user' | 'device' }
   | { kind: 'ports'; macs: string[]; label: string }
   | { kind: 'ap'; mac: string; label: string }
   | { kind: 'ssid'; key: string; label: string }

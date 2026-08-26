@@ -344,6 +344,9 @@ export type Tag = {
   affiliated_tag?: string
 }
 
+/** Tag/group write flags from GET /v1/tags capabilities. */
+export type TagCapabilities = Record<string, boolean>
+
 export type ModuleInfo = {
   id: string
   label: string

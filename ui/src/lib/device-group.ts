@@ -10,7 +10,7 @@ export const DEVICE_GROUP_BY_OPTIONS: { id: DeviceGroupBy; label: string }[] = [
 
 export type DeviceGroupFields = {
   online: boolean
-  membership: { id: string; name: string } | null
+  membership: { id: string; name: string; kind?: 'user' | 'group' } | null
   lan?: { uuid?: string; label: string }
   loc?: {
     switchMac: string
@@ -27,6 +27,7 @@ export type DeviceRowGroup<T> = {
   clients: string[]
   lanUuid?: string
   tagId?: string
+  tagType?: 'user' | 'group'
   rows: T[]
 }
 
@@ -97,6 +98,7 @@ function bucketFor(
         label: m.name,
         clients: [],
         tagId: m.id,
+        tagType: m.kind,
         order: 0,
         sortName: m.name,
       }
