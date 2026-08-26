@@ -1,10 +1,11 @@
 import { ArrowLeftRight, EthernetPort, Shuffle, Wifi } from 'lucide-react'
+import { useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { netLabel } from '@/lib/format'
+import { fmtRelative, netLabel } from '@/lib/format'
 import { managerKind, portChips, wanTypeLabel, type PortChip } from '@/lib/ports'
-import type { NetIface } from '@/lib/types'
+import type { NetIface, VirtWAN, WanFeatures, WanTest } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -12,17 +13,25 @@ const SECTION_TITLE = 'text-xl font-normal leading-8 text-muted-foreground'
 const LAN_GRID =
   'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_5.5rem_1.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
 const WAN_GRID =
-  'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_4.5rem_5.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
+  'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_4.5rem_5.5rem_5.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
+
+type NetworkTabProps = {
+  network: NetIface[]
+  wanType?: string
+  features?: WanFeatures
+  wanTest?: WanTest
+  virtWans?: VirtWAN[]
+  onSelectLan: (uuid: string) => void
+}
 
 export function NetworkTab({
   network,
   wanType,
+  features,
+  wanTest,
+  virtWans,
   onSelectLan,
-}: {
-  network: NetIface[]
-  wanType?: string
-  onSelectLan: (uuid: string) => void
-}) {
+}: NetworkTabProps) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
   const wans = network.filter((n) => managerKind(n) === 'wan')
 
@@ -54,17 +63,80 @@ export function NetworkTab({
         <CardHeader className={`${SECTION_HEADER} items-center`}>
           <CardTitle className={SECTION_TITLE}>WAN</CardTitle>
           <CardAction>
-            <MultiWanChip wanType={wanType} wans={wans} />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <FeatureChip value={features?.dual_wan} on="dual_wan" off="dual_wan off" />
+              <FeatureChip
+                value={features?.single_wan_conn_check}
+                on="conn_check"
+                off="conn_check off"
+              />
+              <MultiWanChip wanType={wanType} wans={wans} />
+            </div>
           </CardAction>
         </CardHeader>
-        <CardContent className="divide-y px-0">
+        <CardContent className="px-0">
           {wans.length === 0 ? (
             <p className="px-6 py-6 text-sm text-muted-foreground">No WAN</p>
           ) : (
-            wans.map((n) => <WanRow key={n.uuid || n.name} n={n} />)
+            <div className="divide-y">
+              {wans.map((n) => <WanRow key={n.uuid || n.name} n={n} />)}
+            </div>
           )}
+          {virtWans?.length ? <VirtWanStrip virtWans={virtWans} /> : null}
+          {wanTest ? <WanTestStrip wanTest={wanTest} /> : null}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function FeatureChip({
+  value,
+  on,
+  off,
+}: {
+  value?: boolean
+  on: string
+  off: string
+}) {
+  if (value == null) return null
+  return <Badge variant="outline">{value ? on : off}</Badge>
+}
+
+function VirtWanStrip({ virtWans }: { virtWans: VirtWAN[] }) {
+  return (
+    <div className="space-y-1 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
+      {virtWans.map((wan, i) => {
+        const parts = [wan.name || wan.uuid || '—', wan.type || '—', wan.conn_state || '—']
+        if (wan.failback != null) parts.push(wan.failback ? 'failback' : 'failback off')
+        if (wan.strict_vpn != null) parts.push(wan.strict_vpn ? 'strictVPN' : 'strictVPN off')
+        return <div key={wan.uuid || wan.name || i}>{parts.join(' · ')}</div>
+      })}
+    </div>
+  )
+}
+
+function WanTestStrip({ wanTest }: { wanTest: WanTest }) {
+  const [nowMs] = useState(() => Date.now())
+
+  return (
+    <div className="space-y-1 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
+      <div>
+        <span className="font-medium text-foreground">Last test</span>
+        <span className="mx-1.5">·</span>
+        connected {wanTest.connected ? 'yes' : 'no'}
+      </div>
+      {Object.entries(wanTest.wans).map(([iface, wan]) => {
+        const parts = [iface]
+        if (wan.ready != null) parts.push(wan.ready ? 'ready' : 'not ready')
+        if (wan.active != null) parts.push(wan.active ? 'active' : 'standby')
+        if (wan.failures?.[0]) parts.push(wan.failures[0])
+        if (wan.ts != null) {
+          const tsSec = wan.ts > 1e12 ? wan.ts / 1000 : wan.ts
+          parts.push(fmtRelative(tsSec, nowMs))
+        }
+        return <div key={iface}>{parts.join(' · ')}</div>
+      })}
     </div>
   )
 }
@@ -163,6 +235,9 @@ function WanRow({ n }: { n: NetIface }) {
       <div className="truncate font-medium">{netLabel(n)}</div>
       <div className="truncate font-mono text-muted-foreground">{addr}</div>
       <div className="text-muted-foreground">{mode}</div>
+      <div className="text-muted-foreground">
+        {n.wan_ready == null ? null : n.wan_ready ? 'ready' : 'not ready'}
+      </div>
       <div>
         {status ? <Badge variant={n.wan_active ? 'default' : 'secondary'}>{status}</Badge> : null}
       </div>

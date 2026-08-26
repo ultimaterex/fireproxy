@@ -61,6 +61,25 @@ type InitVirtWAN struct {
 	Type      string   `json:"type,omitempty"`
 	ConnState string   `json:"conn_state,omitempty"`
 	WANs      []string `json:"wans,omitempty"`
+	Failback  *bool    `json:"failback,omitempty"`
+	StrictVPN *bool    `json:"strict_vpn,omitempty"`
+}
+
+type WanFeatures struct {
+	DualWAN            *bool `json:"dual_wan,omitempty"`
+	SingleWANConnCheck *bool `json:"single_wan_conn_check,omitempty"`
+}
+
+type WanTest struct {
+	Connected bool                  `json:"connected"`
+	Wans      map[string]WanTestWAN `json:"wans"`
+}
+
+type WanTestWAN struct {
+	Ready    *bool    `json:"ready,omitempty"`
+	Active   *bool    `json:"active,omitempty"`
+	TS       *float64 `json:"ts,omitempty"`
+	Failures []string `json:"failures,omitempty"`
 }
 
 type rawCPUSample struct {
@@ -147,6 +166,8 @@ type rawVirtWAN struct {
 	Type      string          `json:"type"`
 	ConnState json.RawMessage `json:"connState"`
 	WANs      json.RawMessage `json:"wans"`
+	Failback  *bool           `json:"failback"`
+	StrictVPN *bool           `json:"strictVPN"`
 }
 
 func parseInitCPU(samples []rawCPUSample) *snapshot.CPU {
@@ -418,6 +439,8 @@ func parseVirtWANs(raw []rawVirtWAN) []InitVirtWAN {
 			Name:      strings.TrimSpace(p.Name),
 			Type:      strings.TrimSpace(p.Type),
 			ConnState: virtWANConnSummary(p.ConnState),
+			Failback:  p.Failback,
+			StrictVPN: p.StrictVPN,
 		}
 		var asStrings []string
 		if json.Unmarshal(p.WANs, &asStrings) == nil {
@@ -439,6 +462,29 @@ func parseVirtWANs(raw []rawVirtWAN) []InitVirtWAN {
 		out = append(out, row)
 	}
 	return out
+}
+
+func parseWanFeatures(src map[string]bool) *WanFeatures {
+	dualWAN, hasDualWAN := src["dual_wan"]
+	singleWANConnCheck, hasSingleWANConnCheck := src["single_wan_conn_check"]
+	if !hasDualWAN && !hasSingleWANConnCheck {
+		return nil
+	}
+	out := &WanFeatures{}
+	if hasDualWAN {
+		out.DualWAN = &dualWAN
+	}
+	if hasSingleWANConnCheck {
+		out.SingleWANConnCheck = &singleWANConnCheck
+	}
+	return out
+}
+
+func parseWanTest(src *WanTest) *WanTest {
+	if src == nil || len(src.Wans) == 0 {
+		return nil
+	}
+	return src
 }
 
 func virtWANConnSummary(raw json.RawMessage) string {

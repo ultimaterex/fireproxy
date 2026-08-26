@@ -93,6 +93,37 @@ func cloneObservatorySnapshot(in ObservatorySnapshot) ObservatorySnapshot {
 	if in.NICStates != nil {
 		out.NICStates = append([]InitNICState(nil), in.NICStates...)
 	}
+	if in.VirtWANs != nil {
+		out.VirtWANs = make([]InitVirtWAN, len(in.VirtWANs))
+		for i, v := range in.VirtWANs {
+			out.VirtWANs[i] = v
+			out.VirtWANs[i].WANs = append([]string(nil), v.WANs...)
+			out.VirtWANs[i].Failback = cloneBool(v.Failback)
+			out.VirtWANs[i].StrictVPN = cloneBool(v.StrictVPN)
+		}
+	}
+	if in.WanFeatures != nil {
+		out.WanFeatures = &WanFeatures{
+			DualWAN:            cloneBool(in.WanFeatures.DualWAN),
+			SingleWANConnCheck: cloneBool(in.WanFeatures.SingleWANConnCheck),
+		}
+	}
+	if in.WanTest != nil {
+		out.WanTest = &WanTest{
+			Connected: in.WanTest.Connected,
+			Wans:      make(map[string]WanTestWAN, len(in.WanTest.Wans)),
+		}
+		for name, wan := range in.WanTest.Wans {
+			wan.Ready = cloneBool(wan.Ready)
+			wan.Active = cloneBool(wan.Active)
+			if wan.TS != nil {
+				ts := *wan.TS
+				wan.TS = &ts
+			}
+			wan.Failures = append([]string(nil), wan.Failures...)
+			out.WanTest.Wans[name] = wan
+		}
+	}
 	out.TopUpload = cloneRankedFlows(in.TopUpload)
 	out.TopDownload = cloneRankedFlows(in.TopDownload)
 	out.TopDestUpload = cloneRankedFlows(in.TopDestUpload)
@@ -100,6 +131,14 @@ func cloneObservatorySnapshot(in ObservatorySnapshot) ObservatorySnapshot {
 	out.TopRegions = cloneRankedFlows(in.TopRegions)
 	out.DestFlows = cloneRankedFlows(in.DestFlows)
 	return out
+}
+
+func cloneBool(in *bool) *bool {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func cloneObservatoryDevice(d inventory.Device) inventory.Device {

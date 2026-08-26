@@ -18,6 +18,7 @@ import type {
   TopoNode,
   TopoView,
   UnifiConsole,
+  VirtWAN,
   WirelessView,
 } from './types'
 
@@ -776,6 +777,13 @@ export function anonymizeNetwork(anon: Anon, ifaces: NetIface[]): NetIface[] {
       subnet: fake ?? (n.subnet ? anon.fakeCIDR(n.subnet) : n.subnet),
     }
   })
+}
+
+export function anonymizeVirtWans(anon: Anon, virtWans: VirtWAN[]): VirtWAN[] {
+  return virtWans.map((wan) => ({
+    ...wan,
+    name: wan.name ? anon.fakeISP(wan.name) : wan.name,
+  }))
 }
 
 export function anonymizeBox(anon: Anon, box: BoxInfo): BoxInfo {
