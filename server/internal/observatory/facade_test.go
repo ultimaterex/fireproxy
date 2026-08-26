@@ -682,6 +682,138 @@ func TestAlarmsUnpairedEmpty(t *testing.T) {
 	}
 }
 
+func TestAlarmsPrefersFWAppGetWhenLANOK(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	catTS := now.Add(-10 * time.Minute).Unix()
+	deps := Deps{
+		Now:          now,
+		AgentOnline:  true,
+		ControlLANOK: true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS: catTS,
+				Dashboard: &inventory.Dashboard{
+					AlarmCount: 999,
+				},
+			}, true
+		},
+		GetAlarms: func(ctx context.Context) (int64, []fwapp.AlarmSample, error) {
+			return 3, []fwapp.AlarmSample{
+				{AID: 10, Type: "ALARM_LARGE_UPLOAD", Message: "from get"},
+			}, nil
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			t.Fatal("must not touch init when get-alarms succeeds")
+			return fwapp.ObservatorySnapshot{}, time.Time{}, false
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("must not EnsureInit when get-alarms succeeds")
+			return nil
+		},
+	}
+
+	view, prov, ok := Alarms(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceFWAppGet {
+		t.Fatalf("source=%q want %q", prov.Source, SourceFWAppGet)
+	}
+	if !prov.FetchedAt.Equal(now) {
+		t.Fatalf("fetched_at=%v want %v", prov.FetchedAt, now)
+	}
+	if view.ActiveAlarmCount != 3 {
+		t.Fatalf("active_alarm_count=%d want 3", view.ActiveAlarmCount)
+	}
+	if len(view.NewAlarms) != 1 || view.NewAlarms[0].AID != 10 {
+		t.Fatalf("new_alarms %+v", view.NewAlarms)
+	}
+}
+
+func TestAlarmsFallsBackWhenGetFails(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	catTS := now.Add(-10 * time.Minute).Unix()
+	deps := Deps{
+		Now:          now,
+		AgentOnline:  true,
+		ControlLANOK: true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS: catTS,
+				Dashboard: &inventory.Dashboard{
+					AlarmCount: 7,
+				},
+			}, true
+		},
+		GetAlarms: func(ctx context.Context) (int64, []fwapp.AlarmSample, error) {
+			return 0, nil, errors.New("lan get failed")
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			t.Fatal("must not touch init when agent catalog is fresh")
+			return fwapp.ObservatorySnapshot{}, time.Time{}, false
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("must not EnsureInit when agent catalog is fresh")
+			return nil
+		},
+	}
+
+	view, prov, ok := Alarms(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceAgent {
+		t.Fatalf("source=%q want %q (fall through after get fail)", prov.Source, SourceAgent)
+	}
+	if view.ActiveAlarmCount != 7 {
+		t.Fatalf("active_alarm_count=%d want 7", view.ActiveAlarmCount)
+	}
+}
+
+func TestAlarmsGetBeatsPreferInitWhenLANOK(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	initAt := now.Add(-time.Minute)
+	deps := Deps{
+		Now:          now,
+		AgentOnline:  false,
+		PreferInit:   true,
+		ControlLANOK: true,
+		GetAlarms: func(ctx context.Context) (int64, []fwapp.AlarmSample, error) {
+			return 2, []fwapp.AlarmSample{
+				{AID: 5, Type: "ALARM_ABNORMAL_BANDWIDTH", Message: "get wins"},
+			}, nil
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			t.Fatal("PreferInit must not beat lan-ok get-alarms")
+			return fwapp.ObservatorySnapshot{
+				AlarmCount: 99,
+				NewAlarms:  []fwapp.AlarmSample{{AID: 1}},
+			}, initAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			t.Fatal("must not EnsureInit when get-alarms succeeds")
+			return nil
+		},
+	}
+
+	view, prov, ok := Alarms(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if prov.Source != SourceFWAppGet {
+		t.Fatalf("source=%q want %q", prov.Source, SourceFWAppGet)
+	}
+	if !prov.FetchedAt.Equal(now) {
+		t.Fatalf("fetched_at=%v want %v", prov.FetchedAt, now)
+	}
+	if view.ActiveAlarmCount != 2 {
+		t.Fatalf("active_alarm_count=%d want 2", view.ActiveAlarmCount)
+	}
+	if len(view.NewAlarms) != 1 || view.NewAlarms[0].AID != 5 {
+		t.Fatalf("new_alarms %+v", view.NewAlarms)
+	}
+}
+
 func TestDashboardInitSkipsStaleCatalogGapFill(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	initAt := now.Add(-time.Minute)

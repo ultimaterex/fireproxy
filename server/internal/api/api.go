@@ -830,6 +830,15 @@ func (s *Server) obsDeps() observatory.Deps {
 		deps.ObservatorySnapshot = s.FWApp.ObservatorySnapshot
 		deps.EnsureInit = s.FWApp.EnsureInit
 		deps.PreferInit = s.FWApp.PreferInit()
+		st := s.FWApp.Status()
+		deps.ControlLANOK = st.Paired && st.State == "lan-ok"
+		deps.GetAlarms = func(ctx context.Context) (int64, []fwapp.AlarmSample, error) {
+			list, err := s.FWApp.GetAlarms(ctx)
+			if err != nil {
+				return 0, nil, err
+			}
+			return list.Count, list.Alarms, nil
+		}
 	}
 	return deps
 }
