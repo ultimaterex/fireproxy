@@ -180,6 +180,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [alarmNotifCount, setAlarmNotifCount] = useState(0)
+  const [alarmNotifFromApi, setAlarmNotifFromApi] = useState(false)
+  const [alarmNotifLoading, setAlarmNotifLoading] = useState(false)
   const [alarmPreview, setAlarmPreview] = useState<AlarmSample[]>([])
   const [initRefreshing, setInitRefreshing] = useState(false)
   const [controlLanOk, setControlLanOk] = useState(false)
@@ -605,7 +607,11 @@ function App() {
   }, [offlineMacs, unifiMod?.audit_offline, snoozeRev])
   // Unknown is soft: Audit tab only, never the bell.
   const notifCount = names + vlan + stp + offline + pending
-  const bellCount = notifCount + alarmNotifCount
+  // Seed from dashboard until first /v1/alarms open-fetch (no metrics-tick poll).
+  const alarmBellCount = alarmNotifFromApi
+    ? alarmNotifCount
+    : (dashboard?.alarm_count ?? 0)
+  const bellCount = notifCount + alarmBellCount
   const notifRef = useRef<HTMLDivElement>(null)
 
   const openAudit = (section: AuditSectionId, mac?: string) => {
@@ -628,6 +634,7 @@ function App() {
   useEffect(() => {
     if (!notifOpen) return
     let cancelled = false
+    setAlarmNotifLoading(true)
     void (async () => {
       try {
         const r = await api('/v1/alarms')
@@ -635,17 +642,22 @@ function App() {
         if (r.status === 404 || !r.ok) {
           setAlarmNotifCount(0)
           setAlarmPreview([])
+          setAlarmNotifFromApi(true)
           return
         }
         const data = (await r.json()) as AlarmsView
         if (cancelled) return
         setAlarmNotifCount(data.active_alarm_count ?? 0)
         setAlarmPreview((data.new_alarms ?? []).slice(0, 5))
+        setAlarmNotifFromApi(true)
       } catch {
         if (!cancelled) {
           setAlarmNotifCount(0)
           setAlarmPreview([])
+          setAlarmNotifFromApi(true)
         }
+      } finally {
+        if (!cancelled) setAlarmNotifLoading(false)
       }
     })()
     return () => {
@@ -995,22 +1007,26 @@ function App() {
                 </div>
                 {bellCount > 0 ? (
                   <div className="max-h-[28rem] overflow-y-auto">
-                    {alarmNotifCount > 0 ? (
+                    {alarmBellCount > 0 ? (
                       <div className="border-b py-1">
                         <div className="flex items-center justify-between px-3 py-1.5">
                           <span className="text-xs font-medium text-muted-foreground">Alarms</span>
                           <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            {alarmNotifCount}
+                            {alarmBellCount}
                           </span>
                         </div>
                         <div className="px-1">
-                          <AlarmInboxList
-                            alarms={alarmPreview}
-                            activeCount={alarmNotifCount}
-                            nowMs={nowMs}
-                            controlLanOk={controlLanOk}
-                            compact
-                          />
+                          {alarmNotifLoading && alarmPreview.length === 0 ? (
+                            <p className="px-1 py-2 text-sm text-muted-foreground">Loading…</p>
+                          ) : (
+                            <AlarmInboxList
+                              alarms={alarmPreview}
+                              activeCount={alarmBellCount}
+                              nowMs={nowMs}
+                              controlLanOk={controlLanOk}
+                              compact
+                            />
+                          )}
                         </div>
                         <button
                           type="button"
@@ -1075,6 +1091,8 @@ function App() {
                       </div>
                     ) : null}
                   </div>
+                ) : alarmNotifLoading ? (
+                  <div className="px-3 py-2.5 text-sm text-muted-foreground">Loading…</div>
                 ) : (
                   <div className="px-3 py-2.5 text-sm text-muted-foreground">No notifications</div>
                 )}
