@@ -768,7 +768,9 @@ export function RulesTab({
       </Card>
 
       {activeScope ? (
-        mode === 'list' ? (
+        filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No rules</p>
+        ) : mode === 'list' ? (
           <RulesTable
             bySection={bySection}
             displayOn={displayOn}
