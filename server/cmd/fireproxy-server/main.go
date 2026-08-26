@@ -121,6 +121,11 @@ func main() {
 		tplinkStore = tplink.NewStore(nil, os.Getenv("FIREPROXY_SECRETS_KEY"))
 		fwAppSvc = fwapp.NewService(fwapp.NewMemStore(), os.Getenv("FIREPROXY_SECRETS_KEY"))
 	}
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		fwAppSvc.ColdStart(ctx)
+		cancel()
+	}
 	facts["tplink-sync"] = func() modules.Module {
 		return tplink.New(tplink.ModuleConfig{
 			Store:    tplinkStore,

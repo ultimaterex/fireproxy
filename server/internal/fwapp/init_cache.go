@@ -202,6 +202,21 @@ func (s *Service) ObservatorySnapshot() (ObservatorySnapshot, time.Time, bool) {
 	return s.hydrateObservatoryCacheFromStore()
 }
 
+// ColdStart hydrates Rules + observatory from KV when paired, then runs one EnsureInit.
+// No retry loop or background poll. Safe at process start; EnsureInit errors leave hydrate in place.
+func (s *Service) ColdStart(ctx context.Context) {
+	if s == nil || !s.secretsReady() {
+		return
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil || !ok || c.SymKey == "" {
+		return
+	}
+	_, _, _ = s.hydrateRulesCacheFromStore()
+	_, _, _ = s.hydrateObservatoryCacheFromStore()
+	_ = s.EnsureInit(ctx)
+}
+
 func (s *Service) initCacheWarm() bool {
 	_, at, ok := s.obsCache.Get()
 	if !ok || at.IsZero() {
