@@ -508,3 +508,71 @@ func TestFWAppRenamePushUniFiHistory(t *testing.T) {
 		t.Fatalf("applied: %+v", mod.applied)
 	}
 }
+
+func TestFWAppHostPolicyAdblockFamilyOK(t *testing.T) {
+	svc := fwAppTestPair(t, nil)
+	initRaw := readFWAppRulesFixture(t)
+	svc.SetFetchInit(func(ctx context.Context, creds fwapp.Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	var lastValue map[string]any
+	svc.SetSendFn(func(ctx context.Context, creds fwapp.Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		lastValue, _ = data["value"].(map[string]any)
+		return json.RawMessage(`{"code":200}`), nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, mux, p := fwAppHistServer(t, svc, nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fw-app/hosts/policy", strings.NewReader(`{
+		"mac":"AA:BB:CC:DD:EE:01","adblock":false,"family":true
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("set policy %d %s", rr.Code, rr.Body.String())
+	}
+	if lastValue["adblock"] != false || lastValue["family"] != true {
+		t.Fatalf("value %+v", lastValue)
+	}
+	var postBody struct {
+		Policy fwapp.HostPolicy `json:"policy"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&postBody); err != nil {
+		t.Fatal(err)
+	}
+	if postBody.Policy.Adblock || !postBody.Policy.Family {
+		t.Fatalf("post policy %+v", postBody.Policy)
+	}
+
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "firewalla", Action: "host.policy", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %+v", rows)
+	}
+	ev := rows[0]
+	if ev.Result != "ok" || ev.Target != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("%+v", ev)
+	}
+	if !strings.Contains(ev.Summary, "adblock off") || !strings.Contains(ev.Summary, "family on") {
+		t.Fatalf("summary %q", ev.Summary)
+	}
+	var before, after map[string]any
+	if err := json.Unmarshal([]byte(ev.BeforeJSON), &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(ev.AfterJSON), &after); err != nil {
+		t.Fatal(err)
+	}
+	if before["adblock"] != true || before["family"] != true {
+		t.Fatalf("before %+v", before)
+	}
+	if after["adblock"] != false || after["family"] != true {
+		t.Fatalf("after %+v", after)
+	}
+}
