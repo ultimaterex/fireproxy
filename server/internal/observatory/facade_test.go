@@ -724,7 +724,7 @@ func TestMetricsPreferInitGapFillsRates(t *testing.T) {
 		Latest: func() (store.LatestView, bool) {
 			return store.LatestView{
 				Snapshot: snapshot.Snapshot{
-					TS: now.Add(-30 * time.Second).Unix(),
+					TS:      now.Add(-30 * time.Second).Unix(),
 					DNSSvcs: []snapshot.DNSSvc{{Name: "unbound", OK: true}},
 					Ifaces: map[string]snapshot.IfaceStats{
 						"eth0": {RxBytes: 100, TxBytes: 50, Carrier: true},
