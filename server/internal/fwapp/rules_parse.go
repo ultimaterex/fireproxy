@@ -162,6 +162,8 @@ type rawPolicyRule struct {
 	Purpose          string     `json:"purpose"`
 	Method           string     `json:"method"`
 	AlarmType        string     `json:"alarm_type"`
+	Threshold        flexString `json:"threshold"`
+	Offset           flexString `json:"offset"`
 }
 
 type rawExceptionRule struct {
@@ -208,7 +210,50 @@ func normalizePolicyRule(pr rawPolicyRule, hosts, tags map[string]string) Rule {
 }
 
 func normalizeScreentimeRule(pr rawPolicyRule, hosts, tags map[string]string) Rule {
-	return finalizeRule(pr, RuleSectionTimelimit, hosts, tags)
+	r := finalizeRule(pr, RuleSectionTimelimit, hosts, tags)
+	// Overwrite Scope/Tags/ScopeLabel: screentime uses mac:/tag:/intf: prefixes.
+	scope, tagRefs := parseScreentimeScope(pr.Scope, pr.Tag)
+	r.Scope = scope
+	if len(tagRefs) > 0 {
+		r.Tags = tagRefs
+	}
+	r.ScopeLabel = scopeLabel(scope, r.Tags, hosts, tags)
+	r.ThresholdMinutes = parseInt64(pr.Threshold)
+	r.OffsetSeconds = parseInt64(pr.Offset)
+	return r
+}
+
+func parseScreentimeScope(scopeIn, tagIn []string) (scope []string, tags []string) {
+	tags = append([]string(nil), tagIn...)
+	for _, raw := range scopeIn {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		lower := strings.ToLower(raw)
+		switch {
+		case strings.HasPrefix(lower, "intf:"):
+			continue
+		case strings.HasPrefix(lower, "tag:"):
+			id := strings.TrimSpace(raw[len("tag:"):])
+			if id == "" {
+				continue
+			}
+			ref := "tag:" + id
+			tags = append(tags, ref)
+		case strings.HasPrefix(lower, "mac:"):
+			mac := NormalizeMAC(raw[len("mac:"):])
+			if mac != "" {
+				scope = append(scope, mac)
+			}
+		default:
+			mac := NormalizeMAC(raw)
+			if mac != "" {
+				scope = append(scope, mac)
+			}
+		}
+	}
+	return scope, tags
 }
 
 func finalizeRule(pr rawPolicyRule, section RuleSection, hosts, tags map[string]string) Rule {
