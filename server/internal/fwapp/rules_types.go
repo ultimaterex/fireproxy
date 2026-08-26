@@ -26,6 +26,8 @@ type Rule struct {
 	Scope            []string    `json:"scope,omitempty"`
 	Tags             []string    `json:"tags,omitempty"`
 	ScopeLabel       string      `json:"scopeLabel,omitempty"`
+	ThresholdMinutes int64       `json:"thresholdMinutes,omitempty"`
+	OffsetSeconds    int64       `json:"offsetSeconds,omitempty"`
 	HitCount         int64       `json:"hitCount"`
 	LastHitTs        float64     `json:"lastHitTs,omitempty"`
 	ActivatedTime    string      `json:"activatedTime,omitempty"`

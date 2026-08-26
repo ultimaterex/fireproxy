@@ -70,6 +70,7 @@ const SECTIONS: { id: FwAppRuleSection; label: string }[] = [
 const CREATE_ACTIONS = [
   { id: 'allow', label: 'Allow', cap: 'rule.create.allow' },
   { id: 'block', label: 'Block', cap: 'rule.create.block' },
+  { id: 'timelimit', label: 'Time Limit', cap: 'rule.create.timelimit' },
 ] as const
 
 const MATCH_KINDS = [
@@ -199,7 +200,37 @@ function scheduleLabel(r: FwAppRule): string {
   return raw
 }
 
+function fmtQuotaMinutes(mins?: number | null): string | null {
+  if (mins == null || !Number.isFinite(mins) || mins <= 0) return null
+  const h = Math.floor(mins / 60)
+  const m = Math.round(mins % 60)
+  if (h > 0 && m > 0) return `${h}h ${m}m`
+  if (h > 0) return `${h}h`
+  return `${m}m`
+}
+
+function fmtDayWindow(offsetSec?: number | null): string | null {
+  if (offsetSec == null || !Number.isFinite(offsetSec) || offsetSec < 0) return null
+  const sec = Math.floor(offsetSec) % 86400
+  const hh = String(Math.floor(sec / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function timelimitWhen(r: FwAppRule): string | null {
+  const parts: string[] = []
+  const q = fmtQuotaMinutes(r.thresholdMinutes)
+  if (q) parts.push(`Quota ${q}/day`)
+  const w = fmtDayWindow(r.offsetSeconds)
+  if (w) parts.push(`from ${w}`)
+  return parts.length ? parts.join(' · ') : null
+}
+
 function metaLine(r: FwAppRule): string {
+  if (r.section === 'timelimit') {
+    const when = timelimitWhen(r)
+    if (when) return when
+  }
   const direction = directionLabel(r)
   const schedule = scheduleLabel(r)
   if (direction === 'Always') return schedule
@@ -738,7 +769,7 @@ export function RulesTab({
 
       {activeScope ? (
         filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{busy ? '…' : 'No rules'}</p>
+          <p className="text-sm text-muted-foreground">No rules</p>
         ) : mode === 'list' ? (
           <RulesTable
             bySection={bySection}
@@ -908,7 +939,7 @@ function RulesTable({
     <div className="space-y-4">
       {SECTIONS.map(({ id, label }) => {
         const rows = bySection.get(id) ?? []
-        if (!rows.length) return null
+        if (!rows.length && id !== 'timelimit') return null
         return (
           <Card key={id} className="gap-0 py-0">
             <CardHeader className="border-b py-3">
@@ -920,39 +951,43 @@ function RulesTable({
               </CardTitle>
             </CardHeader>
             <CardContent className="px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Matching</TableHead>
-                    <TableHead>On</TableHead>
-                    <TableHead>When</TableHead>
-                    <TableHead className="text-right">Hits</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      className={cn('cursor-pointer', r.disabled && 'opacity-50')}
-                      onClick={() => onSelect(r)}
-                    >
-                      <TableCell className="max-w-[18rem]">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Badge variant="outline">{r.action || r.type || '—'}</Badge>
-                          <span className="truncate font-mono">{matchingLabel(r)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[12rem] truncate text-muted-foreground">
-                        {displayOn(r)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{metaLine(r)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {fmtHitBadge(r)}
-                      </TableCell>
+              {rows.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-muted-foreground">No time limit rules.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Matching</TableHead>
+                      <TableHead>On</TableHead>
+                      <TableHead>When</TableHead>
+                      <TableHead className="text-right">Hits</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((r) => (
+                      <TableRow
+                        key={r.id}
+                        className={cn('cursor-pointer', r.disabled && 'opacity-50')}
+                        onClick={() => onSelect(r)}
+                      >
+                        <TableCell className="max-w-[18rem]">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Badge variant="outline">{r.action || r.type || '—'}</Badge>
+                            <span className="truncate font-mono">{matchingLabel(r)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[12rem] truncate text-muted-foreground">
+                          {displayOn(r)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{metaLine(r)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {fmtHitBadge(r)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         )
@@ -974,7 +1009,7 @@ function RulesCompact({
     <div className="space-y-4">
       {SECTIONS.map(({ id, label }) => {
         const rows = bySection.get(id) ?? []
-        if (!rows.length) return null
+        if (!rows.length && id !== 'timelimit') return null
         return (
           <div key={id} className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-medium">
@@ -983,31 +1018,35 @@ function RulesCompact({
                 {rows.length}
               </span>
             </div>
-            <div className="space-y-1.5">
-              {rows.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => onSelect(r)}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/40',
-                    r.disabled && 'opacity-50',
-                  )}
-                >
-                  <Badge variant="outline">{r.action || r.type || '—'}</Badge>
-                  <span className="min-w-0 flex-1 truncate font-mono">{matchingLabel(r)}</span>
-                  <span className="hidden max-w-[8rem] truncate text-xs text-muted-foreground sm:inline">
-                    {displayOn(r)}
-                  </span>
-                  <span className="hidden text-xs text-muted-foreground md:inline">
-                    {metaLine(r)}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {fmtHitBadge(r)}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No time limit rules.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {rows.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onSelect(r)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/40',
+                      r.disabled && 'opacity-50',
+                    )}
+                  >
+                    <Badge variant="outline">{r.action || r.type || '—'}</Badge>
+                    <span className="min-w-0 flex-1 truncate font-mono">{matchingLabel(r)}</span>
+                    <span className="hidden max-w-[8rem] truncate text-xs text-muted-foreground sm:inline">
+                      {displayOn(r)}
+                    </span>
+                    <span className="hidden text-xs text-muted-foreground md:inline">
+                      {metaLine(r)}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {fmtHitBadge(r)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )
       })}
@@ -1198,6 +1237,9 @@ function RuleDetailSheet({
   const [working, setWorking] = useState(false)
   const canPause = !!caps['rule.pause'] && !rule.readOnly
   const canDelete = !!caps['rule.delete'] && !rule.readOnly
+  const isTimelimit = rule.section === 'timelimit' || rule.action === 'screentime'
+  const quotaLabel = fmtQuotaMinutes(rule.thresholdMinutes)
+  const dayWindow = fmtDayWindow(rule.offsetSeconds)
 
   const pause = async () => {
     if (!canPause || working || busy) return
@@ -1256,12 +1298,16 @@ function RuleDetailSheet({
           </div>
         ) : null}
         <Field label="Action">
-          <span className="capitalize">{rule.action || '—'}</span>
+          <span className="capitalize">
+            {isTimelimit ? 'Time limit' : rule.action || '—'}
+          </span>
         </Field>
         <Field label="Matching">{matchingLabel(rule)}</Field>
         <Field label="On">{onLabel}</Field>
-        <Field label="Schedule">{scheduleLabel(rule)}</Field>
-        <Field label="Direction">{directionLabel(rule)}</Field>
+        {quotaLabel ? <Field label="Quota">{quotaLabel} / day</Field> : null}
+        {dayWindow ? <Field label="Day window">from {dayWindow}</Field> : null}
+        {!isTimelimit ? <Field label="Schedule">{scheduleLabel(rule)}</Field> : null}
+        {!isTimelimit ? <Field label="Direction">{directionLabel(rule)}</Field> : null}
         <Field label="Hits">{fmtHitBadge(rule)}</Field>
         {rule.notes ? <Field label="Notes">{rule.notes}</Field> : null}
         <div className="space-y-1 text-xs text-muted-foreground">
@@ -1332,6 +1378,7 @@ function AddRuleSheet({
 }) {
   const selected = CREATE_ACTIONS.find((a) => a.id === action)!
   const ready = !!caps[selected.cap]
+  const canCreate = action === 'allow' || action === 'block'
   const [name, setName] = useState('')
   const [matchId, setMatchId] = useState<(typeof MATCH_KINDS)[number]['id']>('dns')
   const [target, setTarget] = useState('')
@@ -1389,6 +1436,7 @@ function AddRuleSheet({
   const scopeValue = on === '__custom__' ? customMac.trim() : on
   const matchReady = match.ready
   const canSubmit =
+    canCreate &&
     ready &&
     matchReady &&
     !!target.trim() &&
@@ -1398,6 +1446,7 @@ function AddRuleSheet({
 
   const submit = async () => {
     if (!canSubmit) return
+    if (action !== 'allow' && action !== 'block') return
     setWorking(true)
     setErr(null)
     const scope =
@@ -1916,7 +1965,7 @@ function AddRuleSheet({
           disabled={!canSubmit}
           onClick={() => void submit()}
         >
-          {ready && matchReady ? (working ? '…' : 'Create') : 'Coming soon'}
+          {canCreate && ready && matchReady ? (working ? '…' : 'Create') : 'Coming soon'}
         </Button>
       </div>
     </div>,

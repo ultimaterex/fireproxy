@@ -195,6 +195,13 @@ func TestNormalizeCreateRule(t *testing.T) {
 	}
 }
 
+func TestCreateRuleRejectsTimelimit(t *testing.T) {
+	_, err := normalizeCreateRule(CreateRuleRequest{Action: "screentime", Target: "social", Type: "category"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestCreateRuleAllDevicesAndTag(t *testing.T) {
 	svc, sent := pairedMutateService(t)
 	blockEnv := readCmdFixture(t, "create_block.cmd.json")
