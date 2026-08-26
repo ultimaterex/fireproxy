@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { netLabel } from '@/lib/format'
 import { managerKind, portChips, wanTypeLabel, type PortChip } from '@/lib/ports'
-import type { NetIface } from '@/lib/types'
+import type { NetIface, VirtWAN, WanFeatures, WanTest } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -14,15 +14,20 @@ const LAN_GRID =
 const WAN_GRID =
   'grid w-full grid-cols-[minmax(8rem,1fr)_12rem_4.5rem_5.5rem_auto] items-center gap-x-3 px-6 py-2.5 text-sm'
 
+type NetworkTabProps = {
+  network: NetIface[]
+  wanType?: string
+  features?: WanFeatures
+  wanTest?: WanTest
+  virtWans?: VirtWAN[]
+  onSelectLan: (uuid: string) => void
+}
+
 export function NetworkTab({
   network,
   wanType,
   onSelectLan,
-}: {
-  network: NetIface[]
-  wanType?: string
-  onSelectLan: (uuid: string) => void
-}) {
+}: NetworkTabProps) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
   const wans = network.filter((n) => managerKind(n) === 'wan')
 
