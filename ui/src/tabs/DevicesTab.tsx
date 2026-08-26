@@ -58,6 +58,7 @@ export function DevicesTab({
   devices,
   source,
   stale,
+  reason,
   groupFilter,
   lanFilter,
   switchMacs,
@@ -77,6 +78,7 @@ export function DevicesTab({
   devices: Device[]
   source?: string
   stale?: boolean
+  reason?: string
   groupFilter: string
   lanFilter: string
   switchMacs: string[]
@@ -264,7 +266,7 @@ export function DevicesTab({
             <span className="text-sm tabular-nums text-muted-foreground">
               {rows.length} / {visibleDevices.length}
             </span>
-            <SourceBadge source={source} stale={stale} />
+            <SourceBadge source={source} stale={stale} reason={reason} />
             {hasStamp && !showInactive && hiddenInactive > 0 ? (
               <span className="text-sm tabular-nums text-muted-foreground">+{hiddenInactive} inactive</span>
             ) : null}

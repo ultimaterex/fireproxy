@@ -20,6 +20,7 @@ func TestPick(t *testing.T) {
 		wantUseInit bool
 		wantStale   bool
 		wantFetched time.Time
+		wantReason  string
 	}{
 		{
 			name:        "online_fresh_uses_agent",
@@ -54,6 +55,7 @@ func TestPick(t *testing.T) {
 			wantUseInit: true,
 			wantStale:   false,
 			wantFetched: initAt,
+			wantReason:  ReasonFallback,
 		},
 		{
 			name:        "online_stale_cold_init_empty",
@@ -76,6 +78,7 @@ func TestPick(t *testing.T) {
 			wantUseInit: true,
 			wantStale:   false,
 			wantFetched: initAt,
+			wantReason:  ReasonFallback,
 		},
 		{
 			name:        "offline_cold_init_empty",
@@ -103,6 +106,9 @@ func TestPick(t *testing.T) {
 			}
 			if !p.FetchedAt.Equal(tt.wantFetched) {
 				t.Fatalf("fetched_at=%v want %v", p.FetchedAt, tt.wantFetched)
+			}
+			if p.Reason != tt.wantReason {
+				t.Fatalf("reason=%q want %q", p.Reason, tt.wantReason)
 			}
 		})
 	}

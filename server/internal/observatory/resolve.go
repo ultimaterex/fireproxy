@@ -13,7 +13,7 @@ import "time"
 func Pick(agentOnline bool, agentAge, agentTTL time.Duration, initOK bool, initAt time.Time) (Provenance, bool) {
 	if !agentOnline {
 		if initOK {
-			return Provenance{Source: SourceFWAppInit, FetchedAt: initAt}, true
+			return Provenance{Source: SourceFWAppInit, FetchedAt: initAt, Reason: ReasonFallback}, true
 		}
 		return Provenance{Source: SourceEmpty}, false
 	}
@@ -23,7 +23,7 @@ func Pick(agentOnline bool, agentAge, agentTTL time.Duration, initOK bool, initA
 	}
 
 	if initOK {
-		return Provenance{Source: SourceFWAppInit, FetchedAt: initAt}, true
+		return Provenance{Source: SourceFWAppInit, FetchedAt: initAt, Reason: ReasonFallback}, true
 	}
 	return Provenance{Source: SourceEmpty}, false
 }

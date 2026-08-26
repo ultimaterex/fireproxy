@@ -153,7 +153,7 @@ func takeInit(ctx context.Context, deps Deps) (fwapp.ObservatorySnapshot, time.T
 	if !initOK {
 		return fwapp.ObservatorySnapshot{}, time.Time{}, Provenance{Source: SourceEmpty}, false
 	}
-	return snap, at, Provenance{Source: SourceFWAppInit, FetchedAt: at}, true
+	return snap, at, Provenance{Source: SourceFWAppInit, FetchedAt: at, Reason: ReasonPrefer}, true
 }
 
 func dashboardFromCatalog(cat inventory.Catalog) DashboardView {

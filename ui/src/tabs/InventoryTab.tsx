@@ -24,6 +24,7 @@ export function InventoryTab({
   box,
   source,
   stale,
+  reason,
   unifi,
   console: ucon,
   devices,
@@ -34,6 +35,7 @@ export function InventoryTab({
   box: BoxInfo | null
   source?: string
   stale?: boolean
+  reason?: string
   unifi: ModuleInfo | null
   console: UnifiConsole | null
   devices: Device[]
@@ -83,6 +85,7 @@ export function InventoryTab({
           box={box}
           source={source}
           stale={stale}
+          reason={reason}
           devices={devices}
           network={network}
           switches={switches}
@@ -99,6 +102,7 @@ function FirewallaPane({
   box,
   source,
   stale,
+  reason,
   devices,
   network,
   switches,
@@ -107,6 +111,7 @@ function FirewallaPane({
   box: BoxInfo | null
   source?: string
   stale?: boolean
+  reason?: string
   devices: Device[]
   network: NetIface[]
   switches: Switch[]
@@ -182,7 +187,7 @@ function FirewallaPane({
           <CardTitle className="flex items-center gap-3 text-xl font-normal leading-8">
             <img src={makerLogo('firewalla')} alt="" className="size-8 rounded-sm object-contain" />
             <span>{box.name || makerLabel('firewalla')}</span>
-            <SourceBadge source={source} stale={stale} />
+            <SourceBadge source={source} stale={stale} reason={reason} />
             {box.license ? (
               <span className="ml-auto text-sm text-muted-foreground">{box.license}</span>
             ) : null}

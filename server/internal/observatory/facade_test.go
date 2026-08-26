@@ -99,6 +99,9 @@ func TestDashboardPreferInitOverridesFreshAgent(t *testing.T) {
 	if prov.EnrichedFrom != SourceAgent {
 		t.Fatalf("enriched_from=%q want %q", prov.EnrichedFrom, SourceAgent)
 	}
+	if prov.Reason != ReasonPrefer {
+		t.Fatalf("reason=%q want %q", prov.Reason, ReasonPrefer)
+	}
 }
 
 func TestDashboardAgentOfflineWarmInit(t *testing.T) {
@@ -152,6 +155,9 @@ func TestDashboardAgentOfflineWarmInit(t *testing.T) {
 	}
 	if prov.EnrichedFrom != SourceAgent {
 		t.Fatalf("enriched_from=%q", prov.EnrichedFrom)
+	}
+	if prov.Reason != ReasonFallback {
+		t.Fatalf("reason=%q want %q", prov.Reason, ReasonFallback)
 	}
 	if dash.Devices != 2 {
 		t.Fatalf("devices=%d want 2", dash.Devices)

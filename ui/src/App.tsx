@@ -291,6 +291,7 @@ function App() {
             source?: string
             fetched_at?: string
             stale?: boolean
+            reason?: string
           }
           if (!cancelled) {
             setDevices(data.devices ?? [])
@@ -299,6 +300,7 @@ function App() {
               source: data.source,
               fetched_at: data.fetched_at,
               stale: data.stale,
+              reason: data.reason,
             })
           }
         } else if (dRes.status === 404 && !cancelled) {
@@ -377,6 +379,7 @@ function App() {
             source?: string
             fetched_at?: string
             stale?: boolean
+            reason?: string
           }
           if (!cancelled) {
             setBox(data.box ?? null)
@@ -384,6 +387,7 @@ function App() {
               source: data.source,
               fetched_at: data.fetched_at,
               stale: data.stale,
+              reason: data.reason,
             })
           }
         } else if (boxRes.status === 404 && !cancelled) {
@@ -1112,6 +1116,7 @@ function App() {
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}
+              reason={devicesProv.reason}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}
@@ -1189,6 +1194,7 @@ function App() {
               box={showBox}
               source={boxProv.source}
               stale={boxProv.stale}
+              reason={boxProv.reason}
               unifi={unifiMod}
               console={showUnifi}
               devices={showDevices}
@@ -1328,6 +1334,7 @@ function App() {
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}
+              reason={devicesProv.reason}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}

@@ -74,6 +74,7 @@ func TestDashboardOfflineUsesFWAppInit(t *testing.T) {
 	}
 	var body struct {
 		Source       string                   `json:"source"`
+		Reason       string                   `json:"reason"`
 		EnrichedFrom string                   `json:"enriched_from"`
 		AlarmCount   int64                    `json:"alarm_count"`
 		Transfer     inventory.Transfer       `json:"transfer_24h"`
@@ -87,6 +88,9 @@ func TestDashboardOfflineUsesFWAppInit(t *testing.T) {
 	}
 	if body.Source != observatory.SourceFWAppInit {
 		t.Fatalf("source=%q", body.Source)
+	}
+	if body.Reason != observatory.ReasonFallback {
+		t.Fatalf("reason=%q", body.Reason)
 	}
 	// Shared fields stay from init (alarm_count 4, not catalog 999).
 	if body.AlarmCount != 4 || body.Transfer.Upload != 11 || len(body.Monthly) != 1 || len(body.Speedtest) == 0 {
