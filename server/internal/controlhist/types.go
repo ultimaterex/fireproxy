@@ -8,11 +8,11 @@ const (
 
 // Action verbs (scheme-local; uniqueness is scheme+action).
 const (
-	ActionHostRename    = "host.rename"
-	ActionHostDNS       = "host.dns"
-	ActionHostWOL       = "host.wol"
-	ActionHostPolicy    = "host.policy"
-	ActionSpeedtestRun  = "speedtest.run"
+	ActionHostRename     = "host.rename"
+	ActionHostDNS        = "host.dns"
+	ActionHostWOL        = "host.wol"
+	ActionHostPolicy     = "host.policy"
+	ActionSpeedtestRun   = "speedtest.run"
 	ActionRuleCreate     = "rule.create"
 	ActionRulePause      = "rule.pause"
 	ActionRuleDelete     = "rule.delete"
