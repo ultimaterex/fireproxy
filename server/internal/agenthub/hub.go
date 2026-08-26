@@ -218,7 +218,14 @@ func (h *Hub) recordHelloEvents(helloVer string) {
 	now := time.Now().Unix()
 	lastVer, _ := h.Persist.AgentLastVersion()
 	offlineTS, _ := h.Persist.AgentLastOfflineTS()
-	for _, pe := range DecideHelloEvents(lastVer, offlineTS, helloVer, now) {
+	planned := DecideHelloEvents(lastVer, offlineTS, helloVer, now)
+	// Persist version/offline clear before event rows so readers never see
+	// "updated" while AgentLastVersion is still the old value.
+	if helloVer != "" {
+		_ = h.Persist.SetAgentLastVersion(helloVer)
+	}
+	_ = h.Persist.ClearAgentLastOfflineTS()
+	for _, pe := range planned {
 		_ = h.Persist.InsertAgentEvent(store.AgentEvent{
 			TS:      now,
 			Kind:    pe.Kind,
@@ -227,10 +234,6 @@ func (h *Hub) recordHelloEvents(helloVer string) {
 			ToVer:   pe.ToVer,
 		})
 	}
-	if helloVer != "" {
-		_ = h.Persist.SetAgentLastVersion(helloVer)
-	}
-	_ = h.Persist.ClearAgentLastOfflineTS()
 }
 
 // MaybeAutoUpdate sends agent.update when the packaged binary should replace the agent.
