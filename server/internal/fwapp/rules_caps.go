@@ -19,6 +19,8 @@ func DefaultRulesCapabilities() RulesCapabilities {
 		"host.monitor":          true,
 		"host.isolation":        true,
 		"host.emergency":        true,
+		"host.adblock":          true,
+		"host.family":           true,
 		"host.note":             true,
 		"host.group":            true,
 	}

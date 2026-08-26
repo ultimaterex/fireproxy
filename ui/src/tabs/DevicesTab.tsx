@@ -49,10 +49,13 @@ import {
 } from '@/lib/device-search'
 import { dapLabel, deviceOnline, fmtBytes, fmtCount, netLabel, preferredName } from '@/lib/format'
 import { describeMacFilter, indexDevicePorts, type PortLoc } from '@/lib/switch-port'
-import type { Device, NetIface, Switch, Tag } from '@/lib/types'
+import type { Device, FwAppHostPolicy, NetIface, Switch, Tag } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 type Dir = 'asc' | 'desc'
+
+const menuItemCls =
+  'cursor-pointer px-3 py-1.5 text-sm outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent'
 
 export function DevicesTab({
   devices,
@@ -74,6 +77,8 @@ export function DevicesTab({
   onQuery,
   labelTag,
   onSelectDevice,
+  onRenamed,
+  onGroupUpdated,
 }: {
   devices: Device[]
   source?: string
@@ -94,6 +99,8 @@ export function DevicesTab({
   onQuery: (q: string) => void
   labelTag: (id: string, preferType?: string) => string
   onSelectDevice?: (d: Device) => void
+  onRenamed?: (mac: string, name: string) => void
+  onGroupUpdated?: (mac: string, tagIds: string[]) => void
 }) {
   const [sort, setSort] = useState<{ key: DeviceColId; dir: Dir }>({ key: 'name', dir: 'asc' })
   const [cols, setCols] = useState<DeviceColId[]>(() => loadDeviceCols())
@@ -105,8 +112,17 @@ export function DevicesTab({
   const pickerRef = useRef<HTMLDivElement>(null)
   const groupPickerRef = useRef<HTMLDivElement>(null)
   const [wakeReady, setWakeReady] = useState(false)
-  const [wakeBusy, setWakeBusy] = useState<string | null>(null)
+  const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+
+  const groupTags = useMemo(
+    () =>
+      tags
+        .filter((t) => !t.type || t.type === 'group')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [tags],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -125,9 +141,42 @@ export function DevicesTab({
     }
   }, [])
 
+  async function fetchHostPolicy(mac: string): Promise<FwAppHostPolicy | null> {
+    const r = await api(`/v1/fw-app/hosts/policy?mac=${encodeURIComponent(mac)}`, {
+      cache: 'no-store',
+    })
+    if (!r.ok) return null
+    const body = (await r.json().catch(() => ({}))) as { policy?: FwAppHostPolicy }
+    return body.policy ?? null
+  }
+
+  async function postHostPolicy(
+    mac: string,
+    patch: {
+      isolation?: boolean
+      emergency?: boolean
+      adblock?: boolean
+      family?: boolean
+      tags?: string[]
+    },
+  ): Promise<{ ok: boolean; error?: string; policy?: FwAppHostPolicy }> {
+    const r = await api('/v1/fw-app/hosts/policy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac, ...patch }),
+      cache: 'no-store',
+    })
+    const body = (await r.json().catch(() => ({}))) as {
+      error?: string
+      policy?: FwAppHostPolicy
+    }
+    if (!r.ok) return { ok: false, error: body.error || 'Policy failed' }
+    return { ok: true, policy: body.policy }
+  }
+
   async function wakeDevice(d: Device) {
-    if (!wakeReady || wakeBusy) return
-    setWakeBusy(d.mac)
+    if (!wakeReady || actionBusy) return
+    setActionBusy(d.mac)
     try {
       const r = await api('/v1/fw-app/wol', {
         method: 'POST',
@@ -143,7 +192,138 @@ export function DevicesTab({
     } catch {
       setToast('Wake failed')
     } finally {
-      setWakeBusy(null)
+      setActionBusy(null)
+    }
+  }
+
+  async function renameDevice(d: Device) {
+    if (!wakeReady || actionBusy) return
+    const next = window.prompt('Name', preferredName(d))
+    if (next == null) return
+    const name = next.trim()
+    if (!name) {
+      setToast('Name required')
+      return
+    }
+    setActionBusy(d.mac)
+    try {
+      const r = await api('/v1/fw-app/hosts/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: d.mac, name }),
+      })
+      const body = (await r.json().catch(() => ({}))) as {
+        error?: string
+        name?: string
+        unifi_warning?: string
+      }
+      if (!r.ok) {
+        setToast(body.error || 'Rename failed')
+        return
+      }
+      const saved = body.name || name
+      onRenamed?.(d.mac, saved)
+      setToast(body.unifi_warning ? `Renamed · ${body.unifi_warning}` : 'Renamed')
+    } catch {
+      setToast('Rename failed')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function setDeviceGroup(d: Device, tagId: string | null) {
+    if (!wakeReady || actionBusy) return
+    const tagsPatch = tagId ? [tagId] : []
+    setActionBusy(d.mac)
+    try {
+      const res = await postHostPolicy(d.mac, { tags: tagsPatch })
+      if (!res.ok) {
+        setToast(res.error || 'Policy failed')
+        return
+      }
+      onGroupUpdated?.(d.mac, res.policy?.tags ?? tagsPatch)
+      setToast(tagId ? `Group · ${labelTag(tagId, 'group')}` : 'Group cleared')
+    } catch {
+      setToast('Policy failed')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function togglePolicyFlag(d: Device, key: 'adblock' | 'family') {
+    if (!wakeReady || actionBusy) return
+    setActionBusy(d.mac)
+    try {
+      const pol = await fetchHostPolicy(d.mac)
+      if (!pol) {
+        setToast('Policy failed')
+        return
+      }
+      const next = !pol[key]
+      const res = await postHostPolicy(d.mac, { [key]: next })
+      if (!res.ok) {
+        setToast(res.error || 'Policy failed')
+        return
+      }
+      setToast(next ? `${key === 'adblock' ? 'Adblock' : 'Family'} on` : `${key === 'adblock' ? 'Adblock' : 'Family'} off`)
+    } catch {
+      setToast('Policy failed')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function toggleIsolation(d: Device) {
+    if (!wakeReady || actionBusy) return
+    setActionBusy(d.mac)
+    try {
+      const pol = await fetchHostPolicy(d.mac)
+      if (!pol) {
+        setToast('Policy failed')
+        return
+      }
+      const next = !pol.isolated
+      const ok = window.confirm(
+        next ? 'Isolate this device from the internet?' : 'Remove isolation for this device?',
+      )
+      if (!ok) return
+      const res = await postHostPolicy(d.mac, { isolation: next })
+      if (!res.ok) {
+        setToast(res.error || 'Policy failed')
+        return
+      }
+      setToast(next ? 'Isolated' : 'Isolation removed')
+    } catch {
+      setToast('Policy failed')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  async function toggleEmergency(d: Device) {
+    if (!wakeReady || actionBusy) return
+    setActionBusy(d.mac)
+    try {
+      const pol = await fetchHostPolicy(d.mac)
+      if (!pol) {
+        setToast('Policy failed')
+        return
+      }
+      const next = !pol.emergency
+      const ok = window.confirm(
+        next ? 'Enable emergency access (bypass host ACLs)?' : 'Disable emergency access?',
+      )
+      if (!ok) return
+      const res = await postHostPolicy(d.mac, { emergency: next })
+      if (!res.ok) {
+        setToast(res.error || 'Policy failed')
+        return
+      }
+      setToast(next ? 'Emergency on' : 'Emergency off')
+    } catch {
+      setToast('Policy failed')
+    } finally {
+      setActionBusy(null)
     }
   }
 
@@ -402,14 +582,22 @@ export function DevicesTab({
                   visible={visible}
                   open={!collapsed.has(g.key)}
                   groupFilter={groupFilter}
+                  groupTags={groupTags}
+                  labelTag={labelTag}
                   onToggle={() => toggleCollapsed(g.key)}
                   onGroup={onGroup}
                   onLan={onLan}
                   onPort={onSwitchMacs}
                   onSelectDevice={onSelectDevice}
                   wakeReady={wakeReady}
-                  wakeBusy={wakeBusy}
+                  actionBusy={actionBusy}
                   onWake={wakeDevice}
+                  onRename={renameDevice}
+                  onSetGroup={setDeviceGroup}
+                  onToggleAdblock={(d) => void togglePolicyFlag(d, 'adblock')}
+                  onToggleFamily={(d) => void togglePolicyFlag(d, 'family')}
+                  onToggleIsolation={toggleIsolation}
+                  onToggleEmergency={toggleEmergency}
                 />
               ))}
             </TableBody>
@@ -437,28 +625,44 @@ function DeviceGroup({
   visible,
   open,
   groupFilter,
+  groupTags,
+  labelTag,
   onToggle,
   onGroup,
   onLan,
   onPort,
   onSelectDevice,
   wakeReady,
-  wakeBusy,
+  actionBusy,
   onWake,
+  onRename,
+  onSetGroup,
+  onToggleAdblock,
+  onToggleFamily,
+  onToggleIsolation,
+  onToggleEmergency,
 }: {
   group: DeviceRowGroup<Row>
   colSpan: number
   visible: { id: DeviceColId }[]
   open: boolean
   groupFilter: string
+  groupTags: Tag[]
+  labelTag: (id: string, preferType?: string) => string
   onToggle: () => void
   onGroup: (id: string) => void
   onLan: (uuid: string) => void
   onPort: (macs: string[]) => void
   onSelectDevice?: (d: Device) => void
   wakeReady: boolean
-  wakeBusy: string | null
+  actionBusy: string | null
   onWake: (d: Device) => void
+  onRename: (d: Device) => void
+  onSetGroup: (d: Device, tagId: string | null) => void
+  onToggleAdblock: (d: Device) => void
+  onToggleFamily: (d: Device) => void
+  onToggleIsolation: (d: Device) => void
+  onToggleEmergency: (d: Device) => void
 }) {
   const onFilter = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -531,18 +735,95 @@ function DeviceGroup({
               </TableRow>
             )
             if (!wakeReady) return <Fragment key={row.d.mac}>{rowEl}</Fragment>
+            const busy = actionBusy != null
             return (
               <ContextMenu.Root key={row.d.mac}>
                 <ContextMenu.Trigger asChild>{rowEl}</ContextMenu.Trigger>
                 <ContextMenu.Portal>
-                  <ContextMenu.Content className="z-50 min-w-36 rounded-lg border bg-popover py-1 shadow-md">
+                  <ContextMenu.Content className="z-50 min-w-44 rounded-lg border bg-popover py-1 shadow-md">
                     <ContextMenu.Item
-                      className="cursor-pointer px-3 py-1.5 text-sm outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent"
-                      disabled={wakeBusy != null}
+                      className={menuItemCls}
+                      disabled={busy}
                       onSelect={() => onWake(row.d)}
                     >
                       Wake
                     </ContextMenu.Item>
+                    <ContextMenu.Item
+                      className={menuItemCls}
+                      disabled={busy}
+                      onSelect={() => onRename(row.d)}
+                    >
+                      Rename…
+                    </ContextMenu.Item>
+                    <ContextMenu.Sub>
+                      <ContextMenu.SubTrigger className={menuItemCls} disabled={busy}>
+                        Set group…
+                      </ContextMenu.SubTrigger>
+                      <ContextMenu.Portal>
+                        <ContextMenu.SubContent className="z-50 min-w-36 rounded-lg border bg-popover py-1 shadow-md">
+                          <ContextMenu.Item
+                            className={menuItemCls}
+                            disabled={busy}
+                            onSelect={() => onSetGroup(row.d, null)}
+                          >
+                            None
+                          </ContextMenu.Item>
+                          {groupTags.map((t) => (
+                            <ContextMenu.Item
+                              key={t.id}
+                              className={menuItemCls}
+                              disabled={busy}
+                              onSelect={() => onSetGroup(row.d, t.id)}
+                            >
+                              {labelTag(t.id, 'group') !== t.id
+                                ? labelTag(t.id, 'group')
+                                : t.name || t.id}
+                            </ContextMenu.Item>
+                          ))}
+                        </ContextMenu.SubContent>
+                      </ContextMenu.Portal>
+                    </ContextMenu.Sub>
+                    <ContextMenu.Separator className="my-1 h-px bg-border" />
+                    <ContextMenu.Item
+                      className={menuItemCls}
+                      disabled={busy}
+                      onSelect={() => onToggleAdblock(row.d)}
+                    >
+                      Adblock on/off
+                    </ContextMenu.Item>
+                    <ContextMenu.Item
+                      className={menuItemCls}
+                      disabled={busy}
+                      onSelect={() => onToggleFamily(row.d)}
+                    >
+                      Family on/off
+                    </ContextMenu.Item>
+                    <ContextMenu.Item
+                      className={menuItemCls}
+                      disabled={busy}
+                      onSelect={() => void onToggleIsolation(row.d)}
+                    >
+                      Isolate…
+                    </ContextMenu.Item>
+                    <ContextMenu.Item
+                      className={menuItemCls}
+                      disabled={busy}
+                      onSelect={() => void onToggleEmergency(row.d)}
+                    >
+                      Emergency…
+                    </ContextMenu.Item>
+                    {onSelectDevice ? (
+                      <>
+                        <ContextMenu.Separator className="my-1 h-px bg-border" />
+                        <ContextMenu.Item
+                          className={menuItemCls}
+                          disabled={busy}
+                          onSelect={() => onSelectDevice(row.d)}
+                        >
+                          Open device
+                        </ContextMenu.Item>
+                      </>
+                    ) : null}
                   </ContextMenu.Content>
                 </ContextMenu.Portal>
               </ContextMenu.Root>
