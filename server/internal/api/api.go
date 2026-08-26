@@ -282,11 +282,18 @@ func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no tags yet", http.StatusNotFound)
 		return
 	}
+	caps := fwapp.DefaultRulesCapabilities()
 	out := map[string]any{
 		"ts":     view.TS,
 		"host":   view.Host,
 		"tags":   view.Tags,
 		"source": prov.Source,
+		"capabilities": map[string]bool{
+			"host.group": caps["host.group"],
+			"tag.create": caps["tag.create"],
+			"tag.rename": caps["tag.rename"],
+			"tag.delete": caps["tag.delete"],
+		},
 	}
 	attachProvenance(out, prov)
 	writeJSON(w, http.StatusOK, out)

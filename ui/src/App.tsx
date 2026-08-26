@@ -79,6 +79,7 @@ import {
   type SeenId,
   type Tab,
   type Tag,
+  type TagCapabilities,
   type TopoView,
   type ViewMode,
   type UnifiConsole,
@@ -155,6 +156,7 @@ function App() {
   const [simTick, setSimTick] = useState(0)
   const [policies, setPolicies] = useState<Policy[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [tagCaps, setTagCaps] = useState<TagCapabilities>({})
   const [invMeta, setInvMeta] = useState<{ ts?: number; host?: string }>({})
   const [error, setError] = useState<string | null>(null)
   const [seenId, setSeenId] = useState<SeenId>('1w')
@@ -354,8 +356,11 @@ function App() {
         }
 
         if (gRes.ok) {
-          const data = (await gRes.json()) as { tags: Tag[] }
-          if (!cancelled) setTags(data.tags ?? [])
+          const data = (await gRes.json()) as { tags: Tag[]; capabilities?: TagCapabilities }
+          if (!cancelled) {
+            setTags(data.tags ?? [])
+            setTagCaps(data.capabilities ?? {})
+          }
         }
 
         if (healthRes.ok) {
@@ -563,6 +568,7 @@ function App() {
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [groupTags, showDevices, afUsers])
+  void tagCaps
 
   const setMode = (mode: ViewMode) => {
     setModes((prev) => ({ ...prev, [tab]: mode }))
