@@ -29,6 +29,29 @@ type FeaturesView = {
   }
 }
 
+type FeaturesResponse = {
+  status?: Partial<FeaturesView['status']>
+  features?: Feature[] | null
+  dns?: Partial<FeaturesView['dns']> | null
+  error?: string
+}
+
+export function normalizeFeaturesView(body: FeaturesResponse): FeaturesView {
+  return {
+    status: {
+      state: typeof body.status?.state === 'string' ? body.status.state : '',
+    },
+    features: Array.isArray(body.features) ? body.features : [],
+    dns: {
+      unbound_summary:
+        typeof body.dns?.unbound_summary === 'string' ? body.dns.unbound_summary : '',
+      doh_enabled: body.dns?.doh_enabled === true,
+      doh_selected: Array.isArray(body.dns?.doh_selected) ? body.dns.doh_selected : [],
+      config_writable: body.dns?.config_writable === true,
+    },
+  }
+}
+
 function Meta({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 px-6 py-3 text-sm">
@@ -62,25 +85,17 @@ export function FeaturesDNSSettingsPage({ onBack }: { onBack: () => void }) {
     setError(null)
     try {
       const r = await api('/v1/fw-app/features')
-      const body = (await r.json().catch(() => ({}))) as Partial<FeaturesView> & {
-        error?: string
+      const body = (await r.json().catch(() => ({}))) as FeaturesResponse
+      if (!r.ok) {
+        if (body.status) {
+          const status = normalizeFeaturesView({ status: body.status }).status
+          setView((current) =>
+            current ? { ...current, status } : normalizeFeaturesView({ status }),
+          )
+        }
+        throw new Error(body.error || `features ${r.status}`)
       }
-      if (body.status) {
-        setView((current) => ({
-          status: body.status!,
-          features: body.features ?? current?.features ?? [],
-          dns:
-            body.dns ??
-            current?.dns ?? {
-              unbound_summary: 'off',
-              doh_enabled: false,
-              doh_selected: [],
-              config_writable: false,
-            },
-        }))
-      }
-      if (!r.ok) throw new Error(body.error || `features ${r.status}`)
-      setView(body as FeaturesView)
+      setView(normalizeFeaturesView(body))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'load failed')
     } finally {
@@ -106,16 +121,17 @@ export function FeaturesDNSSettingsPage({ onBack }: { onBack: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
       })
-      const body = (await r.json().catch(() => ({}))) as Partial<FeaturesView> & {
-        error?: string
-      }
+      const body = (await r.json().catch(() => ({}))) as FeaturesResponse
       if (!r.ok) {
         if (body.status) {
-          setView((current) => (current ? { ...current, status: body.status! } : current))
+          const status = normalizeFeaturesView({ status: body.status }).status
+          setView((current) =>
+            current ? { ...current, status } : normalizeFeaturesView({ status }),
+          )
         }
         throw new Error(body.error || `save ${r.status}`)
       }
-      setView(body as FeaturesView)
+      setView(normalizeFeaturesView(body))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'save failed')
     } finally {
@@ -137,7 +153,7 @@ export function FeaturesDNSSettingsPage({ onBack }: { onBack: () => void }) {
           <ArrowLeft className="size-4" />
           Back
         </button>
-        <h1 className="text-lg font-semibold tracking-tight">Features &amp; DNS</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Features & DNS</h1>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
