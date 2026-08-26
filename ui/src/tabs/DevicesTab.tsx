@@ -60,6 +60,7 @@ export function DevicesTab({
   stale,
   reason,
   groupFilter,
+  groupTagType = 'group',
   lanFilter,
   switchMacs,
   switches,
@@ -80,6 +81,7 @@ export function DevicesTab({
   stale?: boolean
   reason?: string
   groupFilter: string
+  groupTagType?: 'group' | 'user' | 'device'
   lanFilter: string
   switchMacs: string[]
   switches: Switch[]
@@ -187,14 +189,21 @@ export function DevicesTab({
   const scoped = useMemo(
     () =>
       visibleDevices.filter((d) => {
-        if (groupFilter && !(d.tag_ids ?? []).includes(groupFilter) && !(d.user_tag_ids ?? []).includes(groupFilter)) {
-          return false
+        if (groupFilter) {
+          const inTag =
+            groupTagType === 'device'
+              ? (d.device_tag_ids ?? []).includes(groupFilter)
+              : groupTagType === 'user'
+                ? (d.user_tag_ids ?? []).includes(groupFilter)
+                : (d.tag_ids ?? []).includes(groupFilter) ||
+                  (d.user_tag_ids ?? []).includes(groupFilter)
+          if (!inTag) return false
         }
         if (lanFilter && d.intf_uuid !== lanFilter) return false
         if (switchMacs.length > 0 && !switchMacs.includes(d.mac.toUpperCase())) return false
         return true
       }),
-    [visibleDevices, groupFilter, lanFilter, switchMacs],
+    [visibleDevices, groupFilter, groupTagType, lanFilter, switchMacs],
   )
 
   const rows = useMemo(() => {
