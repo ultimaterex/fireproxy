@@ -5,6 +5,14 @@ name: PR Build
 on:
   pull_request:
     branches: [main, master]
+    paths:
+      - "agent/**"
+      - "server/**"
+      - "pkg/**"
+      - "go.work*"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/pr-build.yml"
 
 permissions:
   contents: read

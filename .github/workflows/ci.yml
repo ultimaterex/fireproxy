@@ -14,8 +14,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      ui: ${{ steps.filter.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'pkg/**'
+              - 'agent/**'
+              - 'server/**'
+              - 'go.work*'
+              - 'go.sum'
+              - '.github/workflows/ci.yml'
+            ui:
+              - 'ui/**'
+              - '.github/workflows/ci.yml'
+
   go:
     name: Go (test / vet / fmt)
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +71,8 @@ jobs:
 
   ui:
     name: UI (lint / build)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
