@@ -18,8 +18,8 @@ jobs:
     name: Build binaries (artifact)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "stable"
       - name: Version label
@@ -39,7 +39,7 @@ jobs:
           build agent  linux arm64 fireproxy/agent/cmd/fireproxy-agent
           build server linux amd64 fireproxy/server/cmd/fireproxy-server
           ls -l dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pr-${{ github.event.number }}-binaries
           path: dist/*
