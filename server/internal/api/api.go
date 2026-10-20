@@ -256,11 +256,24 @@ func (s *Server) network(w http.ResponseWriter, r *http.Request) {
 			nets = append(nets, n)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"ts":      cat.TS,
 		"host":    cat.Host,
 		"network": nets,
-	})
+	}
+	extrasOK := false
+	var snap fwapp.ObservatorySnapshot
+	var extrasAt time.Time
+	if s.FWApp != nil {
+		if s2, at, ok := s.FWApp.ObservatorySnapshot(); ok {
+			snap, extrasOK = s2, true
+			extrasAt = at
+		}
+	}
+	for k, v := range multiWANNetworkExtrasAt(snap, extrasAt, extrasOK, time.Now()) {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) policies(w http.ResponseWriter, r *http.Request) {

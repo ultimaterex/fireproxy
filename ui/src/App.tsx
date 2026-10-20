@@ -41,6 +41,7 @@ import {
   anonymizeTags,
   anonymizeTopo,
   anonymizeUnifi,
+  anonymizeVirtWans,
   anonymizeWireless,
   createAnon,
   lanCidrsFromNetwork,
@@ -72,6 +73,7 @@ import {
   type LatestView,
   type ModuleInfo,
   type NetIface,
+  type NetworkView,
   type PersistInfo,
   type AgentHealth,
   type Policy,
@@ -149,6 +151,7 @@ function App() {
   const [history, setHistory] = useState<HistoryPoint[]>([])
   const [devices, setDevices] = useState<Device[]>([])
   const [network, setNetwork] = useState<NetIface[]>([])
+  const [networkExtras, setNetworkExtras] = useState<Omit<NetworkView, 'network'>>({})
   const [topoView, setTopoView] = useState<TopoView | null>(null)
   const [wireless, setWireless] = useState<WirelessView | null>(null)
   const [audit, setAudit] = useState<AuditView | null>(null)
@@ -309,8 +312,17 @@ function App() {
         }
 
         if (nRes.ok) {
-          const data = (await nRes.json()) as { network: NetIface[] }
-          if (!cancelled) setNetwork(data.network ?? [])
+          const data = (await nRes.json()) as NetworkView
+          if (!cancelled) {
+            setNetwork(data.network ?? [])
+            setNetworkExtras({
+              extras_provenance: data.extras_provenance,
+              features: data.features,
+              wan_test: data.wan_test,
+              virt_wans: data.virt_wans,
+              capabilities: data.capabilities,
+            })
+          }
         }
 
         if (tRes.ok) {
@@ -439,6 +451,13 @@ function App() {
   const showNetwork = useMemo(
     () => (anon ? anonymizeNetwork(anon, network) : network),
     [anon, network],
+  )
+  const showVirtWans = useMemo(
+    () =>
+      anon && networkExtras.virt_wans
+        ? anonymizeVirtWans(anon, networkExtras.virt_wans)
+        : networkExtras.virt_wans,
+    [anon, networkExtras.virt_wans],
   )
   const showDevices = useMemo(
     () => (anon ? anonymizeDevices(anon, devices, cidrs) : devices),
@@ -1209,7 +1228,18 @@ function App() {
           )}
 
           {tab === 'network' && (
-            <NetworkTab network={showNetwork} wanType={wanType} anon={anon} refreshKey={nowMs} onSelectLan={goDevicesLan} />
+            <NetworkTab
+              network={showNetwork}
+              wanType={wanType}
+              anon={anon}
+              refreshKey={nowMs}
+              features={networkExtras.features}
+              extrasProvenance={networkExtras.extras_provenance}
+              wanTest={networkExtras.wan_test}
+              virtWans={showVirtWans}
+              nowMs={nowMs}
+              onSelectLan={goDevicesLan}
+            />
           )}
 
           {tab === 'legacy' && debugOn && (

@@ -18,6 +18,7 @@ import type {
   TopoNode,
   TopoView,
   UnifiConsole,
+  VirtWAN,
   VPNInventory,
   VPNClientProfile,
   VPNPeer,
@@ -779,6 +780,13 @@ export function anonymizeNetwork(anon: Anon, ifaces: NetIface[]): NetIface[] {
       subnet: fake ?? (n.subnet ? anon.fakeCIDR(n.subnet) : n.subnet),
     }
   })
+}
+
+export function anonymizeVirtWans(anon: Anon, virtWans: VirtWAN[]): VirtWAN[] {
+  return virtWans.map((wan) => ({
+    ...wan,
+    name: wan.name ? anon.fakeISP(wan.name) : wan.name,
+  }))
 }
 
 export function anonymizeVPN(anon: Anon, vpn: VPNInventory): VPNInventory {
