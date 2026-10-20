@@ -1,5 +1,4 @@
 import { ArrowLeftRight, EthernetPort, Shuffle, Wifi } from 'lucide-react'
-import { useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +20,7 @@ type NetworkTabProps = {
   features?: WanFeatures
   wanTest?: WanTest
   virtWans?: VirtWAN[]
+  nowMs: number
   onSelectLan: (uuid: string) => void
 }
 
@@ -30,6 +30,7 @@ export function NetworkTab({
   features,
   wanTest,
   virtWans,
+  nowMs,
   onSelectLan,
 }: NetworkTabProps) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
@@ -83,7 +84,7 @@ export function NetworkTab({
             </div>
           )}
           {virtWans?.length ? <VirtWanStrip virtWans={virtWans} /> : null}
-          {wanTest ? <WanTestStrip wanTest={wanTest} /> : null}
+          {wanTest ? <WanTestStrip wanTest={wanTest} nowMs={nowMs} /> : null}
         </CardContent>
       </Card>
     </div>
@@ -116,9 +117,7 @@ function VirtWanStrip({ virtWans }: { virtWans: VirtWAN[] }) {
   )
 }
 
-function WanTestStrip({ wanTest }: { wanTest: WanTest }) {
-  const [nowMs] = useState(() => Date.now())
-
+function WanTestStrip({ wanTest, nowMs }: { wanTest: WanTest; nowMs: number }) {
   return (
     <div className="space-y-1 border-t border-dashed px-6 py-3 text-xs text-muted-foreground">
       <div>

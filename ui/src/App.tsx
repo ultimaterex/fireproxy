@@ -1229,6 +1229,7 @@ function App() {
               features={networkExtras.features}
               wanTest={networkExtras.wan_test}
               virtWans={showVirtWans}
+              nowMs={nowMs}
               onSelectLan={goDevicesLan}
             />
           )}
