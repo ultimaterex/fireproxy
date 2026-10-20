@@ -69,15 +69,27 @@
   "screentimeRules": [
     {
       "pid": "2001",
-      "action": "block",
+      "action": "screentime",
       "type": "category",
       "target": "social",
-      "direction": "outbound",
+      "threshold": 120,
+      "offset": 7200,
       "disabled": "0",
-      "scope": ["AA:BB:CC:DD:EE:01"],
+      "scope": ["mac:AA:BB:CC:DD:EE:01"],
       "hitCount": "0",
       "timestamp": "1700000050.0",
       "_name": "Kids social limit"
+    },
+    {
+      "pid": "2002",
+      "action": "screentime",
+      "type": "app",
+      "target": "youtube",
+      "threshold": 45,
+      "disabled": "0",
+      "scope": ["tag:10"],
+      "timestamp": "1700000060.0",
+      "_name": "Kids YouTube"
     }
   ],
   "ruleGroups": [

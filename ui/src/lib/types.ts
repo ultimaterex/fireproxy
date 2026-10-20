@@ -298,6 +298,8 @@ export type FwAppRule = {
   method?: string
   alarmType?: string
   readOnly?: boolean
+  thresholdMinutes?: number
+  offsetSeconds?: number
 }
 
 export type FwAppExceptionRule = {

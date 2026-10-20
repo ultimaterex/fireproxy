@@ -96,6 +96,14 @@ func (s *Service) policyIDCmd(ctx context.Context, item, pid string) error {
 	if pid == "" {
 		return fmt.Errorf("policy id required")
 	}
+	// A policy ID is not sufficient to address a screentime rule safely.
+	if snap, _, ok := s.RulesSnapshot(); ok {
+		for _, rule := range snap.Rules {
+			if rule.ID == pid && rule.Section == RuleSectionTimelimit {
+				return fmt.Errorf("screentime rules are read-only")
+			}
+		}
+	}
 	if _, err := s.sendCmd(ctx, map[string]any{
 		"item":  item,
 		"value": map[string]any{"policyID": pid},
