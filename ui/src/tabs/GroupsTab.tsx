@@ -96,6 +96,7 @@ export function GroupsTab({
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [busyMac, setBusyMac] = useState<string | null>(null)
   const [addKey, setAddKey] = useState(0)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     if (typeFilter === 'all') return groups
@@ -132,10 +133,11 @@ export function GroupsTab({
   async function setMembership(device: Device, next: string[]) {
     if (!onSetHostTags) return
     setBusyMac(device.mac)
+    setMutationError(null)
     try {
       await onSetHostTags(device.mac, next)
-    } catch {
-      // The application reports the mutation error; keep rejected UI actions handled.
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : 'Group update failed')
     } finally {
       setBusyMac(null)
     }
@@ -262,6 +264,7 @@ export function GroupsTab({
         </div>
       </CardHeader>
       <CardContent className="px-0">
+        {mutationError ? <p role="alert" className="px-6 py-3 text-sm text-destructive">{mutationError}</p> : null}
         {writable ? (
           <div className="flex items-center gap-2 border-b px-6 py-3">
             <Select
