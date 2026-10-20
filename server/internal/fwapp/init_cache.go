@@ -58,6 +58,15 @@ func (c *ObservatoryCache) Clear() {
 
 func cloneObservatorySnapshot(in ObservatorySnapshot) ObservatorySnapshot {
 	out := in
+	out.WGPeers = append([]InitWGPeer(nil), in.WGPeers...)
+	out.AWGPeers = append([]InitWGPeer(nil), in.AWGPeers...)
+	out.WGClients = append([]InitWGClient(nil), in.WGClients...)
+	if in.ClientProfiles != nil {
+		out.ClientProfiles = append([]InitVPNClientFamily(nil), in.ClientProfiles...)
+		for i := range out.ClientProfiles {
+			out.ClientProfiles[i].Profiles = append([]InitVPNClientProfile(nil), in.ClientProfiles[i].Profiles...)
+		}
+	}
 	if in.NewAlarms != nil {
 		out.NewAlarms = append([]AlarmSample(nil), in.NewAlarms...)
 	}
