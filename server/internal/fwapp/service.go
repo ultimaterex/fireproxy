@@ -674,6 +674,7 @@ func (s *Service) Unpair() error {
 	s.obsCache.Clear()
 	s.preferInitUntil = time.Time{}
 	s.clearPersistedRulesCache()
+	s.clearPersistedObservatoryCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""
