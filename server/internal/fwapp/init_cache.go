@@ -169,7 +169,7 @@ func (g *initFlight) Do(key string, fn func() error) error {
 	return c.err
 }
 
-// EnsureInit fills rules + observatory caches from one LAN init when cold or past TTL.
+// EnsureInit fills rules, observatory, and features caches from one LAN init when cold or past TTL.
 // Concurrent callers share a single in-flight FetchInit.
 func (s *Service) EnsureInit(ctx context.Context) error {
 	if !s.secretsReady() {
@@ -194,8 +194,27 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 }
 
 // ObservatorySnapshot returns the cached observatory read model. ok is false when empty.
+// Falls back to a persisted SQLite/KV snapshot so restarts don't require a full LAN init.
 func (s *Service) ObservatorySnapshot() (ObservatorySnapshot, time.Time, bool) {
-	return s.obsCache.Get()
+	if snap, at, ok := s.obsCache.Get(); ok {
+		return snap, at, true
+	}
+	return s.hydrateObservatoryCacheFromStore()
+}
+
+// ColdStart hydrates Rules + observatory from KV when paired, then runs one EnsureInit.
+// No retry loop or background poll. Safe at process start; EnsureInit errors leave hydrate in place.
+func (s *Service) ColdStart(ctx context.Context) {
+	if s == nil || !s.secretsReady() {
+		return
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil || !ok || c.SymKey == "" {
+		return
+	}
+	_, _, _ = s.hydrateRulesCacheFromStore()
+	_, _, _ = s.hydrateObservatoryCacheFromStore()
+	_ = s.EnsureInit(ctx)
 }
 
 func (s *Service) initCacheWarm() bool {
@@ -206,8 +225,7 @@ func (s *Service) initCacheWarm() bool {
 	return time.Since(at) < InitCacheTTL
 }
 
-// fetchAndApplyInit performs one LAN FetchInit, parses rules + observatory, updates both caches,
-// and persists the Rules snapshot (observatory is memory-only for now).
+// fetchAndApplyInit refreshes init-backed views and persists Rules and observatory.
 func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
@@ -237,6 +255,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	featuresView, err := ParseInitFeatures(raw)
+	if err != nil {
+		return err
+	}
 	at := time.Now().UTC()
 	// Re-check pairing under the same lock Unpair uses so a concurrent
 	// Unpair cannot Clear then lose to a late Set.
@@ -252,12 +274,14 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	}
 	s.rules.Set(rulesSnap, at)
 	s.obsCache.Set(obsSnap, at)
+	s.features.Set(featuresView, at)
 	s.lastPingOK = true
 	s.lastPingAt = at
 	s.state = "lan-ok"
 	s.lastErr = ""
 	s.mu.Unlock()
 	s.persistRulesCache(rulesSnap, at)
+	s.persistObservatoryCache(obsSnap, at)
 	return nil
 }
 
