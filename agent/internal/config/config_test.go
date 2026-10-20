@@ -41,7 +41,7 @@ func TestLoadFromEnvDefaults(t *testing.T) {
 
 func TestLoadFromEnvFloorInterval(t *testing.T) {
 	t.Setenv("PUSH_URL", "http://example/v1/ingest")
-	t.Setenv("INTERVAL", "5s")
+	t.Setenv("INTERVAL", "50ms")
 	cfg, err := LoadFromEnv()
 	if err != nil {
 		t.Fatal(err)
