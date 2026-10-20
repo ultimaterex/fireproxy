@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/ultimaterex/fireproxy/compare/v0.4.0...v0.5.0) (2026-10-20)
+
+
+### Features
+
+* **ui:** responsive navigation bar and brand identity ([e86bea8](https://github.com/ultimaterex/fireproxy/commit/e86bea8cb0d6780f029d6ae9a4b7cd6f757612e8))
+
+
+### Bug Fixes
+
+* **agent,ui:** restore speedtest and monthly usage for default WAN interface ([cfb395a](https://github.com/ultimaterex/fireproxy/commit/cfb395a7feb349c0cdea40c0fcfdf2e2c8e7dbc4))
+
 ## [0.4.0](https://github.com/ultimaterex/fireproxy/compare/v0.3.0...v0.4.0) (2026-10-20)
 
 
