@@ -194,8 +194,27 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 }
 
 // ObservatorySnapshot returns the cached observatory read model. ok is false when empty.
+// Falls back to a persisted SQLite/KV snapshot so restarts don't require a full LAN init.
 func (s *Service) ObservatorySnapshot() (ObservatorySnapshot, time.Time, bool) {
-	return s.obsCache.Get()
+	if snap, at, ok := s.obsCache.Get(); ok {
+		return snap, at, true
+	}
+	return s.hydrateObservatoryCacheFromStore()
+}
+
+// ColdStart hydrates Rules + observatory from KV when paired, then runs one EnsureInit.
+// No retry loop or background poll. Safe at process start; EnsureInit errors leave hydrate in place.
+func (s *Service) ColdStart(ctx context.Context) {
+	if s == nil || !s.secretsReady() {
+		return
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil || !ok || c.SymKey == "" {
+		return
+	}
+	_, _, _ = s.hydrateRulesCacheFromStore()
+	_, _, _ = s.hydrateObservatoryCacheFromStore()
+	_ = s.EnsureInit(ctx)
 }
 
 func (s *Service) initCacheWarm() bool {
@@ -207,7 +226,7 @@ func (s *Service) initCacheWarm() bool {
 }
 
 // fetchAndApplyInit performs one LAN FetchInit, parses rules + observatory, updates both caches,
-// and persists the Rules snapshot (observatory is memory-only for now).
+// and persists both Rules and observatory snapshots.
 func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
@@ -258,6 +277,7 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	s.lastErr = ""
 	s.mu.Unlock()
 	s.persistRulesCache(rulesSnap, at)
+	s.persistObservatoryCache(obsSnap, at)
 	return nil
 }
 
