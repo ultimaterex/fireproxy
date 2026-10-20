@@ -170,6 +170,7 @@ export function DeviceDetail({
   port,
   groupLabel,
   tags = [],
+  writesAllowed = true,
   labelTag,
   unifi,
   domainSuffix,
@@ -182,6 +183,7 @@ export function DeviceDetail({
   lan?: NetIface
   port?: PortLoc
   groupLabel?: string
+  writesAllowed?: boolean
   tags?: Tag[]
   labelTag?: (id: string, preferType?: string) => string
   unifi?: ModuleInfo | null
@@ -196,7 +198,8 @@ export function DeviceDetail({
   )
   const wireless = !!(device.ssid || device.band || device.ap_mac)
   const suffix = normalizeDomainSuffix(domainSuffix)
-  const [controlReady, setControlReady] = useState(false)
+  const [controlAvailable, setControlReady] = useState(false)
+  const controlReady = writesAllowed && controlAvailable
   const [wakeBusy, setWakeBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState(device.name)
@@ -396,6 +399,8 @@ export function DeviceDetail({
     monitor?: boolean
     isolation?: boolean
     emergency?: boolean
+    adblock?: boolean
+    family?: boolean
     note?: string
     tags?: string[]
   }) {
@@ -656,12 +661,42 @@ export function DeviceDetail({
                 </div>
               </div>
               <div className={ROW}>
+                <div className="text-muted-foreground">Adblock device override<div className="text-xs">{hostPol.adblock ? 'Enabled on this device' : 'Inherited or excluded; effective protection may differ'}</div></div>
+                <div className="flex justify-end">
+                  <Toggle
+                    aria-label={hostPol.adblock ? 'Adblock: use inherited policy' : 'Adblock: enable device override'}
+                    checked={!!hostPol.adblock}
+                    disabled={polBusy}
+                    onCheckedChange={(v) => void setPolicy({ adblock: v })}
+                  />
+                </div>
+              </div>
+              <div className={ROW}>
+                <div className="text-muted-foreground">Family device override<div className="text-xs">{hostPol.family ? 'Enabled on this device' : 'Inherited or excluded; effective protection may differ'}</div></div>
+                <div className="flex justify-end">
+                  <Toggle
+                    aria-label={hostPol.family ? 'Family: use inherited policy' : 'Family: enable device override'}
+                    checked={!!hostPol.family}
+                    disabled={polBusy}
+                    onCheckedChange={(v) => void setPolicy({ family: v })}
+                  />
+                </div>
+              </div>
+              <div className={ROW}>
                 <div className="text-muted-foreground">Device Isolation</div>
                 <div className="flex justify-end">
                   <Toggle
                     checked={hostPol.isolated}
                     disabled={polBusy}
-                    onCheckedChange={(v) => void setPolicy({ isolation: v })}
+                    onCheckedChange={(v) => {
+                      const ok = window.confirm(
+                        v
+                          ? 'Isolate this device from the internet?'
+                          : 'Remove isolation for this device?',
+                      )
+                      if (!ok) return
+                      void setPolicy({ isolation: v })
+                    }}
                   />
                 </div>
               </div>
@@ -671,7 +706,15 @@ export function DeviceDetail({
                   <Toggle
                     checked={!!hostPol.emergency}
                     disabled={polBusy}
-                    onCheckedChange={(v) => void setPolicy({ emergency: v })}
+                    onCheckedChange={(v) => {
+                      const ok = window.confirm(
+                        v
+                          ? 'Enable emergency access (bypass host ACLs)?'
+                          : 'Disable emergency access?',
+                      )
+                      if (!ok) return
+                      void setPolicy({ emergency: v })
+                    }}
                   />
                 </div>
               </div>
@@ -784,16 +827,17 @@ export function DeviceDetail({
   )
 }
 
-function applyPolicyPatchOptimistic(
-  cur: FwAppHostPolicy,
-  patch: {
-    monitor?: boolean
-    isolation?: boolean
-    emergency?: boolean
-    note?: string
-    tags?: string[]
-  },
-): FwAppHostPolicy {
+type HostPolicyPatch = {
+  monitor?: boolean
+  isolation?: boolean
+  emergency?: boolean
+  adblock?: boolean
+  family?: boolean
+  note?: string
+  tags?: string[]
+}
+
+function applyPolicyPatchOptimistic(cur: FwAppHostPolicy, patch: HostPolicyPatch): FwAppHostPolicy {
   let monitor = cur.monitor
   let emergency = !!cur.emergency
   if (patch.emergency === true) {
@@ -813,6 +857,8 @@ function applyPolicyPatchOptimistic(
     monitor,
     emergency,
     isolated: patch.isolation ?? cur.isolated,
+    adblock: patch.adblock ?? cur.adblock,
+    family: patch.family ?? cur.family,
     note: patch.note ?? cur.note,
     tags: patch.tags ?? cur.tags,
   }
@@ -821,34 +867,21 @@ function applyPolicyPatchOptimistic(
 function pickHostPolicy(
   fetched: FwAppHostPolicy | undefined,
   posted: FwAppHostPolicy | undefined,
-  patch: {
-    monitor?: boolean
-    isolation?: boolean
-    emergency?: boolean
-    note?: string
-    tags?: string[]
-  },
+  patch: HostPolicyPatch,
 ): FwAppHostPolicy | undefined {
   if (fetched && hostPolicyMatchesPatch(fetched, patch)) return fetched
   if (posted && hostPolicyMatchesPatch(posted, patch)) return posted
   return posted ?? fetched
 }
 
-function hostPolicyMatchesPatch(
-  pol: FwAppHostPolicy,
-  patch: {
-    monitor?: boolean
-    isolation?: boolean
-    emergency?: boolean
-    note?: string
-    tags?: string[]
-  },
-): boolean {
+function hostPolicyMatchesPatch(pol: FwAppHostPolicy, patch: HostPolicyPatch): boolean {
   if (patch.emergency != null && !!pol.emergency !== patch.emergency) return false
   if (patch.emergency === true && patch.monitor == null && pol.monitor) return false
   if (patch.monitor === true && patch.emergency == null && pol.emergency) return false
   if (patch.monitor != null && pol.monitor !== patch.monitor) return false
   if (patch.isolation != null && pol.isolated !== patch.isolation) return false
+  if (patch.adblock != null && !!pol.adblock !== patch.adblock) return false
+  if (patch.family != null && !!pol.family !== patch.family) return false
   if (patch.note != null && (pol.note ?? '') !== patch.note) return false
   if (patch.tags != null && (pol.tags ?? []).join('\0') !== patch.tags.join('\0')) return false
   return true
