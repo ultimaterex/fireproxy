@@ -2,9 +2,44 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"fireproxy/server/internal/fwapp"
+	"fireproxy/server/internal/observatory"
 )
+
+func TestMultiWANExtrasAgeAndProvenance(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	snap := fwapp.ObservatorySnapshot{VirtWANs: []fwapp.InitVirtWAN{{Name: "test"}}}
+	for _, tc := range []struct {
+		name              string
+		at                time.Time
+		ok, usable, stale bool
+	}{
+		{"fresh", now.Add(-time.Minute), true, true, false},
+		{"ttl", now.Add(-fwapp.InitCacheTTL), true, true, true},
+		{"max age", now.Add(-24 * time.Hour), true, true, true},
+		{"expired", now.Add(-24*time.Hour - time.Second), true, false, false},
+		{"missing timestamp", time.Time{}, true, false, false},
+		{"future timestamp", now.Add(time.Second), true, false, false},
+		{"missing cache", now, false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := multiWANNetworkExtrasAt(snap, tc.at, tc.ok, now)
+			prov, exists := got["extras_provenance"].(observatory.Provenance)
+			_, hasData := got["virt_wans"]
+			if exists != tc.usable || hasData != tc.usable {
+				t.Fatalf("unexpected extras: %#v", got)
+			}
+			if exists && (prov.Source != observatory.SourceFWAppInit || !prov.FetchedAt.Equal(tc.at) || prov.Stale != tc.stale) {
+				t.Fatalf("provenance: %#v", prov)
+			}
+			if _, exists := got["ts"]; exists {
+				t.Fatal("extras must not override catalog timestamp")
+			}
+		})
+	}
+}
 
 func TestMultiWANNetworkExtrasWithoutSnapshot(t *testing.T) {
 	got := multiWANNetworkExtras(fwapp.ObservatorySnapshot{}, false)

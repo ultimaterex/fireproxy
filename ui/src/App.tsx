@@ -316,6 +316,7 @@ function App() {
           if (!cancelled) {
             setNetwork(data.network ?? [])
             setNetworkExtras({
+              extras_provenance: data.extras_provenance,
               features: data.features,
               wan_test: data.wan_test,
               virt_wans: data.virt_wans,
@@ -1227,6 +1228,7 @@ function App() {
               network={showNetwork}
               wanType={wanType}
               features={networkExtras.features}
+              extrasProvenance={networkExtras.extras_provenance}
               wanTest={networkExtras.wan_test}
               virtWans={showVirtWans}
               nowMs={nowMs}

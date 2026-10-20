@@ -261,13 +261,14 @@ func (s *Server) network(w http.ResponseWriter, r *http.Request) {
 	}
 	extrasOK := false
 	var snap fwapp.ObservatorySnapshot
+	var extrasAt time.Time
 	if s.FWApp != nil {
 		if s2, at, ok := s.FWApp.ObservatorySnapshot(); ok {
 			snap, extrasOK = s2, true
-			_ = at
+			extrasAt = at
 		}
 	}
-	for k, v := range multiWANNetworkExtras(snap, extrasOK) {
+	for k, v := range multiWANNetworkExtrasAt(snap, extrasAt, extrasOK, time.Now()) {
 		out[k] = v
 	}
 	writeJSON(w, http.StatusOK, out)

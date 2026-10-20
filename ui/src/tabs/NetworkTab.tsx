@@ -1,10 +1,11 @@
 import { ArrowLeftRight, EthernetPort, Shuffle, Wifi } from 'lucide-react'
+import { SourceBadge } from '@/components/SourceBadge'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { fmtRelative, netLabel } from '@/lib/format'
 import { managerKind, portChips, wanTypeLabel, type PortChip } from '@/lib/ports'
-import type { NetIface, VirtWAN, WanFeatures, WanTest } from '@/lib/types'
+import type { NetIface, Provenance, VirtWAN, WanFeatures, WanTest } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const SECTION_HEADER = 'px-6 pt-6 pb-4'
@@ -18,6 +19,7 @@ type NetworkTabProps = {
   network: NetIface[]
   wanType?: string
   features?: WanFeatures
+  extrasProvenance?: Provenance
   wanTest?: WanTest
   virtWans?: VirtWAN[]
   nowMs: number
@@ -28,6 +30,7 @@ export function NetworkTab({
   network,
   wanType,
   features,
+  extrasProvenance,
   wanTest,
   virtWans,
   nowMs,
@@ -65,6 +68,12 @@ export function NetworkTab({
           <CardTitle className={SECTION_TITLE}>WAN</CardTitle>
           <CardAction>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {extrasProvenance ? (
+                <>
+                  <SourceBadge {...extrasProvenance} />
+                  {extrasProvenance.stale ? <Badge variant="outline">Stale extras</Badge> : null}
+                </>
+              ) : null}
               <FeatureChip value={features?.dual_wan} on="dual_wan" off="dual_wan off" />
               <FeatureChip
                 value={features?.single_wan_conn_check}

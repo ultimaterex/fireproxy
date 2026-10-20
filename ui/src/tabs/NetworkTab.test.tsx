@@ -24,4 +24,13 @@ describe('WAN last-test age', () => {
     expect(render(start + 125_000, wanTest)).toContain('eth1 · 5s')
     expect(render(start + 240_000, wanTest)).toContain('eth1 · 2m')
   })
+
+  it('marks stale init extras separately from the WAN interface data', () => {
+    const markup = renderToStaticMarkup(
+      <NetworkTab network={[]} nowMs={start} onSelectLan={() => {}}
+        extrasProvenance={{ source: 'fw-app-init', stale: true, reason: 'fallback' }} />,
+    )
+    expect(markup).toContain('Stale extras')
+    expect(markup).toContain('Fallback · control')
+  })
 })

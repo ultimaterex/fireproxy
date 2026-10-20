@@ -159,6 +159,7 @@ export type VirtWAN = {
 }
 
 export type NetworkView = {
+  extras_provenance?: Provenance
   network: NetIface[]
   features?: WanFeatures
   wan_test?: WanTest
