@@ -1318,7 +1318,7 @@ function App() {
           )}
 
           {tab === 'network' && (
-            <NetworkTab network={showNetwork} wanType={wanType} onSelectLan={goDevicesLan} />
+            <NetworkTab network={showNetwork} wanType={wanType} anon={anon} refreshKey={nowMs} onSelectLan={goDevicesLan} />
           )}
 
           {tab === 'legacy' && debugOn && (

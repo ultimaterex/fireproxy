@@ -8,6 +8,7 @@ import {
   anonymizeLogLines,
   anonymizeNameSync,
   anonymizeNetwork,
+  anonymizeVPN,
   anonymizeTags,
   anonymizeTopo,
   anonymizeWireless,
@@ -23,6 +24,41 @@ import {
   PHONE_NAMES,
   SWITCH_NAMES,
 } from './anonymity'
+import type { VPNInventory } from './types'
+
+describe('VPN anonymity', () => {
+  it('masks every inventory family without modifying fetched data used when toggled off', () => {
+    const profile = {
+      profile_id: 'private-profile', display_name: 'Private VPN profile', status: 'connected',
+      remote_ip: '203.0.113.77', local_ip: '10.20.30.7', message: 'Private VPN profile failed',
+    }
+    const raw: VPNInventory = {
+      host: 'Private firewall', ts: 1700000000, source: 'fw-app-init',
+      wg_peers: [{ name: 'Private peer', public_key: 'secret-public-key', intf: 'private-interface' }],
+      awg_peers: [{ name: 'Private AWG', public_key: 'secret-awg-key' }],
+      wg_clients: [profile], client_profiles: [{ family: 'wireguard', profiles: [profile] }],
+      vips: [{ uid: 'private-vip-id', name: 'Private VIP', ip: '10.20.30.8' }],
+      virt_wans: [{ uuid: 'private-group-id', name: 'Private group', wans: ['private-profile'], conn_state: '0/1 active' }],
+    }
+    const original = JSON.stringify(raw)
+    const masked = anonymizeVPN(A(), raw)
+    const serialized = JSON.stringify(masked)
+    for (const secret of ['Private', 'private-', 'secret-', '203.0.113.77', '10.20.30.7', '10.20.30.8']) {
+      expect(serialized).not.toContain(secret)
+    }
+    expect(masked.client_profiles?.[0]?.profiles?.[0]?.status).toBe('connected')
+    expect(masked.virt_wans?.[0]?.conn_state).toBe('0/1 active')
+    expect(masked.wg_clients?.[0]?.profile_id).toBe(masked.virt_wans?.[0]?.wans?.[0])
+    expect(JSON.stringify(raw)).toBe(original)
+    expect(anonymizeVPN(A(), raw)).toEqual(masked)
+  })
+
+  it('masks endpoint hostnames and handles inventories with missing optional lists', () => {
+    const masked = anonymizeVPN(A(), { client_profiles: [{ family: 'openvpn', profiles: [{ remote_ip: 'private-vpn.example.com' }] }] })
+    expect(masked.client_profiles?.[0]?.profiles?.[0]?.remote_ip).not.toBe('private-vpn.example.com')
+    expect(masked.wg_peers).toBeUndefined()
+  })
+})
 
 const A = () => createAnon('test-salt-aaaaaaaa')
 const B = () => createAnon('other-salt-bbbbbbbb')
