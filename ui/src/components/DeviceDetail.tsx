@@ -170,6 +170,7 @@ export function DeviceDetail({
   port,
   groupLabel,
   tags = [],
+  writesAllowed = true,
   labelTag,
   unifi,
   domainSuffix,
@@ -182,6 +183,7 @@ export function DeviceDetail({
   lan?: NetIface
   port?: PortLoc
   groupLabel?: string
+  writesAllowed?: boolean
   tags?: Tag[]
   labelTag?: (id: string, preferType?: string) => string
   unifi?: ModuleInfo | null
@@ -196,7 +198,8 @@ export function DeviceDetail({
   )
   const wireless = !!(device.ssid || device.band || device.ap_mac)
   const suffix = normalizeDomainSuffix(domainSuffix)
-  const [controlReady, setControlReady] = useState(false)
+  const [controlAvailable, setControlReady] = useState(false)
+  const controlReady = writesAllowed && controlAvailable
   const [wakeBusy, setWakeBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState(device.name)

@@ -1074,6 +1074,7 @@ function App() {
 
           {selectedDevice ? (
             <DeviceDetail
+              writesAllowed={!anonOn}
               device={selectedDevice}
               nowMs={showNowMs}
               lan={
@@ -1113,6 +1114,7 @@ function App() {
             />
           ) : showDevicesTable ? (
             <DevicesTab
+              writesAllowed={!anonOn}
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}
@@ -1333,6 +1335,7 @@ function App() {
 
           {tab === 'devices' && (
             <DevicesTab
+              writesAllowed={!anonOn}
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}

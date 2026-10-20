@@ -51,6 +51,7 @@ import { dapLabel, deviceOnline, fmtBytes, fmtCount, netLabel, preferredName } f
 import { describeMacFilter, indexDevicePorts, type PortLoc } from '@/lib/switch-port'
 import type { Device, FwAppHostPolicy, NetIface, Switch, Tag } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { hostTagsAdd } from '@/lib/host-tags'
 
 type Dir = 'asc' | 'desc'
 
@@ -77,6 +78,7 @@ export function DevicesTab({
   onQuery,
   labelTag,
   onSelectDevice,
+  writesAllowed = true,
   onRenamed,
   onGroupUpdated,
 }: {
@@ -99,6 +101,7 @@ export function DevicesTab({
   onQuery: (q: string) => void
   labelTag: (id: string, preferType?: string) => string
   onSelectDevice?: (d: Device) => void
+  writesAllowed?: boolean
   onRenamed?: (mac: string, name: string) => void
   onGroupUpdated?: (mac: string, tagIds: string[]) => void
 }) {
@@ -175,7 +178,7 @@ export function DevicesTab({
   }
 
   async function wakeDevice(d: Device) {
-    if (!wakeReady || actionBusy) return
+    if (!writesAllowed || !wakeReady || actionBusy) return
     setActionBusy(d.mac)
     try {
       const r = await api('/v1/fw-app/wol', {
@@ -197,7 +200,7 @@ export function DevicesTab({
   }
 
   async function renameDevice(d: Device) {
-    if (!wakeReady || actionBusy) return
+    if (!writesAllowed || !wakeReady || actionBusy) return
     const next = window.prompt('Name', preferredName(d))
     if (next == null) return
     const name = next.trim()
@@ -232,10 +235,17 @@ export function DevicesTab({
   }
 
   async function setDeviceGroup(d: Device, tagId: string | null) {
-    if (!wakeReady || actionBusy) return
-    const tagsPatch = tagId ? [tagId] : []
+    if (!writesAllowed || !wakeReady || actionBusy) return
+    if (!tagId && !window.confirm('Clear all group memberships for this device?')) return
     setActionBusy(d.mac)
     try {
+      const pol = await fetchHostPolicy(d.mac)
+      if (!pol) {
+        setToast('Policy failed')
+        return
+      }
+      const current = pol.tags ?? d.tag_ids ?? []
+      const tagsPatch = tagId ? hostTagsAdd(current, tagId) : []
       const res = await postHostPolicy(d.mac, { tags: tagsPatch })
       if (!res.ok) {
         setToast(res.error || 'Policy failed')
@@ -251,7 +261,7 @@ export function DevicesTab({
   }
 
   async function togglePolicyFlag(d: Device, key: 'adblock' | 'family') {
-    if (!wakeReady || actionBusy) return
+    if (!writesAllowed || !wakeReady || actionBusy) return
     setActionBusy(d.mac)
     try {
       const pol = await fetchHostPolicy(d.mac)
@@ -274,7 +284,7 @@ export function DevicesTab({
   }
 
   async function toggleIsolation(d: Device) {
-    if (!wakeReady || actionBusy) return
+    if (!writesAllowed || !wakeReady || actionBusy) return
     setActionBusy(d.mac)
     try {
       const pol = await fetchHostPolicy(d.mac)
@@ -301,7 +311,7 @@ export function DevicesTab({
   }
 
   async function toggleEmergency(d: Device) {
-    if (!wakeReady || actionBusy) return
+    if (!writesAllowed || !wakeReady || actionBusy) return
     setActionBusy(d.mac)
     try {
       const pol = await fetchHostPolicy(d.mac)
@@ -589,7 +599,7 @@ export function DevicesTab({
                   onLan={onLan}
                   onPort={onSwitchMacs}
                   onSelectDevice={onSelectDevice}
-                  wakeReady={wakeReady}
+                  wakeReady={writesAllowed && wakeReady}
                   actionBusy={actionBusy}
                   onWake={wakeDevice}
                   onRename={renameDevice}
@@ -766,7 +776,7 @@ function DeviceGroup({
                             disabled={busy}
                             onSelect={() => onSetGroup(row.d, null)}
                           >
-                            None
+                            Clear all groups…
                           </ContextMenu.Item>
                           {groupTags.map((t) => (
                             <ContextMenu.Item
