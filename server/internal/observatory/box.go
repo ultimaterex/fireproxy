@@ -49,6 +49,10 @@ func Box(ctx context.Context, deps Deps) (BoxView, Provenance, bool) {
 		}
 	}
 
+	if snap, at, ok := peekInitStale(deps); ok && snap.Box != nil {
+		return boxFromInit(snap, at), staleInitProvenance(at), true
+	}
+
 	return BoxView{}, Provenance{Source: SourceEmpty}, false
 }
 

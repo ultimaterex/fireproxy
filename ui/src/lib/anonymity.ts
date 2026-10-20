@@ -18,6 +18,9 @@ import type {
   TopoNode,
   TopoView,
   UnifiConsole,
+  VPNInventory,
+  VPNClientProfile,
+  VPNPeer,
   WirelessView,
 } from './types'
 
@@ -776,6 +779,49 @@ export function anonymizeNetwork(anon: Anon, ifaces: NetIface[]): NetIface[] {
       subnet: fake ?? (n.subnet ? anon.fakeCIDR(n.subnet) : n.subnet),
     }
   })
+}
+
+export function anonymizeVPN(anon: Anon, vpn: VPNInventory): VPNInventory {
+  const id = (value?: string) => (value ? anon.fakeEID(value) : value)
+  const name = (value?: string) => (value ? anon.fakeName('group', value) : value)
+  const ip = (value?: string) => {
+    if (!value) return value
+    const fake = anon.fakeIP(value)
+    return fake === value ? anon.fakeDest(value).domain : fake
+  }
+  const peer = (p: VPNPeer): VPNPeer => ({
+    ...p,
+    name: name(p.name),
+    public_key: id(p.public_key),
+    intf: id(p.intf),
+    last_active: p.last_active ? anon.shiftTS(p.last_active) : p.last_active,
+  })
+  const profile = (p: VPNClientProfile): VPNClientProfile => ({
+    ...p,
+    profile_id: id(p.profile_id),
+    display_name: name(p.display_name),
+    remote_ip: ip(p.remote_ip),
+    local_ip: ip(p.local_ip),
+    // Upstream messages may contain profile names or other arbitrary private text.
+    message: p.message ? 'VPN status message' : p.message,
+  })
+  return {
+    ...vpn,
+    ts: vpn.ts ? anon.shiftTS(vpn.ts) : vpn.ts,
+    host: vpn.host ? anon.fakeName('host', vpn.host) : vpn.host,
+    wg_peers: vpn.wg_peers?.map(peer),
+    awg_peers: vpn.awg_peers?.map(peer),
+    wg_clients: vpn.wg_clients?.map(profile),
+    client_profiles: vpn.client_profiles?.map((f) => ({ ...f, profiles: f.profiles?.map(profile) })),
+    vips: vpn.vips?.map((v) => ({ ...v, uid: id(v.uid), name: name(v.name), ip: ip(v.ip) })),
+    virt_wans: vpn.virt_wans?.map((v) => ({
+      ...v,
+      uuid: id(v.uuid),
+      name: name(v.name),
+      wans: v.wans?.map((w) => anon.fakeEID(w)),
+      conn_state: v.conn_state ? anon.rewriteText(v.conn_state) : v.conn_state,
+    })),
+  }
 }
 
 export function anonymizeBox(anon: Anon, box: BoxInfo): BoxInfo {
