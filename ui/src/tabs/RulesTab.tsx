@@ -1235,8 +1235,8 @@ function RuleDetailSheet({
   const activated = fmtTs(rule.activatedTime)
   const [err, setErr] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
-  const canPause = !!caps['rule.pause'] && !rule.readOnly
-  const canDelete = !!caps['rule.delete'] && !rule.readOnly
+  const canPause = !!caps['rule.pause'] && !rule.readOnly && rule.section !== 'timelimit' && rule.action !== 'screentime'
+  const canDelete = !!caps['rule.delete'] && !rule.readOnly && rule.section !== 'timelimit' && rule.action !== 'screentime'
   const isTimelimit = rule.section === 'timelimit' || rule.action === 'screentime'
   const quotaLabel = fmtQuotaMinutes(rule.thresholdMinutes)
   const dayWindow = fmtDayWindow(rule.offsetSeconds)

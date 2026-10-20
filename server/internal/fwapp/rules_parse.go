@@ -211,6 +211,8 @@ func normalizePolicyRule(pr rawPolicyRule, hosts, tags map[string]string) Rule {
 
 func normalizeScreentimeRule(pr rawPolicyRule, hosts, tags map[string]string) Rule {
 	r := finalizeRule(pr, RuleSectionTimelimit, hosts, tags)
+	// Screentime writes use a separate, currently unsupported protocol.
+	r.ReadOnly = true
 	// Overwrite Scope/Tags/ScopeLabel: screentime uses mac:/tag:/intf: prefixes.
 	scope, tagRefs := parseScreentimeScope(pr.Scope, pr.Tag)
 	r.Scope = scope
