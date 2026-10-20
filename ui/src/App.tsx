@@ -1,26 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity,
-  Archive,
   Bell,
-  Box,
-  Bug,
-  Cable,
-  ClipboardList,
-  History,
-  MonitorSmartphone,
-  Network,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCw,
-  ScrollText,
-  Settings,
-  Shield,
-  ShieldAlert,
-  Users,
-  Wifi,
 } from 'lucide-react'
 
+import { DesktopNavigation, MobileNavigation } from '@/components/Navigation'
+import { NAV } from '@/lib/navigation-items'
+import { useNavigationScroll } from '@/lib/navigation-scroll'
+import { NavigationViewStateContext, type NavigationViewState } from '@/lib/navigation-view-state'
 import { AlarmInboxList } from '@/components/AlarmInboxList'
 import { ViewToggle } from '@/components/ViewToggle'
 import { Breadcrumb } from '@/components/Breadcrumb'
@@ -122,31 +109,6 @@ import {
   isOfflineSnoozed,
 } from '@/lib/audit-snooze'
 
-const NAV: { id: Tab; label: string; icon: typeof Activity }[] = [
-  { id: 'metrics', label: 'Metrics', icon: Activity },
-  { id: 'inventory', label: 'Inventory', icon: Box },
-  { id: 'network', label: 'Network', icon: Cable },
-  { id: 'topology', label: 'Topology', icon: Network },
-  { id: 'wireless', label: 'Wireless', icon: Wifi },
-  { id: 'audit', label: 'Audit', icon: ClipboardList },
-  { id: 'history', label: 'History', icon: History },
-  { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
-  { id: 'alarms', label: 'Alarms', icon: ShieldAlert },
-  { id: 'rules', label: 'Rules', icon: Shield },
-  { id: 'groups', label: 'Groups', icon: Users },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
-]
-
-const NAV_COLLAPSED_KEY = 'fp-nav-collapsed'
-
-function loadNavCollapsed(): boolean {
-  try {
-    return localStorage.getItem(NAV_COLLAPSED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
 const MODE_TABS: Tab[] = ['rules', 'groups']
 const TABS: Tab[] = [...NAV.map((n) => n.id), 'settings', 'debug', 'legacy']
 
@@ -195,10 +157,16 @@ function App() {
   const [controlLanOk, setControlLanOk] = useState(false)
   const loadBootstrapRef = useRef<(() => Promise<void>) | null>(null)
   const [auditFocus, setAuditFocus] = useState<AuditFocus | null>(null)
-  const [navCollapsed, setNavCollapsed] = useState(loadNavCollapsed)
   const [anonOn, setAnonOn] = useState(isAnonymityOn)
   const anonBoot = useRef(true)
   const [auth, setAuth] = useState<'checking' | 'needed' | 'ok'>('checking')
+  const { contentRef, key: navigationViewKey } = useNavigationScroll(stack, auth === 'ok')
+  const [viewStates] = useState(() => new Map<string, NavigationViewState>())
+  let navigationViewState = viewStates.get(navigationViewKey)
+  if (!navigationViewState) {
+    navigationViewState = new Map()
+    viewStates.set(navigationViewKey, navigationViewState)
+  }
   const [oidcEnabled, setOidcEnabled] = useState(false)
   const [oidcName, setOidcName] = useState('')
 
@@ -631,6 +599,9 @@ function App() {
   }
 
   const selectTab = (next: Tab) => {
+    // Reselecting a mounted root retains its view preferences. Otherwise a
+    // detail opened next would return to an empty cache despite the visible UI.
+    if (next !== tab || stack.length > 1) viewStates.clear()
     setQuery('')
     setWirelessMode('radios')
     if (next !== 'settings') setSettingsOpen(null)
@@ -664,6 +635,8 @@ function App() {
     : (dashboard?.alarm_count ?? 0)
   const bellCount = notifCount + alarmBellCount
   const notifRef = useRef<HTMLDivElement>(null)
+  const notifButtonRef = useRef<HTMLButtonElement>(null)
+  const notifPanelRef = useRef<HTMLDivElement>(null)
 
   const onAlarmCount = useCallback((count: number, limited: boolean) => {
     setAlarmNotifCount(count)
@@ -729,13 +702,31 @@ function App() {
 
   useEffect(() => {
     if (!notifOpen) return
+    notifPanelRef.current?.focus()
     const onDoc = (e: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setNotifOpen(false)
       }
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      setNotifOpen(false)
+      notifButtonRef.current?.focus()
+    }
+    const onFocus = (e: FocusEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false)
+      }
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('focusin', onFocus)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocus)
+    }
   }, [notifOpen])
 
   const goDevicesLan = (uuid: string) => {
@@ -915,162 +906,11 @@ function App() {
   return (
     <div className="flex min-h-svh">
       <UpdateBanner />
-      <aside
-        className={cn(
-          'sticky top-0 flex h-svh shrink-0 flex-col bg-[#17171a] text-white transition-[width]',
-          navCollapsed ? 'w-14' : 'w-50',
-        )}
-      >
-        <div
-          className={cn(
-            'flex items-center py-3',
-            navCollapsed ? 'justify-center px-1' : 'justify-between gap-2 px-3',
-          )}
-        >
-          {!navCollapsed ? (
-            <div className="truncate px-2 text-sm font-semibold tracking-tight">FireProxy</div>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-md p-2 text-white/70 hover:bg-white/5 hover:text-white"
-            aria-label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={navCollapsed ? 'Expand' : 'Collapse'}
-            onClick={() => {
-              setNavCollapsed((c) => {
-                const next = !c
-                try {
-                  localStorage.setItem(NAV_COLLAPSED_KEY, next ? '1' : '0')
-                } catch {
-                  /* ignore */
-                }
-                return next
-              })
-            }}
-          >
-            {navCollapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
-          </button>
-        </div>
-        <nav className="flex flex-1 flex-col">
-          {NAV.map((item) => {
-            const Icon = item.icon
-            const on = tab === item.id
-            return (
-              <button
-                key={item.id}
-                type="button"
-                title={navCollapsed ? item.label : undefined}
-                aria-label={item.label}
-                className={cn(
-                  'flex h-10 w-full items-center text-sm text-white/90 hover:bg-white/5',
-                  navCollapsed ? 'justify-center px-0' : 'gap-3 px-6 text-left',
-                  on && 'bg-[#3f3f44] text-white',
-                )}
-                onClick={() => selectTab(item.id)}
-              >
-                <Icon className="size-6 shrink-0" />
-                {!navCollapsed ? item.label : null}
-              </button>
-            )
-          })}
-          <div className="flex-1" />
-          {anonOn ? (
-            <div
-              className={cn(
-                'mx-3 mb-1 rounded-md bg-white/10 px-2 py-1 text-[11px] text-white/80',
-                navCollapsed && 'mx-1 px-0 text-center',
-              )}
-              title="Anonymity"
-            >
-              {navCollapsed ? 'A' : 'Anonymity'}
-            </div>
-          ) : null}
-          {debugOn ? (
-            <button
-              type="button"
-              title={navCollapsed ? 'Debug' : undefined}
-              aria-label="Debug"
-              className={cn(
-                'flex h-10 w-full items-center text-sm text-amber-200/90 hover:bg-white/5',
-                navCollapsed ? 'justify-center px-0' : 'gap-3 px-6 text-left',
-                tab === 'debug' && 'bg-[#3f3f44] text-amber-100',
-              )}
-              onClick={() => selectTab('debug')}
-            >
-              <Bug className="size-6 shrink-0" />
-              {!navCollapsed ? 'Debug' : null}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            title={navCollapsed ? 'Settings' : undefined}
-            aria-label="Settings"
-            className={cn(
-              'relative flex h-10 w-full items-center text-sm text-white/90 hover:bg-white/5',
-              navCollapsed ? 'justify-center px-0' : 'gap-3 px-6 text-left',
-              tab === 'settings' && 'bg-[#3f3f44] text-white',
-            )}
-            onClick={() => {
-              setSettingsOpen(null)
-              selectTab('settings')
-            }}
-          >
-            <span className="relative shrink-0">
-              <Settings className="size-6" />
-              {navCollapsed ? (
-                <span
-                  className={cn(
-                    'absolute -right-0.5 -top-0.5 size-2 rounded-full',
-                    settingsHealthy ? 'bg-emerald-500' : 'bg-red-500',
-                  )}
-                />
-              ) : null}
-            </span>
-            {!navCollapsed ? (
-              <>
-                Settings
-                <span
-                  className={cn(
-                    'ml-auto size-2 rounded-full',
-                    settingsHealthy ? 'bg-emerald-500' : 'bg-red-500',
-                  )}
-                />
-              </>
-            ) : null}
-          </button>
-          {debugOn ? (
-            <button
-              type="button"
-              title={navCollapsed ? 'Legacy' : undefined}
-              aria-label="Legacy"
-              className={cn(
-                'flex h-10 w-full items-center text-sm text-white/45 hover:bg-white/5 hover:text-white/70',
-                navCollapsed ? 'justify-center px-0' : 'gap-3 px-6 text-left',
-                tab === 'legacy' && 'bg-[#3f3f44] text-white/80',
-              )}
-              onClick={() => selectTab('legacy')}
-            >
-              <Archive className="size-6 shrink-0" />
-              {!navCollapsed ? 'Legacy' : null}
-            </button>
-          ) : null}
-          <a
-            href="https://github.com/ultimaterex/fireproxy"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Source"
-            aria-label="Source code"
-            className={cn(
-              'mb-2 flex h-8 items-center text-[11px] text-white/40 hover:text-white/70',
-              navCollapsed ? 'justify-center px-0' : 'px-6',
-            )}
-          >
-            {navCollapsed ? '<>' : 'Source'}
-          </a>
-        </nav>
-      </aside>
+      <DesktopNavigation tab={tab} debugOn={debugOn} anonOn={anonOn} settingsHealthy={settingsHealthy} selectTab={selectTab} onSettings={() => setSettingsOpen(null)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-end gap-3 border-b bg-background/80 px-5 backdrop-blur-md">
+        <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center justify-end gap-1 border-b bg-background/80 px-2 py-1 backdrop-blur-md sm:gap-3 sm:px-5">
+          <MobileNavigation tab={tab} debugOn={debugOn} anonOn={anonOn} settingsHealthy={settingsHealthy} selectTab={selectTab} onSettings={() => setSettingsOpen(null)} />
           {tab === 'legacy' && legacyPage === 'devices' ? (
             <ViewToggle
               value={modes.devices}
@@ -1101,6 +941,10 @@ function App() {
               type="button"
               className="relative rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
               aria-label="Notifications"
+              ref={notifButtonRef}
+              aria-expanded={notifOpen}
+              aria-controls={notifOpen ? 'notification-panel' : undefined}
+              aria-haspopup="dialog"
               onClick={() => setNotifOpen((o) => !o)}
             >
               <Bell className="size-5" />
@@ -1111,15 +955,22 @@ function App() {
               ) : null}
             </button>
             {notifOpen ? (
-              <div className="absolute right-0 top-full z-30 mt-1 w-80 rounded-md border bg-background shadow-md">
+              <div
+                id="notification-panel"
+                ref={notifPanelRef}
+                role="dialog"
+                aria-labelledby="notification-heading"
+                tabIndex={-1}
+                className="absolute right-0 top-full z-30 mt-1 max-h-[calc(100dvh-5rem)] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border bg-background shadow-md focus-visible:outline-2 focus-visible:outline-ring"
+              >
                 <div className="flex items-center justify-between border-b px-3 py-2">
-                  <span className="text-sm font-medium">Notifications</span>
+                  <span id="notification-heading" className="text-sm font-medium">Notifications</span>
                   {bellCount > 0 ? (
                     <span className="font-mono text-xs tabular-nums text-muted-foreground">{formatAlarmCount(bellCount, alarmNotifFromApi && alarmNotifLimited)}</span>
                   ) : null}
                 </div>
                 {bellCount > 0 ? (
-                  <div className="max-h-[28rem] overflow-y-auto">
+                  <div>
                     {alarmBellCount > 0 ? (
                       <div className="border-b py-1">
                         <div className="flex items-center justify-between px-3 py-1.5">
@@ -1226,7 +1077,7 @@ function App() {
           </div>
         </header>
 
-        <div className="relative min-h-0 min-w-0 flex-1 overflow-x-auto">
+        <div ref={contentRef} className="relative min-h-0 min-w-0 flex-1 overflow-x-auto">
         {initRefreshing ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
             <div className="flex items-center gap-2 rounded-md border bg-background px-4 py-3 text-sm text-muted-foreground shadow-sm">
@@ -1241,6 +1092,7 @@ function App() {
             tab === 'topology' ? 'w-max min-w-full' : 'max-w-[1480px]',
           )}
         >
+          <NavigationViewStateContext.Provider key={navigationViewKey} value={navigationViewState}>
           {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
           {stack.length > 1 ? (
@@ -1644,6 +1496,7 @@ function App() {
           )}
             </>
           )}
+          </NavigationViewStateContext.Provider>
         </main>
         </div>
       </div>

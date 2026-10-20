@@ -102,3 +102,56 @@
     font-family: var(--font-sans);
   }
 }
+
+.fp-desktop-navigation {
+  transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.fp-navigation-items button,
+.fp-navigation-items a {
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.fp-mobile-navigation[data-state="open"] {
+  animation: fp-nav-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.fp-mobile-navigation[data-state="closed"] {
+  animation: fp-nav-exit 160ms ease-in both;
+}
+
+.fp-navigation-backdrop[data-state="open"] {
+  animation: fp-nav-backdrop 220ms ease-out both;
+}
+
+.fp-navigation-backdrop[data-state="closed"] {
+  animation: fp-nav-backdrop 160ms ease-in reverse both;
+}
+
+@keyframes fp-nav-enter {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fp-nav-exit {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-100%); opacity: 0; }
+}
+
+@keyframes fp-nav-backdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-desktop-navigation,
+  .fp-navigation-items button,
+  .fp-navigation-items a {
+    transition: none;
+  }
+
+  .fp-mobile-navigation[data-state],
+  .fp-navigation-backdrop[data-state] {
+    animation: none;
+  }
+}

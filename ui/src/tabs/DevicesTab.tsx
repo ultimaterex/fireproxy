@@ -5,6 +5,7 @@ import { ChevronDown, SlidersHorizontal, Tag as TagIcon, User, X } from 'lucide-
 import { ContextMenu } from 'radix-ui'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
+import { useNavigationViewState } from '@/lib/navigation-view-state'
 import { DeviceSearch } from '@/components/DeviceSearch'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Toast } from '@/components/Toast'
@@ -107,11 +108,12 @@ export function DevicesTab({
   onRenamed?: (mac: string, name: string) => void
   onGroupUpdated?: (mac: string, tagIds: string[]) => void
 }) {
-  const [sort, setSort] = useState<{ key: DeviceColId; dir: Dir }>({ key: 'name', dir: 'asc' })
+  const [sort, setSort] = useNavigationViewState<{ key: DeviceColId; dir: Dir }>('devices.sort', { key: 'name', dir: 'asc' })
   const [cols, setCols] = useState<DeviceColId[]>(() => loadDeviceCols())
   const [showInactive, setShowInactive] = useState(() => loadShowInactive())
-  const [groupBy, setGroupBy] = useState<DeviceGroupBy>(() => groupByHint ?? 'none')
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [groupBy, setGroupBy] = useNavigationViewState<DeviceGroupBy>('devices.groupBy', () => groupByHint ?? 'none')
+  const [collapsed, setCollapsed] = useNavigationViewState<Set<string>>('devices.collapsed', () => new Set())
+  const previousGroupBy = useRef(groupBy)
   const [picker, setPicker] = useState(false)
   const [groupPicker, setGroupPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -341,12 +343,9 @@ export function DevicesTab({
   }
 
   useEffect(() => {
-    if (groupByHint) setGroupBy(groupByHint)
-  }, [groupByHint])
-
-  useEffect(() => {
-    setCollapsed(new Set())
-  }, [groupBy])
+    if (previousGroupBy.current !== groupBy) setCollapsed(new Set())
+    previousGroupBy.current = groupBy
+  }, [groupBy, setCollapsed])
 
   useEffect(() => {
     saveDeviceCols(cols)

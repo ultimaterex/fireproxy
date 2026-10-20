@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigationViewState } from '@/lib/navigation-view-state'
 import { ArrowLeft, MonitorSmartphone, Tag as TagIcon, User } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -92,8 +93,8 @@ export function GroupsTab({
   onSetHostTags?: (mac: string, tags: string[]) => Promise<void>
   onViewInDevices: (id: string, tagType: TagKind) => void
 }) {
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [typeFilter, setTypeFilter] = useNavigationViewState<TypeFilter>('groups.typeFilter', 'all')
+  const [selectedKey, setSelectedKey] = useNavigationViewState<string | null>('groups.selectedKey', null)
   const [busyMac, setBusyMac] = useState<string | null>(null)
   const [addKey, setAddKey] = useState(0)
   const [mutationError, setMutationError] = useState<string | null>(null)

@@ -47,6 +47,40 @@ export function AlarmInboxList({
     )
   }
 
+  if (compact) {
+    return (
+      <ul aria-label="Recent alarms" className="divide-y">
+        {alarms.map((a) => (
+          <li key={a.aid} className="min-w-0 space-y-1.5 px-2 py-3">
+            <p className="text-sm font-medium leading-snug [overflow-wrap:anywhere]">
+              {alarmTypeLabel(a.type).toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}
+            </p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">
+              {a.message?.trim() || 'No message available'}
+            </p>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="min-w-0 [overflow-wrap:anywhere]">{deviceLabel(a)}</span>
+              <span className="shrink-0 tabular-nums">
+                {a.timestamp != null ? fmtRelative(a.timestamp, nowMs) : 'Time unavailable'}
+              </span>
+            </div>
+            {onIgnore ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!controlLanOk || busyAid != null}
+                onClick={() => onIgnore(a.aid)}
+              >
+                Ignore
+              </Button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
   return (
     <Table>
       <TableHeader>
