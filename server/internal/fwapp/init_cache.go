@@ -58,6 +58,15 @@ func (c *ObservatoryCache) Clear() {
 
 func cloneObservatorySnapshot(in ObservatorySnapshot) ObservatorySnapshot {
 	out := in
+	out.WGPeers = append([]InitWGPeer(nil), in.WGPeers...)
+	out.AWGPeers = append([]InitWGPeer(nil), in.AWGPeers...)
+	out.WGClients = append([]InitWGClient(nil), in.WGClients...)
+	if in.ClientProfiles != nil {
+		out.ClientProfiles = append([]InitVPNClientFamily(nil), in.ClientProfiles...)
+		for i := range out.ClientProfiles {
+			out.ClientProfiles[i].Profiles = append([]InitVPNClientProfile(nil), in.ClientProfiles[i].Profiles...)
+		}
+	}
 	if in.NewAlarms != nil {
 		out.NewAlarms = append([]AlarmSample(nil), in.NewAlarms...)
 	}
@@ -175,7 +184,10 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	generation := s.pairGeneration
 	c, ok, err := s.vault.Load()
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -185,7 +197,7 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 	if s.initCacheWarm() {
 		return nil
 	}
-	return s.initGroup.Do(initFlightKey, func() error {
+	return s.initGroup.Do(fmt.Sprintf("%s:%d", initFlightKey, generation), func() error {
 		if s.initCacheWarm() {
 			return nil
 		}
@@ -230,7 +242,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	generation := s.pairGeneration
 	c, ok, err := s.vault.Load()
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -240,6 +255,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	raw, err := s.fetchInit(ctx, c)
 	if err != nil {
 		s.mu.Lock()
+		if generation != s.pairGeneration {
+			s.mu.Unlock()
+			return ErrNotPaired
+		}
 		s.lastPingOK = false
 		s.lastPingAt = time.Now().UTC()
 		s.state = "lan-down"
@@ -268,7 +287,7 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 		s.mu.Unlock()
 		return err2
 	}
-	if !ok2 || c2.SymKey == "" {
+	if !ok2 || c2.SymKey == "" || generation != s.pairGeneration || c2.Gid != c.Gid || c2.Eid != c.Eid || c2.SymKey != c.SymKey {
 		s.mu.Unlock()
 		return ErrNotPaired
 	}
@@ -279,9 +298,11 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	s.lastPingAt = at
 	s.state = "lan-ok"
 	s.lastErr = ""
-	s.mu.Unlock()
+	// Persistence is part of the same commit as memory updates. Unpair must
+	// clear both after this commit, never between the Set and the final PutKV.
 	s.persistRulesCache(rulesSnap, at)
 	s.persistObservatoryCache(obsSnap, at)
+	s.mu.Unlock()
 	return nil
 }
 

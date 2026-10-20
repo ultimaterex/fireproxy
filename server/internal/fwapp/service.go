@@ -15,10 +15,11 @@ import (
 
 // Service owns pairing state and LAN verification.
 type Service struct {
-	mu     sync.Mutex
-	vault  *CredentialVault
-	lan    *LANClient
-	pairFn func(ctx context.Context, req PairRequest) (Creds, error) // test hook; nil = PairWithCloud
+	mu             sync.Mutex
+	pairGeneration uint64 // invalidates in-flight init and pairing on credential changes
+	vault          *CredentialVault
+	lan            *LANClient
+	pairFn         func(ctx context.Context, req PairRequest) (Creds, error) // test hook; nil = PairWithCloud
 	// fetchInitFn overrides LAN FetchInit (tests).
 	fetchInitFn func(ctx context.Context, creds Creds) (json.RawMessage, error)
 	// sendFn overrides lan.SendTo (tests).
@@ -122,6 +123,9 @@ func (s *Service) Pair(ctx context.Context, req PairRequest) (Status, error) {
 	if !s.secretsReady() {
 		return s.Status(), fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	generation := s.pairGeneration
+	s.mu.Unlock()
 	fn := s.pairFn
 	if fn == nil {
 		fn = PairWithCloud
@@ -129,21 +133,41 @@ func (s *Service) Pair(ctx context.Context, req PairRequest) (Status, error) {
 	creds, err := fn(ctx, req)
 	if err != nil {
 		s.mu.Lock()
+		if generation != s.pairGeneration {
+			s.mu.Unlock()
+			return s.Status(), ErrNotPaired
+		}
 		s.state = "error"
 		s.lastErr = err.Error()
 		s.mu.Unlock()
 		return s.Status(), err
 	}
+	s.mu.Lock()
+	if s.pairGeneration != generation {
+		s.mu.Unlock()
+		return s.Status(), ErrNotPaired
+	}
 	if err := s.vault.Save(creds); err != nil {
+		s.mu.Unlock()
 		return s.Status(), err
 	}
-	s.mu.Lock()
+	s.pairGeneration++
+	generation = s.pairGeneration
+	s.rules.Clear()
+	s.obsCache.Clear()
+	s.features.Clear()
+	s.clearPersistedRulesCache()
+	s.clearPersistedObservatoryCache()
 	s.state = "ready"
 	s.lastErr = ""
 	s.mu.Unlock()
 
 	if err := s.lan.PingInitReady(ctx, creds); err != nil {
 		s.mu.Lock()
+		if generation != s.pairGeneration {
+			s.mu.Unlock()
+			return s.Status(), ErrNotPaired
+		}
 		s.lastPingOK = false
 		s.lastPingAt = time.Now().UTC()
 		s.state = "lan-down"
@@ -152,6 +176,10 @@ func (s *Service) Pair(ctx context.Context, req PairRequest) (Status, error) {
 		return s.Status(), fmt.Errorf("paired but LAN verify failed: %w", err)
 	}
 	s.mu.Lock()
+	if generation != s.pairGeneration {
+		s.mu.Unlock()
+		return s.Status(), ErrNotPaired
+	}
 	s.lastPingOK = true
 	s.lastPingAt = time.Now().UTC()
 	s.state = "lan-ok"
@@ -671,6 +699,7 @@ func (s *Service) Unpair() error {
 	if err := s.vault.Clear(); err != nil {
 		return err
 	}
+	s.pairGeneration++
 	s.rules.Clear()
 	s.obsCache.Clear()
 	s.features.Clear()
