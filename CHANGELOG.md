@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/ultimaterex/fireproxy/compare/v0.3.0...v0.4.0) (2026-10-20)
+
+
+### Features
+
+* cold-start InitCache persist for observatory ([#27](https://github.com/ultimaterex/fireproxy/issues/27)) ([7b49042](https://github.com/ultimaterex/fireproxy/commit/7b49042c9f0e29ec73f9288d3936aac1f399f5d2))
+* Epic A — Alarms that act (inbox + ignore) ([#35](https://github.com/ultimaterex/fireproxy/issues/35)) ([dc31efb](https://github.com/ultimaterex/fireproxy/commit/dc31efb6f8d1db4e33c6cc251cf22dcc6d89e044))
+* Epic D device actions (adblock/family + row menu) ([#30](https://github.com/ultimaterex/fireproxy/issues/30)) ([fd2f536](https://github.com/ultimaterex/fireproxy/commit/fd2f536b32d968f6d510006cba921937f5f83890))
+* Features & DNS panel (Epic E) ([#33](https://github.com/ultimaterex/fireproxy/issues/33)) ([260be34](https://github.com/ultimaterex/fireproxy/commit/260be34e1550203bb80757a351397deba167a308))
+* Groups / target lists (tags first-class) ([#32](https://github.com/ultimaterex/fireproxy/issues/32)) ([77065ed](https://github.com/ultimaterex/fireproxy/commit/77065ed96b1165be5c695fceb51d87f6d9161d09))
+* Multi-WAN Network visibility (read-only) ([#31](https://github.com/ultimaterex/fireproxy/issues/31)) ([6baafbd](https://github.com/ultimaterex/fireproxy/commit/6baafbdf37f2b4aa9adc11a881c6bb72dd16e35d))
+* observatory dual-source (agent + fw-app init fallback) ([#23](https://github.com/ultimaterex/fireproxy/issues/23)) ([8556c11](https://github.com/ultimaterex/fireproxy/commit/8556c11ddf6b0ca8b2b0412a2e35a1dbd5c5c6c4))
+* Screentime / Time Limit read path ([#29](https://github.com/ultimaterex/fireproxy/issues/29)) ([abe7555](https://github.com/ultimaterex/fireproxy/commit/abe75555b392875927fff2447a06254e90eee6f8))
+* VPN / WireGuard inventory (Epic F read-first) ([#28](https://github.com/ultimaterex/fireproxy/issues/28)) ([b4e2994](https://github.com/ultimaterex/fireproxy/commit/b4e299450f37c59deb342f757eb30a60777610fe))
+
 ## [0.3.0](https://github.com/ultimaterex/fireproxy/compare/v0.2.0...v0.3.0) (2026-08-19)
 
 
