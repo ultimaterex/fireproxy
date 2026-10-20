@@ -12,6 +12,7 @@ const (
 	ActionHostDNS       = "host.dns"
 	ActionHostWOL       = "host.wol"
 	ActionHostPolicy    = "host.policy"
+	ActionFeatureToggle = "feature.toggle"
 	ActionSpeedtestRun  = "speedtest.run"
 	ActionRuleCreate    = "rule.create"
 	ActionRulePause     = "rule.pause"
