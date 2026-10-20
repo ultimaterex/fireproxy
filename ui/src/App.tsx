@@ -81,6 +81,7 @@ import {
   type SeenId,
   type Tab,
   type Tag,
+  type TagCapabilities,
   type TopoView,
   type ViewMode,
   type UnifiConsole,
@@ -158,6 +159,7 @@ function App() {
   const [simTick, setSimTick] = useState(0)
   const [policies, setPolicies] = useState<Policy[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [tagCaps, setTagCaps] = useState<TagCapabilities>({})
   const [invMeta, setInvMeta] = useState<{ ts?: number; host?: string }>({})
   const [error, setError] = useState<string | null>(null)
   const [seenId, setSeenId] = useState<SeenId>('1w')
@@ -366,8 +368,11 @@ function App() {
         }
 
         if (gRes.ok) {
-          const data = (await gRes.json()) as { tags: Tag[] }
-          if (!cancelled) setTags(data.tags ?? [])
+          const data = (await gRes.json()) as { tags: Tag[]; capabilities?: TagCapabilities }
+          if (!cancelled) {
+            setTags(data.tags ?? [])
+            setTagCaps(data.capabilities ?? {})
+          }
         }
 
         if (healthRes.ok) {
@@ -530,7 +535,9 @@ function App() {
   }
 
   const lanFilter = findLast(stack, 'lan')?.uuid ?? ''
-  const groupFilter = findLast(stack, 'group')?.id ?? ''
+  const groupFrame = findLast(stack, 'group')
+  const groupFilter = groupFrame?.id ?? ''
+  const groupTagType = groupFrame?.tagType ?? 'group'
   const switchMacs = findLast(stack, 'ports')?.macs ?? []
   const selectedApMac = findLast(stack, 'ap')?.mac
   const selectedNetKey = findLast(stack, 'ssid')?.key
@@ -545,7 +552,15 @@ function App() {
     return showDevices
       .filter((d) => {
         if (!d.last_active_ts || d.last_active_ts < cutoff) return false
-        if (groupFilter && !(d.tag_ids ?? []).includes(groupFilter)) return false
+        if (groupFilter) {
+          const inTag =
+            groupTagType === 'device'
+              ? (d.device_tag_ids ?? []).includes(groupFilter)
+              : groupTagType === 'user'
+                ? (d.user_tag_ids ?? []).includes(groupFilter)
+                : (d.tag_ids ?? []).includes(groupFilter)
+          if (!inTag) return false
+        }
         if (lanFilter && d.intf_uuid !== lanFilter) return false
         if (!q) return true
         const lan = d.intf_uuid ? uuidToNet.get(d.intf_uuid) : undefined
@@ -566,22 +581,36 @@ function App() {
         return hay.includes(q)
       })
       .sort((a, b) => (b.last_active_ts ?? 0) - (a.last_active_ts ?? 0))
-  }, [showDevices, seenMs, query, showNowMs, groupFilter, lanFilter, uuidToNet, tagByKey, afUsers])
+  }, [showDevices, seenMs, query, showNowMs, groupFilter, groupTagType, lanFilter, uuidToNet, tagByKey, afUsers])
 
   const groups = useMemo(() => {
-    return groupTags
+    return showTags
+      .filter((t) => {
+        const typ = t.type || 'group'
+        return typ === 'group' || typ === 'user' || typ === 'device'
+      })
       .map((t) => {
-        const user = afUsers.get(t.id)
+        const typ = (t.type || 'group') as 'group' | 'user' | 'device'
+        const user = typ === 'group' ? afUsers.get(t.id) : undefined
+        const count =
+          typ === 'device'
+            ? showDevices.filter((d) => (d.device_tag_ids ?? []).includes(t.id)).length
+            : typ === 'user'
+              ? showDevices.filter((d) => (d.user_tag_ids ?? []).includes(t.id)).length
+              : showDevices.filter((d) => (d.tag_ids ?? []).includes(t.id)).length
         return {
           ...t,
           name: user ? user.name : t.name,
-          // surface as user when this group is a user's affiliated device group
-          kind: user ? ('user' as const) : ('group' as const),
-          count: showDevices.filter((d) => (d.tag_ids ?? []).includes(t.id)).length,
+          kind: (user || typ === 'user' ? 'user' : typ === 'device' ? 'device' : 'group') as
+            | 'user'
+            | 'group'
+            | 'device',
+          type: typ,
+          count,
         }
       })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [groupTags, showDevices, afUsers])
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+  }, [showTags, showDevices, afUsers])
 
   const setMode = (mode: ViewMode) => {
     setModes((prev) => ({ ...prev, [tab]: mode }))
@@ -654,11 +683,37 @@ function App() {
     ])
   }
 
-  const goDevicesGroup = (id: string) => {
+  const goDevicesGroup = (
+    id: string,
+    tagType: 'group' | 'user' | 'device' = 'group',
+  ) => {
     setStack([
       { kind: 'tab', tab: 'groups' },
-      { kind: 'group', id, label: labelTag(id, 'group') },
+      { kind: 'group', id, label: labelTag(id, tagType), tagType },
     ])
+  }
+
+  async function setHostTags(mac: string, tags: string[]) {
+    const res = await api('/v1/fw-app/hosts/policy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac, tags }),
+      cache: 'no-store',
+    })
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string
+      policy?: { tags?: string[] }
+    }
+    if (!res.ok) {
+      const msg = body.error || `Update failed (${res.status})`
+      setError(msg)
+      throw new Error(msg)
+    }
+    const nextTags = body.policy?.tags ?? tags
+    const key = mac.toUpperCase()
+    setDevices((prev) =>
+      prev.map((d) => (d.mac.toUpperCase() === key ? { ...d, tag_ids: nextTags } : d)),
+    )
   }
 
   const goDevicesSwitch = (info: { macs: string[]; switchMac: string; switchName: string }) => {
@@ -1152,14 +1207,14 @@ function App() {
                   ? 'port'
                   : undefined
               }
-              onGroup={(id) => {
+              onGroup={(id, tagType = 'group') => {
                 if (!id) {
                   setStack(resetTab(tab === 'groups' ? 'groups' : 'devices'))
                   return
                 }
                 setStack([
                   { kind: 'tab', tab: tab === 'groups' ? 'groups' : 'devices' },
-                  { kind: 'group', id, label: labelTag(id, 'group') },
+                  { kind: 'group', id, label: labelTag(id, tagType), tagType },
                 ])
               }}
               onLan={(uuid) => {
@@ -1191,6 +1246,7 @@ function App() {
               onQuery={setQuery}
               labelTag={labelTag}
               onSelectDevice={(d) => openDevice(d.mac, preferredName(d))}
+              groupTagType={groupTagType}
               onRenamed={patchDeviceName}
               onGroupUpdated={patchDeviceTags}
             />
@@ -1268,7 +1324,7 @@ function App() {
                   id
                     ? [
                         { kind: 'tab', tab: 'legacy' },
-                        { kind: 'group', id, label: labelTag(id, 'group') },
+                        { kind: 'group', id, label: labelTag(id, 'group'), tagType: 'group' },
                       ]
                     : resetTab('legacy'),
                 )
@@ -1384,16 +1440,17 @@ function App() {
                   ? 'port'
                   : undefined
               }
-              onGroup={(id) =>
+              onGroup={(id, tagType = 'group') =>
                 setStack(
                   id
                     ? [
                         { kind: 'tab', tab: 'devices' },
-                        { kind: 'group', id, label: labelTag(id, 'group') },
+                        { kind: 'group', id, label: labelTag(id, tagType), tagType },
                       ]
                     : resetTab('devices'),
                 )
               }
+              groupTagType={groupTagType}
               onLan={(uuid) =>
                 setStack(
                   uuid
@@ -1460,9 +1517,16 @@ function App() {
 
           {tab === 'groups' && (
             <GroupsTab
-              mode={modes.groups}
               groups={groups}
-              onSelectGroup={goDevicesGroup}
+              devices={showDevices}
+              canEditGroupMembers={!anonOn && controlLanOk && !!tagCaps['host.group']}
+              canCreateTag={!!tagCaps['tag.create']}
+              canRenameTag={!!tagCaps['tag.rename']}
+              canDeleteTag={!!tagCaps['tag.delete']}
+              {...(!anonOn && controlLanOk && tagCaps['host.group']
+                ? { onSetHostTags: setHostTags }
+                : {})}
+              onViewInDevices={goDevicesGroup}
             />
           )}
             </>

@@ -519,3 +519,36 @@ func TestInitRefreshMarksPreferInit(t *testing.T) {
 		t.Fatalf("post %+v", post)
 	}
 }
+
+func TestTagsIncludesCapabilities(t *testing.T) {
+	cat := store.NewCatalogStore()
+	cat.Set(inventory.Catalog{
+		TS:   time.Now().Unix(),
+		Host: "Firewalla",
+		Tags: []inventory.Tag{{ID: "1", Name: "kids"}},
+	})
+	s := &api.Server{CatalogStore: cat, AgentHub: onlineHub()}
+	mux := http.NewServeMux()
+	s.Routes(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/tags", nil))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Source       string          `json:"source"`
+		Tags         []inventory.Tag `json:"tags"`
+		Capabilities map[string]bool `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
+	}
+	v, ok := body.Capabilities["tag.create"]
+	if !ok || v {
+		t.Fatalf("tag.create=%v present=%v want false", v, ok)
+	}
+}
