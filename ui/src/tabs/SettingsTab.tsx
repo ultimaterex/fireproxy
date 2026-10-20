@@ -16,6 +16,7 @@ import { api } from '@/lib/api'
 import { fmtTime } from '@/lib/format'
 import type { ModuleInfo, NameSyncRow, NameSyncView } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { FeaturesDNSSettingsPage } from '@/tabs/FeaturesDNSSettings'
 import { IdentitySettings } from '@/tabs/IdentitySettings'
 import { FWAppSettingsPage } from '@/tabs/FWAppSettings'
 import { TPLinkSettingsPage } from '@/tabs/TPLinkSettings'
@@ -153,6 +154,10 @@ export function SettingsTab({
         onToggle={(on) => void toggle(fwApp.id, on)}
       />
     )
+  }
+
+  if (open === 'features-dns' && fwApp?.enabled) {
+    return <FeaturesDNSSettingsPage onBack={() => setOpen(null)} />
   }
 
   async function toggle(id: string, enabled: boolean) {
@@ -474,6 +479,16 @@ export function SettingsTab({
             onOpen={() => setOpen(fwApp.id)}
             onToggle={(on) => void toggle(fwApp.id, on)}
           />
+        ) : null}
+        {fwApp?.enabled ? (
+          <Card
+            className="cursor-pointer gap-0 py-0 hover:bg-accent/30"
+            onClick={() => setOpen('features-dns')}
+          >
+            <div className="flex items-center gap-2 px-6 py-5 text-base font-medium">
+              <span className="truncate">Features &amp; DNS</span>
+            </div>
+          </Card>
         ) : null}
       </SettingsSection>
 

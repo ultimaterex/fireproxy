@@ -31,6 +31,7 @@ type Service struct {
 
 	rules     RulesCache
 	obsCache  ObservatoryCache
+	features  FeaturesCache
 	initGroup initFlight
 
 	preferInitUntil time.Time // observatory: prefer init over agent until this time
@@ -672,8 +673,10 @@ func (s *Service) Unpair() error {
 	}
 	s.rules.Clear()
 	s.obsCache.Clear()
+	s.features.Clear()
 	s.preferInitUntil = time.Time{}
 	s.clearPersistedRulesCache()
+	s.clearPersistedObservatoryCache()
 	s.lastPingOK = false
 	s.lastPingAt = time.Time{}
 	s.lastErr = ""
