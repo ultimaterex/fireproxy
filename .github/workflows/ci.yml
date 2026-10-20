@@ -115,7 +115,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-  pull-requests: read
       security-events: write
     steps:
       - uses: actions/checkout@v7
