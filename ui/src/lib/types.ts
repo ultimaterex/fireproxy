@@ -131,6 +131,33 @@ export type NetIface = {
   wan_active?: boolean
 }
 
+export type WanFeatures = {
+  dual_wan?: boolean
+  single_wan_conn_check?: boolean
+}
+
+export type WanTestWAN = {
+  ready?: boolean
+  active?: boolean
+  ts?: number
+  failures?: string[]
+}
+
+export type WanTest = {
+  connected: boolean
+  wans: Record<string, WanTestWAN>
+}
+
+export type VirtWAN = {
+  uuid?: string
+  name?: string
+  type?: string
+  conn_state?: string
+  wans?: string[]
+  failback?: boolean
+  strict_vpn?: boolean
+}
+
 /** GET /v1/vpn — init-primary VPN inventory. */
 export type VPNPeer = {
   name?: string
@@ -168,6 +195,17 @@ export type VPNVirtWAN = {
   type?: string
   conn_state?: string
   wans?: string[]
+  failback?: boolean
+  strict_vpn?: boolean
+}
+
+export type NetworkView = {
+  extras_provenance?: Provenance
+  network: NetIface[]
+  features?: WanFeatures
+  wan_test?: WanTest
+  virt_wans?: VirtWAN[]
+  capabilities?: { writes?: boolean }
 }
 
 export type VPNInventory = Provenance & {
