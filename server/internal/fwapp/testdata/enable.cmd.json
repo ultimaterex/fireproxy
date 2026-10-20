@@ -1,0 +1,41 @@
+{
+  "request": {
+    "data": {
+      "item": "policy:enable",
+      "value": {
+        "policyID": "1075"
+      }
+    },
+    "mtype": "cmd",
+    "note": "Carla's TV 50:BA:02:CA:D4:8A",
+    "target": "0.0.0.0"
+  },
+  "response": {
+    "code": 200,
+    "data": {
+      "_name": "FP lab block",
+      "action": "block",
+      "activatedTime": "",
+      "direction": "bidirection",
+      "disabled": 0,
+      "dnsmasq_only": false,
+      "notes": "fireproxy lab capture — safe to delete",
+      "pid": "1075",
+      "scope": [
+        "50:BA:02:CA:D4:8A"
+      ],
+      "target": "fireproxy-lab-block.example",
+      "timestamp": "1786946476.264",
+      "trust": false,
+      "type": "dns",
+      "upnp": false
+    },
+    "expires": 1786946800,
+    "id": "894591fe-6bef-443c-bc02-a93cf1e398d0",
+    "message": "",
+    "mtype": "cmd",
+    "replyid": "6ae914eb-2ee6-45d1-beee-b9fb50acdbe3",
+    "rkeyts": 1726741812477,
+    "type": "jsonmsg"
+  }
+}

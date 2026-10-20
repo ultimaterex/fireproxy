@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, SlidersHorizontal, Tag as TagIcon, User, X } from 'lucide-react'
 
 import { ContextMenu } from 'radix-ui'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { DeviceSearch } from '@/components/DeviceSearch'
+import { SourceBadge } from '@/components/SourceBadge'
+import { Toast } from '@/components/Toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch as Toggle } from '@/components/ui/switch'
 import {
@@ -15,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { api } from '@/lib/api'
 import {
   catalogHasActiveStamp,
   filterDevicesByActive,
@@ -52,6 +56,9 @@ type Dir = 'asc' | 'desc'
 
 export function DevicesTab({
   devices,
+  source,
+  stale,
+  reason,
   groupFilter,
   lanFilter,
   switchMacs,
@@ -69,6 +76,9 @@ export function DevicesTab({
   onSelectDevice,
 }: {
   devices: Device[]
+  source?: string
+  stale?: boolean
+  reason?: string
   groupFilter: string
   lanFilter: string
   switchMacs: string[]
@@ -94,6 +104,48 @@ export function DevicesTab({
   const [groupPicker, setGroupPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const groupPickerRef = useRef<HTMLDivElement>(null)
+  const [wakeReady, setWakeReady] = useState(false)
+  const [wakeBusy, setWakeBusy] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api('/v1/fw-app/status')
+        if (!r.ok || cancelled) return
+        const st = (await r.json()) as { paired?: boolean; state?: string }
+        if (!cancelled) setWakeReady(!!st.paired && st.state === 'lan-ok')
+      } catch {
+        if (!cancelled) setWakeReady(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function wakeDevice(d: Device) {
+    if (!wakeReady || wakeBusy) return
+    setWakeBusy(d.mac)
+    try {
+      const r = await api('/v1/fw-app/wol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: d.mac }),
+      })
+      const body = (await r.json().catch(() => ({}))) as { error?: string }
+      if (!r.ok) {
+        setToast(body.error || 'Wake failed')
+        return
+      }
+      setToast(`Wake sent · ${preferredName(d)}`)
+    } catch {
+      setToast('Wake failed')
+    } finally {
+      setWakeBusy(null)
+    }
+  }
 
   useEffect(() => {
     if (groupByHint) setGroupBy(groupByHint)
@@ -214,6 +266,7 @@ export function DevicesTab({
             <span className="text-sm tabular-nums text-muted-foreground">
               {rows.length} / {visibleDevices.length}
             </span>
+            <SourceBadge source={source} stale={stale} reason={reason} />
             {hasStamp && !showInactive && hiddenInactive > 0 ? (
               <span className="text-sm tabular-nums text-muted-foreground">+{hiddenInactive} inactive</span>
             ) : null}
@@ -354,12 +407,18 @@ export function DevicesTab({
                   onLan={onLan}
                   onPort={onSwitchMacs}
                   onSelectDevice={onSelectDevice}
+                  wakeReady={wakeReady}
+                  wakeBusy={wakeBusy}
+                  onWake={wakeDevice}
                 />
               ))}
             </TableBody>
           </Table>
         )}
       </CardContent>
+      {toast
+        ? createPortal(<Toast message={toast} onDismiss={() => setToast(null)} />, document.body)
+        : null}
     </Card>
   )
 }
@@ -383,6 +442,9 @@ function DeviceGroup({
   onLan,
   onPort,
   onSelectDevice,
+  wakeReady,
+  wakeBusy,
+  onWake,
 }: {
   group: DeviceRowGroup<Row>
   colSpan: number
@@ -394,6 +456,9 @@ function DeviceGroup({
   onLan: (uuid: string) => void
   onPort: (macs: string[]) => void
   onSelectDevice?: (d: Device) => void
+  wakeReady: boolean
+  wakeBusy: string | null
+  onWake: (d: Device) => void
 }) {
   const onFilter = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -446,20 +511,43 @@ function DeviceGroup({
         </TableRow>
       ) : null}
       {open
-        ? group.rows.map((row) => (
-            <TableRow
-              key={row.d.mac}
-              className={cn('h-14', onSelectDevice && 'cursor-pointer')}
-              onClick={() => onSelectDevice?.(row.d)}
-            >
-              {visible.map((c) => (
-                <TableCell key={c.id}>
-                  {renderCell(c.id, row, { groupFilter, onGroup, onLan, onPort })}
-                </TableCell>
-              ))}
-              <TableCell />
-            </TableRow>
-          ))
+        ? group.rows.map((row) => {
+            const cells = (
+              <>
+                {visible.map((c) => (
+                  <TableCell key={c.id}>
+                    {renderCell(c.id, row, { groupFilter, onGroup, onLan, onPort })}
+                  </TableCell>
+                ))}
+                <TableCell />
+              </>
+            )
+            const rowEl = (
+              <TableRow
+                className={cn('h-14', onSelectDevice && 'cursor-pointer')}
+                onClick={() => onSelectDevice?.(row.d)}
+              >
+                {cells}
+              </TableRow>
+            )
+            if (!wakeReady) return <Fragment key={row.d.mac}>{rowEl}</Fragment>
+            return (
+              <ContextMenu.Root key={row.d.mac}>
+                <ContextMenu.Trigger asChild>{rowEl}</ContextMenu.Trigger>
+                <ContextMenu.Portal>
+                  <ContextMenu.Content className="z-50 min-w-36 rounded-lg border bg-popover py-1 shadow-md">
+                    <ContextMenu.Item
+                      className="cursor-pointer px-3 py-1.5 text-sm outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent"
+                      disabled={wakeBusy != null}
+                      onSelect={() => onWake(row.d)}
+                    >
+                      Wake
+                    </ContextMenu.Item>
+                  </ContextMenu.Content>
+                </ContextMenu.Portal>
+              </ContextMenu.Root>
+            )
+          })
         : null}
     </>
   )

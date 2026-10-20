@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	"fireproxy/server/internal/api"
 	"fireproxy/server/internal/auth"
 	"fireproxy/server/internal/config"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/enroll"
+	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
 	"fireproxy/server/internal/ingest"
 	"fireproxy/server/internal/loghub"
@@ -105,13 +108,23 @@ func main() {
 		})
 	}
 
+	controlHist := controlhist.New(mem.Persist())
+
 	facts := modules.DefaultFactories()
 	var reg *modules.Registry
 	var tplinkStore *tplink.Store
+	var fwAppSvc *fwapp.Service
 	if db := mem.Persist(); db != nil {
 		tplinkStore = tplink.NewStore(db, os.Getenv("FIREPROXY_SECRETS_KEY"))
+		fwAppSvc = fwapp.NewService(db, os.Getenv("FIREPROXY_SECRETS_KEY"))
 	} else {
 		tplinkStore = tplink.NewStore(nil, os.Getenv("FIREPROXY_SECRETS_KEY"))
+		fwAppSvc = fwapp.NewService(fwapp.NewMemStore(), os.Getenv("FIREPROXY_SECRETS_KEY"))
+	}
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		fwAppSvc.ColdStart(ctx)
+		cancel()
 	}
 	facts["tplink-sync"] = func() modules.Module {
 		return tplink.New(tplink.ModuleConfig{
@@ -119,6 +132,25 @@ func main() {
 			Interval: time.Duration(tplink.DefaultPollSec) * time.Second,
 			PollSec:  tpPrefs.PollSec,
 		})
+	}
+	facts["fw-app"] = func() modules.Module {
+		return &fwapp.Module{Svc: fwAppSvc}
+	}
+	fwAppSvc.IndexSpeedtest = func(results []fwapp.SpeedtestResult) {
+		by := map[string][]inventory.SpeedtestPoint{}
+		for _, r := range results {
+			uuid := strings.TrimSpace(r.WanUUID)
+			if uuid == "" || (r.Down == 0 && r.Up == 0) {
+				continue
+			}
+			by[uuid] = append(by[uuid], inventory.SpeedtestPoint{
+				TS: r.TS, Down: r.Down, Up: r.Up, Ping: r.Ping,
+				ServerID: r.ServerID, Server: r.Server, Location: r.Location,
+			})
+		}
+		for uuid, pts := range by {
+			catalog.MergeSpeedtest(pts, uuid)
+		}
 	}
 	facts["unifi-sync"] = func() modules.Module {
 		return unifi.New(unifi.Config{
@@ -140,7 +172,12 @@ func main() {
 					}
 					return users, unifi.HostsFromCatalog(inventory.ActiveDevices(cat.Devices), m.ClientIPs()), m.HardwareMACs(), nil
 				}
-				unifi.AutoFillEmpty(ns, fetch, m.ApplyRows)
+				apply := func(rows []unifi.NameRow) []unifi.ApplyResult {
+					results := m.ApplyRows(rows)
+					api.RecordUniFiRenames(controlHist, controlhist.ActorSystem, "name-sync", rows, results)
+					return results
+				}
+				unifi.AutoFillEmpty(ns, fetch, apply)
 				in := unifi.ReportInput{}
 				if cat, ok := catalog.Get(); ok {
 					hw := m.HardwareMACs()
@@ -213,7 +250,10 @@ func main() {
 		NameSync:          ns,
 		TPLinkPrefs:       tpPrefs,
 		Persist:           mem.Persist(),
+		ControlHist:       controlHist,
+		AuthDisabled:      authCfg.Disabled,
 		TPLink:            tplinkStore,
+		FWApp:             fwAppSvc,
 		Enroll:            &enroll.CodeStore{},
 		InstallScriptPath: cfg.InstallScriptPath,
 	}

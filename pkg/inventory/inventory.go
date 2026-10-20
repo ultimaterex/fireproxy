@@ -139,19 +139,24 @@ func (l *BoxMACList) UnmarshalJSON(b []byte) error {
 
 // Box is on-box identity (no MSP / license secrets).
 type Box struct {
-	Name     string     `json:"name"`
-	PublicIP string     `json:"public_ip,omitempty"`
-	DDNS     string     `json:"ddns,omitempty"`
-	MACs     BoxMACList `json:"macs,omitempty"`
-	Version  string     `json:"version,omitempty"`
-	Model    string     `json:"model,omitempty"`
-	License  string     `json:"license,omitempty"`
-	EID      string     `json:"eid,omitempty"`
-	Mode     string     `json:"mode,omitempty"`
-	Timezone string     `json:"timezone,omitempty"`
-	Country  string     `json:"country,omitempty"`
-	Region   string     `json:"region,omitempty"`
-	WanType  string     `json:"wan_type,omitempty"` // failover | load_balance | single
+	Name              string            `json:"name"`
+	PublicIP          string            `json:"public_ip,omitempty"`
+	PublicIPs         map[string]string `json:"public_ips,omitempty"` // iface → IP (init fallback)
+	DDNS              string            `json:"ddns,omitempty"`
+	MACs              BoxMACList        `json:"macs,omitempty"`
+	Version           string            `json:"version,omitempty"`
+	Model             string            `json:"model,omitempty"`
+	License           string            `json:"license,omitempty"`
+	EID               string            `json:"eid,omitempty"`
+	Mode              string            `json:"mode,omitempty"`
+	Timezone          string            `json:"timezone,omitempty"`
+	Country           string            `json:"country,omitempty"`
+	Region            string            `json:"region,omitempty"`
+	WanType           string            `json:"wan_type,omitempty"`            // failover | load_balance | single
+	LocalDomainSuffix string            `json:"local_domain_suffix,omitempty"` // Redis local:domain:suffix when set
+	UptimeSec         *int64            `json:"uptime_sec,omitempty"`          // Firewalla process uptime
+	OsUptimeSec       *int64            `json:"os_uptime_sec,omitempty"`
+	CloudConnected    *bool             `json:"cloud_connected,omitempty"`
 }
 
 // Switch is a managed PoE switch attached to the box.
@@ -277,15 +282,21 @@ type SpeedtestWAN struct {
 	Up       float64          `json:"up,omitempty"`
 	Ping     float64          `json:"ping,omitempty"`
 	Jitter   float64          `json:"jitter,omitempty"`
+	ServerID string           `json:"server_id,omitempty"`
+	Server   string           `json:"server,omitempty"`
+	Location string           `json:"location,omitempty"`
 	Points   []SpeedtestPoint `json:"points,omitempty"`
 }
 
 // SpeedtestPoint is one scheduled test.
 type SpeedtestPoint struct {
-	TS   int64   `json:"ts"`
-	Down float64 `json:"down"`
-	Up   float64 `json:"up"`
-	Ping float64 `json:"ping,omitempty"`
+	TS       int64   `json:"ts"`
+	Down     float64 `json:"down"`
+	Up       float64 `json:"up"`
+	Ping     float64 `json:"ping,omitempty"`
+	ServerID string  `json:"server_id,omitempty"`
+	Server   string  `json:"server,omitempty"` // sponsor label
+	Location string  `json:"location,omitempty"`
 }
 
 // DNSHealth is upstream resolver probes + query volume.

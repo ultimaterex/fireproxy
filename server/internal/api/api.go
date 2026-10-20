@@ -6,15 +6,19 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"fireproxy/pkg/inventory"
 	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/agentpkg"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/enroll"
+	"fireproxy/server/internal/fwapp"
 	"fireproxy/server/internal/geo"
 	"fireproxy/server/internal/loghub"
 	"fireproxy/server/internal/modules"
+	"fireproxy/server/internal/observatory"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/tplink"
 	"fireproxy/server/internal/unifi"
@@ -31,7 +35,12 @@ type Server struct {
 	AgentHub          *agenthub.Hub
 	LogHub            *loghub.Hub
 	Persist           *store.Persist
+	ControlHist       controlhist.Recorder
+	AuthDisabled      bool // when true, History actors resolve as user/admin
+	speedtestActors   *sync.Map
+	speedtestHookMu   sync.Mutex
 	TPLink            *tplink.Store
+	FWApp             *fwapp.Service
 	Enroll            *enroll.CodeStore
 	AgentPackage      *agentpkg.Package
 	InstallScriptPath string
@@ -64,6 +73,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/unifi", s.unifi)
 	mux.HandleFunc("GET /v1/dashboard", s.dashboard)
 	mux.HandleFunc("GET /v1/box", s.box)
+	mux.HandleFunc("GET /v1/alarms", s.alarms)
+	mux.HandleFunc("GET /v1/vpn", s.vpn)
 	mux.HandleFunc("GET /v1/modules", s.listModules)
 	mux.HandleFunc("PUT /v1/modules", s.putModule)
 	mux.HandleFunc("GET /v1/tplink/switches", s.listTPLinkSwitches)
@@ -75,6 +86,30 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/tplink/candidates", s.listTPLinkCandidates)
 	mux.HandleFunc("GET /v1/tplink/settings", s.getTPLinkSettings)
 	mux.HandleFunc("PUT /v1/tplink/settings", s.putTPLinkSettings)
+	mux.HandleFunc("GET /v1/fw-app/status", s.getFWAppStatus)
+	mux.HandleFunc("POST /v1/fw-app/pair", s.postFWAppPair)
+	mux.HandleFunc("POST /v1/fw-app/ping", s.postFWAppPing)
+	mux.HandleFunc("POST /v1/fw-app/wol", s.postFWAppWOL)
+	mux.HandleFunc("GET /v1/fw-app/features", s.getFWAppFeatures)
+	mux.HandleFunc("PUT /v1/fw-app/features/{id}", s.putFWAppFeature)
+	mux.HandleFunc("POST /v1/fw-app/hosts/rename", s.postFWAppHostRename)
+	mux.HandleFunc("POST /v1/fw-app/hosts/dns", s.postFWAppHostDNS)
+	mux.HandleFunc("GET /v1/fw-app/hosts/policy", s.getFWAppHostPolicy)
+	mux.HandleFunc("POST /v1/fw-app/hosts/policy", s.postFWAppHostPolicy)
+	mux.HandleFunc("POST /v1/fw-app/speedtest", s.postFWAppSpeedtest)
+	mux.HandleFunc("POST /v1/fw-app/speedtest/sync", s.postFWAppSpeedtestSync)
+	mux.HandleFunc("GET /v1/fw-app/speedtest/servers", s.getFWAppSpeedtestServers)
+	mux.HandleFunc("GET /v1/fw-app/speedtest/{id}", s.getFWAppSpeedtest)
+	mux.HandleFunc("DELETE /v1/fw-app/pair", s.deleteFWAppPair)
+	mux.HandleFunc("GET /v1/fw-app/rules", s.getFWAppRules)
+	mux.HandleFunc("POST /v1/fw-app/rules/refresh", s.postFWAppRulesRefresh)
+	mux.HandleFunc("POST /v1/fw-app/init/refresh", s.postFWAppInitRefresh)
+	mux.HandleFunc("POST /v1/fw-app/rules", s.postFWAppRulesCreate)
+	mux.HandleFunc("POST /v1/fw-app/rules/{id}/pause", s.postFWAppRulesPause)
+	mux.HandleFunc("DELETE /v1/fw-app/rules/{id}", s.deleteFWAppRule)
+	mux.HandleFunc("POST /v1/fw-app/rules/reset-hits", s.postFWAppRulesResetHits)
+	mux.HandleFunc("POST /v1/fw-app/rules/emergency", s.postFWAppRulesEmergency)
+	mux.HandleFunc("POST /v1/fw-app/rules/diagnose", s.postFWAppRulesDiagnose)
 	mux.HandleFunc("GET /v1/unifi/name-sync", s.getNameSync)
 	mux.HandleFunc("PUT /v1/unifi/name-sync", s.putNameSync)
 	mux.HandleFunc("POST /v1/unifi/name-sync/apply", s.applyNameSync)
@@ -83,6 +118,9 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/logs/fetch", s.postLogsFetch)
 	mux.HandleFunc("GET /v1/settings/logs", s.getLogsSettings)
 	mux.HandleFunc("PUT /v1/settings/logs", s.putLogsSettings)
+	mux.HandleFunc("GET /v1/history", s.getControlHistory)
+	mux.HandleFunc("GET /v1/settings/history", s.getHistorySettings)
+	mux.HandleFunc("PUT /v1/settings/history", s.putHistorySettings)
 	s.registerAgentRoutes(mux)
 	s.registerIAMRoutes(mux)
 	if s.AgentHub != nil {
@@ -142,12 +180,22 @@ func (s *Server) agentHealth() map[string]any {
 }
 
 func (s *Server) latest(w http.ResponseWriter, r *http.Request) {
-	view, ok := s.Store.Latest()
-	if !ok {
+	view, prov, ok := observatory.MetricsLatest(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no snapshots yet", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, view)
+	out := map[string]any{
+		"snapshot":  view.Snapshot,
+		"rates":     view.Rates,
+		"have_prev": view.HavePrev,
+		"source":    prov.Source,
+	}
+	if view.UnboundHit != nil {
+		out["unbound_hit"] = view.UnboundHit
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
@@ -164,13 +212,14 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok {
+	view, prov, ok := observatory.Devices(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no devices yet", http.StatusNotFound)
 		return
 	}
-	devs := cat.Devices
-	if s.Modules != nil {
+	devs := view.Devices
+	// UniFi overlay only on agent/catalog path — skip on pure init fallback.
+	if prov.Source == observatory.SourceAgent && s.Modules != nil {
 		if m, ok := s.Modules.Running("unifi-sync").(interface {
 			Stations() map[string]unifi.Station
 			Wireless() (unifi.WirelessSnapshot, bool)
@@ -185,11 +234,14 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
 			devs = unifi.OverlayDevices(devs, sta, apName)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":      cat.TS,
-		"host":    cat.Host,
+	out := map[string]any{
+		"ts":      view.TS,
+		"host":    view.Host,
 		"devices": devs,
-	})
+		"source":  prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) network(w http.ResponseWriter, r *http.Request) {
@@ -227,16 +279,19 @@ func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok {
+	view, prov, ok := observatory.Tags(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no tags yet", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":   cat.TS,
-		"host": cat.Host,
-		"tags": cat.Tags,
-	})
+	out := map[string]any{
+		"ts":     view.TS,
+		"host":   view.Host,
+		"tags":   view.Tags,
+		"source": prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) topology(w http.ResponseWriter, r *http.Request) {
@@ -336,45 +391,100 @@ func (s *Server) unifi(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok || cat.Dashboard == nil {
+	view, prov, ok := observatory.Dashboard(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no dashboard yet", http.StatusNotFound)
 		return
 	}
-	dash := *cat.Dashboard
-	geo.Enrich(&dash, s.Geo)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":                cat.TS,
-		"host":              cat.Host,
-		"devices":           len(cat.Devices),
-		"rules":             len(cat.Policies),
-		"alarm_count":       dash.AlarmCount,
-		"transfer_24h":      dash.Transfer24h,
-		"monthly_wans":      dash.MonthlyWANs,
-		"blocked":           dash.Blocked,
-		"top_upload":        dash.TopUpload,
-		"top_download":      dash.TopDownload,
-		"top_dest_upload":   dash.TopDestUpload,
-		"top_dest_download": dash.TopDestDownload,
-		"top_regions":       dash.TopRegions,
-		"speedtest":         dash.Speedtest,
-		"dns":               dash.DNS,
-	})
+	if prov.Source == observatory.SourceAgent {
+		if cat, cok := s.getCatalog(); cok && cat.Dashboard != nil {
+			dash := *cat.Dashboard
+			geo.Enrich(&dash, s.Geo)
+			view.TopUpload = dash.TopUpload
+			view.TopDownload = dash.TopDownload
+			view.TopDestUpload = dash.TopDestUpload
+			view.TopDestDownload = dash.TopDestDownload
+			view.TopRegions = dash.TopRegions
+			view.Blocked = dash.Blocked
+			view.DNS = dash.DNS
+			view.Speedtest = dash.Speedtest
+			view.AlarmCount = dash.AlarmCount
+			view.Transfer24h = dash.Transfer24h
+			view.MonthlyWANs = dash.MonthlyWANs
+		}
+	}
+	out := map[string]any{
+		"ts":                view.TS,
+		"host":              view.Host,
+		"devices":           view.Devices,
+		"rules":             view.Rules,
+		"alarm_count":       view.AlarmCount,
+		"transfer_24h":      view.Transfer24h,
+		"monthly_wans":      view.MonthlyWANs,
+		"blocked":           view.Blocked,
+		"top_upload":        view.TopUpload,
+		"top_download":      view.TopDownload,
+		"top_dest_upload":   view.TopDestUpload,
+		"top_dest_download": view.TopDestDownload,
+		"top_regions":       view.TopRegions,
+		"speedtest":         view.Speedtest,
+		"dns":               view.DNS,
+		"source":            prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) box(w http.ResponseWriter, r *http.Request) {
-	cat, ok := s.getCatalog()
-	if !ok || cat.Box == nil {
+	view, prov, ok := observatory.Box(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
 		http.Error(w, "no box yet", http.StatusNotFound)
 		return
 	}
-	b := *cat.Box
+	b := view.Box
 	geo.EnrichBox(&b, s.Geo)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ts":   cat.TS,
-		"host": cat.Host,
-		"box":  b,
-	})
+	out := map[string]any{
+		"ts":     view.TS,
+		"host":   view.Host,
+		"box":    b,
+		"source": prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) alarms(w http.ResponseWriter, r *http.Request) {
+	view, prov, ok := observatory.Alarms(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
+		http.Error(w, "no alarms yet", http.StatusNotFound)
+		return
+	}
+	out := map[string]any{
+		"active_alarm_count": view.ActiveAlarmCount,
+		"new_alarms":         view.NewAlarms,
+		"source":             prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) vpn(w http.ResponseWriter, r *http.Request) {
+	view, prov, ok := observatory.VPN(r.Context(), s.obsDeps())
+	if !ok || prov.Source == observatory.SourceEmpty {
+		http.Error(w, "no vpn inventory yet", http.StatusNotFound)
+		return
+	}
+	out := map[string]any{
+		"ts":         view.TS,
+		"host":       view.Host,
+		"wg_peers":   view.WGPeers,
+		"wg_clients": view.WGClients,
+		"vips":       view.VIPs,
+		"virt_wans":  view.VirtWANs,
+		"source":     prov.Source,
+	}
+	attachProvenance(out, prov)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) stampUnifiSync(list []modules.Info) {
@@ -678,6 +788,8 @@ func (s *Server) applyNameSync(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []unifi.ApplyResult{}
 	}
+	kind, actor := s.controlActor(r)
+	RecordUniFiRenames(s.controlHist(), kind, actor, rows, results)
 	// Recount after apply for badge.
 	all2 := unifi.Diff(unifi.DiffInput{
 		Firewalla: unifi.HostsFromCatalog(fw, m.ClientIPs()),
@@ -702,6 +814,41 @@ func (s *Server) getCatalog() (inventory.Catalog, bool) {
 		return inventory.Catalog{}, false
 	}
 	return s.CatalogStore.Get()
+}
+
+func (s *Server) agentOnline() bool {
+	return s.AgentHub != nil && s.AgentHub.Online()
+}
+
+func (s *Server) obsDeps() observatory.Deps {
+	deps := observatory.Deps{AgentOnline: s.agentOnline()}
+	if s.CatalogStore != nil {
+		deps.Catalog = s.CatalogStore.Get
+	}
+	if s.Store != nil {
+		deps.Latest = s.Store.Latest
+	}
+	if s.FWApp != nil {
+		deps.ObservatorySnapshot = s.FWApp.ObservatorySnapshot
+		deps.EnsureInit = s.FWApp.EnsureInit
+		deps.PreferInit = s.FWApp.PreferInit()
+	}
+	return deps
+}
+
+func attachProvenance(out map[string]any, prov observatory.Provenance) {
+	if !prov.FetchedAt.IsZero() {
+		out["fetched_at"] = prov.FetchedAt.UTC()
+	}
+	if prov.Stale {
+		out["stale"] = true
+	}
+	if prov.EnrichedFrom != "" {
+		out["enriched_from"] = prov.EnrichedFrom
+	}
+	if prov.Reason != "" {
+		out["reason"] = prov.Reason
+	}
 }
 
 func (s *Server) persist() *store.Persist {

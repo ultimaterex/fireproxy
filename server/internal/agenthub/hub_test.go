@@ -260,7 +260,7 @@ func TestSelfUpdateArchSelects(t *testing.T) {
 	}()
 
 	// Announce as an amd64 (x86) Firewalla.
-	hello := agentws.Envelope{Type: agentws.TypeHello, Hello: &agentws.Hello{Version: "0.0.1", Arch: "amd64"}}
+	hello := agentws.Envelope{Type: agentws.TypeHello, Hello: &agentws.Hello{Version: "0.0.1", Arch: "amd64", SelfUpdate: true}}
 	b, _ := json.Marshal(hello)
 	if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
 		t.Fatal(err)
@@ -272,6 +272,19 @@ func TestSelfUpdateArchSelects(t *testing.T) {
 	}
 	if h.Info().Arch != "amd64" {
 		t.Fatal("hub did not record amd64 arch")
+	}
+
+	// Auto-update should already have fired from hello (0.0.1 << 9.9.9).
+	select {
+	case u := <-updates:
+		if !strings.HasSuffix(u.URL, "/agent/fireproxy-agent?arch=amd64") {
+			t.Fatalf("url = %q, want amd64-suffixed", u.URL)
+		}
+		if u.SHA256 != wantBin.SHA256 {
+			t.Fatalf("sha = %s, want amd64 sha %s", u.SHA256, wantBin.SHA256)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no auto agent.update received")
 	}
 
 	if err := h.SendUpdate(); err != nil {
@@ -287,5 +300,141 @@ func TestSelfUpdateArchSelects(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no agent.update received")
+	}
+}
+
+func TestAutoUpdateSHAMismatchSameVersion(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"fireproxy-agent-arm64": "arm-bytes",
+		"fireproxy-agent-amd64": "x86-bytes",
+		"VERSION":               "dev\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkg, err := agentpkg.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBin, _ := pkg.Bin("arm64")
+
+	h := &Hub{Auth: auth.StaticToken("secret"), Package: pkg, PublicBase: func() string { return "http://fp.local" }}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/agent/ws", h.ServeWS)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/agent/ws"
+	hdr := http.Header{}
+	hdr.Set("Authorization", "Bearer secret")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	updates := make(chan *agentws.AgentUpdate, 1)
+	go func() {
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var env agentws.Envelope
+			if err := json.Unmarshal(data, &env); err != nil {
+				continue
+			}
+			if env.Type == agentws.TypeAgentUpdate {
+				updates <- env.AgentUpdate
+			}
+		}
+	}()
+
+	hello := agentws.Envelope{Type: agentws.TypeHello, Hello: &agentws.Hello{
+		Version:    "dev",
+		Arch:       "arm64",
+		SelfUpdate: true,
+		SHA256:     "deadbeef",
+	}}
+	b, _ := json.Marshal(hello)
+	if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case u := <-updates:
+		if u.SHA256 != wantBin.SHA256 {
+			t.Fatalf("sha = %s, want %s", u.SHA256, wantBin.SHA256)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected auto-update on sha mismatch with equal version")
+	}
+}
+
+func TestAutoUpdateSkipsMatchingSHA(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"fireproxy-agent-arm64": "arm-bytes",
+		"VERSION":               "dev\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkg, err := agentpkg.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBin, _ := pkg.Bin("arm64")
+
+	h := &Hub{Auth: auth.StaticToken("secret"), Package: pkg, PublicBase: func() string { return "http://fp.local" }}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/agent/ws", h.ServeWS)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/agent/ws"
+	hdr := http.Header{}
+	hdr.Set("Authorization", "Bearer secret")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	updates := make(chan *agentws.AgentUpdate, 1)
+	go func() {
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var env agentws.Envelope
+			if err := json.Unmarshal(data, &env); err != nil {
+				continue
+			}
+			if env.Type == agentws.TypeAgentUpdate {
+				updates <- env.AgentUpdate
+			}
+		}
+	}()
+
+	hello := agentws.Envelope{Type: agentws.TypeHello, Hello: &agentws.Hello{
+		Version:    "dev",
+		Arch:       "arm64",
+		SelfUpdate: true,
+		SHA256:     wantBin.SHA256,
+	}}
+	b, _ := json.Marshal(hello)
+	if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-updates:
+		t.Fatal("should not auto-update when sha matches")
+	case <-time.After(300 * time.Millisecond):
 	}
 }

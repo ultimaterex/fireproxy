@@ -22,6 +22,25 @@ export type Snapshot = {
   unbound?: Unbound
   ifaces: Record<string, IfaceStats>
   wan: Record<string, WANLink>
+  disks?: DiskMount[]
+  nic_metrics?: NICMetric[]
+}
+
+export type DiskMount = {
+  mount: string
+  filesystem?: string
+  capacity: number
+  size?: number
+  used?: number
+  available?: number
+}
+
+export type NICMetric = {
+  name: string
+  rx_median?: number
+  tx_median?: number
+  rx_pt90?: number
+  tx_pt90?: number
 }
 
 export type UnboundHit = {
@@ -30,11 +49,28 @@ export type UnboundHit = {
   life?: boolean
 }
 
+/** Observatory data provenance from dual-source facades (optional on old servers). */
+export type Provenance = {
+  source?: string
+  fetched_at?: string
+  stale?: boolean
+  enriched_from?: string
+  /** prefer = forced control refresh; fallback = agent down/stale. */
+  reason?: string
+}
+
+export type DataSource = 'agent' | 'fw-app-init' | 'empty' | (string & {})
+
 export type LatestView = {
   snapshot: Snapshot
   rates: Record<string, Rates>
   have_prev: boolean
   unbound_hit?: UnboundHit
+  source?: DataSource
+  fetched_at?: string
+  stale?: boolean
+  enriched_from?: string
+  reason?: string
 }
 
 export type HistoryPoint = {
@@ -185,6 +221,120 @@ export type Policy = {
   hit_count: number
   disabled: boolean
   notes?: string
+}
+
+export type FwAppRuleSection = 'allow' | 'block' | 'disturb' | 'timelimit' | 'other'
+
+export type FwAppRule = {
+  id: string
+  section: FwAppRuleSection
+  action: string
+  type: string
+  target: string
+  name?: string
+  notes?: string
+  direction?: string
+  trafficDirection?: string
+  disabled: boolean
+  scope?: string[]
+  tags?: string[]
+  scopeLabel?: string
+  hitCount: number
+  lastHitTs?: number
+  activatedTime?: string
+  timestamp?: string
+  purpose?: string
+  method?: string
+  alarmType?: string
+  readOnly?: boolean
+}
+
+export type FwAppExceptionRule = {
+  id: string
+  type?: string
+  alarmType?: string
+  target?: string
+  targetName?: string
+  matchCount: number
+  timestamp?: number
+  reason?: string
+  category?: string
+  ifType?: string
+  ifTarget?: string
+}
+
+export type FwAppScopeChipKind = 'all' | 'device' | 'tag' | 'group'
+
+export type FwAppScopeChip = {
+  id: string
+  kind: FwAppScopeChipKind
+  label: string
+  count: number
+}
+
+export type FwAppRulesHub = {
+  totalRules: number
+  totalHits: number
+  allowHits: number
+  blockHits: number
+  allowCount: number
+  blockCount: number
+}
+
+export type FwAppRulesCapabilities = Record<string, boolean>
+
+export type FwAppCatalogItem = {
+  id: string
+  label?: string
+}
+
+export type FwAppRuleCatalog = {
+  apps?: FwAppCatalogItem[]
+}
+
+export type FwAppCreateRuleRequest = {
+  action: 'allow' | 'block'
+  type?: string
+  target: string
+  scope?: string[]
+  direction?: string
+  notes?: string
+  name?: string
+}
+
+export type FwAppHostPolicy = {
+  mac: string
+  label?: string
+  monitor: boolean
+  isolated: boolean
+  emergency?: boolean
+  note?: string
+  tags?: string[]
+}
+
+export type FwAppRulesView = {
+  hub: FwAppRulesHub
+  rules: FwAppRule[]
+  dapRules?: FwAppRule[]
+  scopes: FwAppScopeChip[]
+  exceptions: FwAppExceptionRule[]
+  catalog?: FwAppRuleCatalog
+  capabilities: FwAppRulesCapabilities
+  refreshed_at?: string
+}
+
+export type FwAppStatus = {
+  paired: boolean
+  state: string
+  box_ip?: string
+  gid_hint?: string
+  email?: string
+  device_name?: string
+  paired_at?: string
+  last_ping_ok?: boolean
+  last_ping_at?: string
+  last_error?: string
+  secrets_ready: boolean
 }
 
 export type Tag = {
@@ -338,6 +488,26 @@ export type WirelessView = {
   clients: WirelessClient[]
 }
 
+export type ControlEvent = {
+  id: number
+  ts: number
+  scheme: string
+  action: string
+  actor_kind: string
+  actor: string
+  target: string
+  summary?: string
+  result: string
+  error?: string
+  before?: unknown
+  after?: unknown
+}
+
+export type ControlHistoryView = {
+  events: ControlEvent[]
+  actions: Record<string, string[]>
+}
+
 export type Tab =
   | 'metrics'
   | 'inventory'
@@ -345,6 +515,7 @@ export type Tab =
   | 'topology'
   | 'wireless'
   | 'audit'
+  | 'history'
   | 'devices'
   | 'rules'
   | 'groups'
@@ -358,6 +529,7 @@ export type BoxMAC = { name: string; mac: string }
 export type BoxInfo = {
   name: string
   public_ip?: string
+  public_ips?: Record<string, string>
   ddns?: string
   macs?: Array<BoxMAC | string>
   version?: string
@@ -369,6 +541,10 @@ export type BoxInfo = {
   country?: string
   region?: string
   wan_type?: string
+  local_domain_suffix?: string
+  uptime_sec?: number
+  os_uptime_sec?: number
+  cloud_connected?: boolean
 }
 export type ViewMode = 'visual' | 'list'
 
@@ -389,7 +565,15 @@ export type WANUsage = {
 
 export type BlockedMix = { blocked: number; allowed: number }
 
-export type SpeedtestPoint = { ts: number; down: number; up: number; ping?: number }
+export type SpeedtestPoint = {
+  ts: number
+  down: number
+  up: number
+  ping?: number
+  server_id?: string
+  server?: string
+  location?: string
+}
 
 export type SpeedtestWAN = {
   uuid: string
@@ -401,6 +585,9 @@ export type SpeedtestWAN = {
   up?: number
   ping?: number
   jitter?: number
+  server_id?: string
+  server?: string
+  location?: string
   points?: SpeedtestPoint[]
 }
 
@@ -434,7 +621,12 @@ export type Dashboard = {
   rules: number
   alarm_count: number
   transfer_24h: Transfer24h
+  transfer_30d?: Transfer24h
+  transfer_60?: Transfer24h
+  transfer_12m?: Transfer24h
   monthly_wans?: WANUsage[]
+  monthly_begin_ts?: number
+  monthly_end_ts?: number
   blocked: BlockedMix
   top_upload?: RankedFlow[]
   top_download?: RankedFlow[]
@@ -443,6 +635,11 @@ export type Dashboard = {
   top_regions?: RankedFlow[]
   speedtest?: SpeedtestWAN[]
   dns?: DNSHealth
+  source?: DataSource
+  fetched_at?: string
+  stale?: boolean
+  enriched_from?: string
+  reason?: string
 }
 
 export type PersistInfo = {
