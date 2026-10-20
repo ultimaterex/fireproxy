@@ -36,8 +36,11 @@ func VPN(ctx context.Context, deps Deps) (VPNView, Provenance, bool) {
 	if ensureInitOnce(ctx, deps) {
 		snap, at, initOK = peekInit(deps)
 		if initOK {
-			return vpnFromInit(snap, at), Provenance{Source: SourceFWAppInit, FetchedAt: at}, true
+			return vpnFromInit(snap, at), Provenance{Source: SourceFWAppInit, FetchedAt: at, Reason: ReasonFallback}, true
 		}
+	}
+	if snap, at, ok := peekInitStale(deps); ok {
+		return vpnFromInit(snap, at), staleInitProvenance(at), true
 	}
 	return VPNView{}, Provenance{Source: SourceEmpty}, false
 }
