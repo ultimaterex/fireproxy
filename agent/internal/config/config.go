@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	DefaultInterval          = 60 * time.Second
-	MinInterval              = 30 * time.Second
+	DefaultInterval          = 1 * time.Second
+	MinInterval              = 250 * time.Millisecond
 	DefaultHTTPTimeout       = 5 * time.Second
 	DefaultRedisAddr         = "127.0.0.1:6379"
 	DefaultACLLog            = "/alog/dnsmasq-acl.log"

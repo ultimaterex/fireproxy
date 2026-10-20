@@ -123,3 +123,5 @@ jobs:
             ghcr.io/${{ github.repository }}/${{ matrix.component }}:${{ steps.ver.outputs.version }}
           build-args: |
             VERSION=${{ steps.ver.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.component }},ignore-error=true
