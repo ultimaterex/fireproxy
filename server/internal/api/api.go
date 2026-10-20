@@ -258,11 +258,24 @@ func (s *Server) network(w http.ResponseWriter, r *http.Request) {
 			nets = append(nets, n)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"ts":      cat.TS,
 		"host":    cat.Host,
 		"network": nets,
-	})
+	}
+	extrasOK := false
+	var snap fwapp.ObservatorySnapshot
+	var extrasAt time.Time
+	if s.FWApp != nil {
+		if s2, at, ok := s.FWApp.ObservatorySnapshot(); ok {
+			snap, extrasOK = s2, true
+			extrasAt = at
+		}
+	}
+	for k, v := range multiWANNetworkExtrasAt(snap, extrasAt, extrasOK, time.Now()) {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) policies(w http.ResponseWriter, r *http.Request) {
@@ -286,11 +299,18 @@ func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no tags yet", http.StatusNotFound)
 		return
 	}
+	caps := fwapp.DefaultRulesCapabilities()
 	out := map[string]any{
 		"ts":     view.TS,
 		"host":   view.Host,
 		"tags":   view.Tags,
 		"source": prov.Source,
+		"capabilities": map[string]bool{
+			"host.group": caps["host.group"],
+			"tag.create": caps["tag.create"],
+			"tag.rename": caps["tag.rename"],
+			"tag.delete": caps["tag.delete"],
+		},
 	}
 	attachProvenance(out, prov)
 	writeJSON(w, http.StatusOK, out)

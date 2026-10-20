@@ -1,0 +1,16 @@
+{
+  "virtWanGroups": [{
+    "uuid": "de010a17-311d-4385-82fe-3b5078f3d28b",
+    "name": "Proton Miami",
+    "type": "primary_standby",
+    "failback": true,
+    "strictVPN": true,
+    "wans": [{"profileId": "G6IVYN5Y", "seq": 0}, {"profileId": "AIQXRRPP", "seq": 1}],
+    "connState": {
+      "G6IVYN5Y": {"active": false, "enabled": true, "profileId": "G6IVYN5Y", "seq": 0},
+      "AIQXRRPP": {"active": false, "enabled": false, "profileId": "AIQXRRPP", "seq": 1}
+    }
+  }],
+  "wanTestResult": {"connected": false, "wans": {}},
+  "runtimeFeatures": {"dual_wan": true, "single_wan_conn_check": false}
+}

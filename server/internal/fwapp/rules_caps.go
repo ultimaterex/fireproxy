@@ -23,5 +23,8 @@ func DefaultRulesCapabilities() RulesCapabilities {
 		"host.family":           true,
 		"host.note":             true,
 		"host.group":            true,
+		"tag.create":            false,
+		"tag.rename":            false,
+		"tag.delete":            false,
 	}
 }
