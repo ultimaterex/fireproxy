@@ -4,17 +4,28 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"fireproxy/pkg/device"
 	"fireproxy/pkg/inventory"
 	"fireproxy/pkg/snapshot"
+	"fireproxy/server/internal/agenthub"
 	"fireproxy/server/internal/api"
+	"fireproxy/server/internal/controlhist"
 	"fireproxy/server/internal/modules"
+	"fireproxy/server/internal/observatory"
 	"fireproxy/server/internal/store"
 	"fireproxy/server/internal/unifi"
 )
+
+func onlineHub() *agenthub.Hub {
+	h := &agenthub.Hub{}
+	h.SetOnline(true)
+	return h
+}
 
 func TestHealthAndLatest(t *testing.T) {
 	mem := store.NewMemoryStore(8)
@@ -47,7 +58,7 @@ func TestHealthAndLatest(t *testing.T) {
 		Modules []modules.Info `json:"modules"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &mods)
-	if len(mods.Modules) != 3 || mods.Modules[0].ID != "unifi-sync" || !mods.Modules[0].Enabled {
+	if len(mods.Modules) != 4 || mods.Modules[0].ID != "unifi-sync" || !mods.Modules[0].Enabled {
 		t.Fatalf("modules: %+v", mods.Modules)
 	}
 
@@ -68,11 +79,17 @@ func TestHealthAndLatest(t *testing.T) {
 		t.Fatalf("want 404 got %d", rr.Code)
 	}
 
-	mem.Add(snapshot.Snapshot{TS: 1, Host: "a", Ifaces: map[string]snapshot.IfaceStats{}})
+	s.AgentHub = onlineHub()
+	mem.Add(snapshot.Snapshot{TS: time.Now().Unix(), Host: "a", Ifaces: map[string]snapshot.IfaceStats{}})
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/metrics/latest", nil))
 	if rr.Code != 200 {
 		t.Fatalf("latest %d %s", rr.Code, rr.Body.String())
+	}
+	var latest map[string]any
+	_ = json.Unmarshal(rr.Body.Bytes(), &latest)
+	if latest["source"] != observatory.SourceAgent {
+		t.Fatalf("source=%v", latest["source"])
 	}
 
 	rr = httptest.NewRecorder()
@@ -85,7 +102,7 @@ func TestHealthAndLatest(t *testing.T) {
 func TestDashboardFromCatalog(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
-		TS:       9,
+		TS:       time.Now().Unix(),
 		Host:     "Firewalla",
 		Devices:  []inventory.Device{{Device: device.Device{MAC: "aa"}}},
 		Policies: []inventory.Policy{{ID: "1"}, {ID: "2"}},
@@ -95,7 +112,7 @@ func TestDashboardFromCatalog(t *testing.T) {
 			Blocked:     inventory.BlockedMix{Blocked: 15, Allowed: 20},
 		},
 	})
-	s := &api.Server{CatalogStore: cat}
+	s := &api.Server{CatalogStore: cat, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -104,19 +121,24 @@ func TestDashboardFromCatalog(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Devices    int   `json:"devices"`
-		Rules      int   `json:"rules"`
-		AlarmCount int64 `json:"alarm_count"`
+		Devices    int    `json:"devices"`
+		Rules      int    `json:"rules"`
+		AlarmCount int64  `json:"alarm_count"`
+		Source     string `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if body.Devices != 1 || body.Rules != 2 || body.AlarmCount != 572 {
 		t.Fatalf("%+v", body)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
 	}
 }
 
 func TestDashboardIncludesSpeedtestAndDNS(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
+		TS: time.Now().Unix(),
 		Dashboard: &inventory.Dashboard{
 			Speedtest: []inventory.SpeedtestWAN{
 				{UUID: "wan-a", Name: "Telesur", Active: true, PlanDown: 1000, Down: 619, Up: 410},
@@ -126,7 +148,7 @@ func TestDashboardIncludesSpeedtestAndDNS(t *testing.T) {
 			},
 		},
 	})
-	s := &api.Server{CatalogStore: cat}
+	s := &api.Server{CatalogStore: cat, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -156,13 +178,14 @@ func (m mapGeo) Country(ip string) string { return m[ip] }
 func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
+		TS: time.Now().Unix(),
 		Dashboard: &inventory.Dashboard{
 			DestFlows: []inventory.RankedFlow{
 				{ID: "hf.co", Name: "hf.co", DestIP: "9.9.9.9", Download: 500, Bytes: 500},
 			},
 		},
 	})
-	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"9.9.9.9": "US"}}
+	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"9.9.9.9": "US"}, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -175,7 +198,8 @@ func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 			Name   string `json:"name"`
 			Region string `json:"region"`
 		} `json:"top_dest_download"`
-		DestFlows []any `json:"dest_flows"`
+		DestFlows []any  `json:"dest_flows"`
+		Source    string `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if len(body.TopDestDownload) != 1 || body.TopDestDownload[0].Region != "United States" {
@@ -184,16 +208,19 @@ func TestDashboardEnrichesDestsFromServerMMDB(t *testing.T) {
 	if len(body.DestFlows) != 0 {
 		t.Fatalf("dest_flows leaked: %+v", body.DestFlows)
 	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
+	}
 }
 
 func TestBoxFromCatalog(t *testing.T) {
 	cat := store.NewCatalogStore()
 	cat.Set(inventory.Catalog{
-		TS:   9,
+		TS:   time.Now().Unix(),
 		Host: "TestBox",
 		Box:  &inventory.Box{Name: "TestBox", PublicIP: "1.2.3.4", EID: "eid1", Mode: "router"},
 	})
-	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"1.2.3.4": "SR"}}
+	s := &api.Server{CatalogStore: cat, Geo: mapGeo{"1.2.3.4": "SR"}, AgentHub: onlineHub()}
 	mux := http.NewServeMux()
 	s.Routes(mux)
 	rr := httptest.NewRecorder()
@@ -202,11 +229,15 @@ func TestBoxFromCatalog(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Box inventory.Box `json:"box"`
+		Box    inventory.Box `json:"box"`
+		Source string        `json:"source"`
 	}
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
 	if body.Box.Country != "SR" || body.Box.Region != "Suriname" || body.Box.EID != "eid1" {
 		t.Fatalf("%+v", body.Box)
+	}
+	if body.Source != observatory.SourceAgent {
+		t.Fatalf("source=%q", body.Source)
 	}
 }
 
@@ -636,6 +667,7 @@ type nameSyncMod struct {
 	ips      map[string]string
 	fetchErr error
 	applied  []unifi.NameRow
+	failMAC  map[string]string // MAC → error message
 	sta      map[string]unifi.Station
 	snap     unifi.Snapshot
 	snapOK   bool
@@ -657,12 +689,22 @@ func (m *nameSyncMod) ApplyRows(rows []unifi.NameRow) []unifi.ApplyResult {
 	m.applied = append([]unifi.NameRow(nil), rows...)
 	out := make([]unifi.ApplyResult, len(rows))
 	for i, r := range rows {
+		if msg, ok := m.failMAC[r.MAC]; ok {
+			out[i] = unifi.ApplyResult{MAC: r.MAC, Error: msg}
+			continue
+		}
 		out[i] = unifi.ApplyResult{MAC: r.MAC, OK: true}
 	}
 	return out
 }
 
 func nameSyncTestServer(t *testing.T, mod *nameSyncMod, enabled bool) (*api.Server, *http.ServeMux, *unifi.PrefsStore) {
+	t.Helper()
+	s, mux, ns, _ := nameSyncHistServer(t, mod, enabled, false)
+	return s, mux, ns
+}
+
+func nameSyncHistServer(t *testing.T, mod *nameSyncMod, enabled, withHist bool) (*api.Server, *http.ServeMux, *unifi.PrefsStore, *store.Persist) {
 	t.Helper()
 	reg := modules.NewRegistry(nil, map[string]func() modules.Module{
 		"unifi-sync": func() modules.Module { return mod },
@@ -681,10 +723,21 @@ func nameSyncTestServer(t *testing.T, mod *nameSyncMod, enabled bool) (*api.Serv
 		},
 	})
 	ns := &unifi.PrefsStore{}
-	s := &api.Server{CatalogStore: cat, Modules: reg, NameSync: ns}
+	s := &api.Server{CatalogStore: cat, Modules: reg, NameSync: ns, AuthDisabled: true}
+	var p *store.Persist
+	if withHist {
+		var err error
+		p, err = store.OpenPersist(filepath.Join(t.TempDir(), "fp.db"), 90)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = p.Close() })
+		s.Persist = p
+		s.ControlHist = controlhist.New(p)
+	}
 	mux := http.NewServeMux()
 	s.Routes(mux)
-	return s, mux, ns
+	return s, mux, ns, p
 }
 
 func TestNameSyncModuleOff404(t *testing.T) {
@@ -906,5 +959,154 @@ func TestAuditEmptyWhenModuleOff(t *testing.T) {
 	}
 	if body.Names.Rows == nil || body.VLAN.Count != 0 || body.STP.Count != 0 {
 		t.Fatalf("%+v", body)
+	}
+}
+
+func TestNameSyncApplyHistoryTwoMACs(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %+v", rows)
+	}
+	byMAC := map[string]store.ControlEvent{}
+	for _, ev := range rows {
+		byMAC[ev.Target] = ev
+	}
+	nas := byMAC["02:00:00:00:00:02"]
+	if nas.ActorKind != "user" || nas.Actor != "admin" || nas.Result != "ok" {
+		t.Fatalf("nas: %+v", nas)
+	}
+	if nas.BeforeJSON != `{"name":"old-nas"}` || nas.AfterJSON != `{"name":"NAS"}` {
+		t.Fatalf("nas snapshots: before=%q after=%q", nas.BeforeJSON, nas.AfterJSON)
+	}
+	phone := byMAC["02:00:00:00:00:03"]
+	if phone.Result != "ok" || phone.BeforeJSON != `{"name":"android-xx"}` || phone.AfterJSON != `{"name":"phone"}` {
+		t.Fatalf("phone: %+v", phone)
+	}
+}
+
+func TestNameSyncApplyHistoryMixed(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u2", MAC: "02:00:00:00:00:02", Name: "old-nas"},
+			{ID: "u3", MAC: "02:00:00:00:00:03", Hostname: "android-xx"},
+		},
+		failMAC: map[string]string{"02:00:00:00:00:03": "not in UniFi user db"},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %+v", rows)
+	}
+	byMAC := map[string]store.ControlEvent{}
+	for _, ev := range rows {
+		byMAC[ev.Target] = ev
+	}
+	if byMAC["02:00:00:00:00:02"].Result != "ok" || byMAC["02:00:00:00:00:02"].AfterJSON == "" {
+		t.Fatalf("ok row: %+v", byMAC["02:00:00:00:00:02"])
+	}
+	fail := byMAC["02:00:00:00:00:03"]
+	if fail.Result != "error" || fail.AfterJSON != "" || fail.BeforeJSON != `{"name":"android-xx"}` {
+		t.Fatalf("fail row: %+v", fail)
+	}
+	if fail.Error == "" {
+		t.Fatalf("want error text: %+v", fail)
+	}
+}
+
+func TestRecordUniFiRenamesSystemActor(t *testing.T) {
+	p, err := store.OpenPersist(filepath.Join(t.TempDir(), "fp.db"), 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	rec := controlhist.New(p)
+	rows := []unifi.NameRow{
+		{MAC: "02:00:00:00:00:02", Firewalla: "NAS", UniFi: "old-nas"},
+	}
+	results := []unifi.ApplyResult{{MAC: "02:00:00:00:00:02", OK: true}}
+	api.RecordUniFiRenames(rec, controlhist.ActorSystem, "name-sync", rows, results)
+	evs, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("%+v", evs)
+	}
+	if evs[0].ActorKind != "system" || evs[0].Actor != "name-sync" || evs[0].Action != "client.rename" {
+		t.Fatalf("%+v", evs[0])
+	}
+}
+
+func TestNameSyncApplyHistoryEmptyBefore(t *testing.T) {
+	mod := &nameSyncMod{
+		Stub:   modules.Stub{ModuleName: "unifi-sync"},
+		status: "ok",
+		users: []unifi.User{
+			{ID: "u3", MAC: "02:00:00:00:00:03"},
+		},
+	}
+	_, mux, ns, p := nameSyncHistServer(t, mod, true, true)
+	ns.Set(unifi.Prefs{Enabled: true})
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{"macs":["02:00:00:00:00:03"]}`)))
+	if rr.Code != 200 {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Scheme: "unifi", Action: "client.rename", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %+v", rows)
+	}
+	ev := rows[0]
+	if ev.Result != "ok" || ev.BeforeJSON != `{"name":""}` || ev.AfterJSON != `{"name":"phone"}` {
+		t.Fatalf("empty→named snapshots: %+v", ev)
+	}
+}
+
+func TestNameSyncApplyModuleOffNoHistory(t *testing.T) {
+	mod := &nameSyncMod{Stub: modules.Stub{ModuleName: "unifi-sync"}, status: "ok"}
+	_, mux, _, p := nameSyncHistServer(t, mod, false, true)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/v1/unifi/name-sync/apply", strings.NewReader(`{}`)))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404 got %d", rr.Code)
+	}
+	rows, err := p.QueryControlEvents(store.ControlEventQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("module off must not record: %+v", rows)
 	}
 }

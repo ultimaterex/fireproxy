@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { EthernetPort, MonitorSmartphone, Network, Server, Shield, Wifi } from 'lucide-react'
 
 import { CopyText } from '@/components/CopyText'
+import { SourceBadge } from '@/components/SourceBadge'
 
 import { Flag } from '@/components/Flag'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,9 @@ const MODES: { id: Mode; maker: 'firewalla' | 'unifi'; label: string }[] = [
 
 export function InventoryTab({
   box,
+  source,
+  stale,
+  reason,
   unifi,
   console: ucon,
   devices,
@@ -29,6 +33,9 @@ export function InventoryTab({
   policies,
 }: {
   box: BoxInfo | null
+  source?: string
+  stale?: boolean
+  reason?: string
   unifi: ModuleInfo | null
   console: UnifiConsole | null
   devices: Device[]
@@ -76,6 +83,9 @@ export function InventoryTab({
       {active === 'firewalla' ? (
         <FirewallaPane
           box={box}
+          source={source}
+          stale={stale}
+          reason={reason}
           devices={devices}
           network={network}
           switches={switches}
@@ -90,12 +100,18 @@ export function InventoryTab({
 
 function FirewallaPane({
   box,
+  source,
+  stale,
+  reason,
   devices,
   network,
   switches,
   policies,
 }: {
   box: BoxInfo | null
+  source?: string
+  stale?: boolean
+  reason?: string
   devices: Device[]
   network: NetIface[]
   switches: Switch[]
@@ -116,7 +132,27 @@ function FirewallaPane({
 
   const rows: { label: string; value: ReactNode }[] = []
   if (box.public_ip) rows.push({ label: 'Public IP', value: <CopyText value={box.public_ip} /> })
+  if (box.public_ips && Object.keys(box.public_ips).length) {
+    rows.push({
+      label: 'Public IPs',
+      value: (
+        <span className="space-y-1">
+          {Object.entries(box.public_ips).map(([iface, ip]) => (
+            <div key={iface} className="flex items-center gap-2">
+              <span className="text-muted-foreground">{iface}</span>
+              <CopyText value={ip} />
+            </div>
+          ))}
+        </span>
+      ),
+    })
+  }
   if (wanValue) rows.push({ label: 'WAN', value: wanValue })
+  if (box.cloud_connected != null) {
+    rows.push({ label: 'Cloud', value: box.cloud_connected ? 'Connected' : 'Disconnected' })
+  }
+  if (box.uptime_sec != null) rows.push({ label: 'Uptime', value: formatUptime(box.uptime_sec) })
+  if (box.os_uptime_sec != null) rows.push({ label: 'OS uptime', value: formatUptime(box.os_uptime_sec) })
   if (box.version) rows.push({ label: 'Version', value: box.version })
   if (box.mode) rows.push({ label: 'Mode', value: modeLabel(box.mode) })
   if (box.region) {
@@ -151,6 +187,7 @@ function FirewallaPane({
           <CardTitle className="flex items-center gap-3 text-xl font-normal leading-8">
             <img src={makerLogo('firewalla')} alt="" className="size-8 rounded-sm object-contain" />
             <span>{box.name || makerLabel('firewalla')}</span>
+            <SourceBadge source={source} stale={stale} reason={reason} />
             {box.license ? (
               <span className="ml-auto text-sm text-muted-foreground">{box.license}</span>
             ) : null}

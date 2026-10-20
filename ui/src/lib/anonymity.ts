@@ -1,8 +1,10 @@
 import type {
   AuditView,
   BoxInfo,
+  ControlEvent,
   Dashboard,
   Device,
+  FwAppRulesView,
   HistoryPoint,
   LatestView,
   ModuleInfo,
@@ -787,6 +789,9 @@ export function anonymizeBox(anon: Anon, box: BoxInfo): BoxInfo {
     timezone: g.tz,
     country: g.cc,
     region: g.city,
+    local_domain_suffix: box.local_domain_suffix
+      ? anon.fakeDest(box.local_domain_suffix).domain
+      : box.local_domain_suffix,
     macs: box.macs?.map((m) =>
       typeof m === 'string' ? anon.fakeMAC(m) : { name: m.name, mac: anon.fakeMAC(m.mac) },
     ),
@@ -869,7 +874,14 @@ export function anonymizeDashboard(anon: Anon, dash: Dashboard, cidrs: CidrMap[]
     speedtest: dash.speedtest?.map((s) => ({
       ...s,
       name: anon.fakeISP(s.name),
-      points: s.points?.map((p) => ({ ...p, ts: anon.shiftTS(p.ts) })),
+      server: s.server ? anon.fakeISP(s.server) : s.server,
+      location: s.location ? anon.fakeISP(s.location) : s.location,
+      points: s.points?.map((p) => ({
+        ...p,
+        ts: anon.shiftTS(p.ts),
+        server: p.server ? anon.fakeISP(p.server) : p.server,
+        location: p.location ? anon.fakeISP(p.location) : p.location,
+      })),
     })),
     dns: dash.dns
       ? {
@@ -1009,6 +1021,51 @@ export function anonymizePolicies(anon: Anon, policies: Policy[], cidrs: CidrMap
   }))
 }
 
+export function anonymizeFwAppRules(
+  anon: Anon,
+  view: FwAppRulesView,
+  cidrs: CidrMap[] = [],
+): FwAppRulesView {
+  return {
+    ...view,
+    rules: view.rules.map((r) => ({
+      ...r,
+      target: r.target ? anon.rewriteText(r.target, cidrs) : r.target,
+      name: r.name ? anon.rewriteText(r.name, cidrs) : r.name,
+      notes: r.notes ? anon.rewriteText(r.notes, cidrs) : r.notes,
+      scopeLabel: r.scopeLabel ? anon.rewriteText(r.scopeLabel, cidrs) : r.scopeLabel,
+      scope: r.scope?.map((m) => anon.fakeMAC(m)),
+      tags: r.tags?.map((t) => anon.rewriteText(t, cidrs)),
+    })),
+    dapRules: (view.dapRules ?? []).map((r) => ({
+      ...r,
+      target: r.target ? anon.rewriteText(r.target, cidrs) : r.target,
+      name: r.name ? anon.rewriteText(r.name, cidrs) : r.name,
+      notes: r.notes ? anon.rewriteText(r.notes, cidrs) : r.notes,
+      scopeLabel: r.scopeLabel ? anon.rewriteText(r.scopeLabel, cidrs) : r.scopeLabel,
+      scope: r.scope?.map((m) => anon.fakeMAC(m)),
+      tags: r.tags?.map((t) => anon.rewriteText(t, cidrs)),
+    })),
+    exceptions: view.exceptions.map((e) => ({
+      ...e,
+      target: e.target ? anon.rewriteText(e.target, cidrs) : e.target,
+      targetName: e.targetName ? anon.rewriteText(e.targetName, cidrs) : e.targetName,
+      reason: e.reason ? anon.rewriteText(e.reason, cidrs) : e.reason,
+      ifTarget: e.ifTarget ? anon.rewriteText(e.ifTarget, cidrs) : e.ifTarget,
+    })),
+    scopes: view.scopes.map((s) => ({
+      ...s,
+      id:
+        s.kind === 'device'
+          ? anon.fakeMAC(s.id)
+          : s.id.startsWith('tag:')
+            ? `tag:${anon.rewriteText(s.id.slice(4), cidrs)}`
+            : s.id,
+      label: anon.rewriteText(s.label, cidrs),
+    })),
+  }
+}
+
 export function anonymizeTags(anon: Anon, tags: Tag[]): Tag[] {
   return tags.map((t) => ({
     ...t,
@@ -1044,6 +1101,50 @@ export function anonymizeEnrollCmd(anon: Anon, cmd: string): string {
 
 export function anonymizeAgentEvents(anon: Anon, events: AnonAgentEvent[]): AnonAgentEvent[] {
   return events.map((e) => ({ ...e, ts: anon.shiftTS(e.ts) }))
+}
+
+function anonymizeControlSnapshot(anon: Anon, v: unknown, cidrs: CidrMap[]): unknown {
+  if (v == null) return v
+  if (typeof v === 'string') return anon.rewriteText(v, cidrs)
+  if (typeof v === 'number' || typeof v === 'boolean') return v
+  if (Array.isArray(v)) return v.map((x) => anonymizeControlSnapshot(anon, x, cidrs))
+  if (typeof v === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof val === 'string' && /^(name|hostname|dns)$/i.test(k)) {
+        out[k] = anon.fakeName('device', val)
+      } else {
+        out[k] = anonymizeControlSnapshot(anon, val, cidrs)
+      }
+    }
+    return out
+  }
+  return v
+}
+
+/** Anonymize control-plane History rows (not metrics HistoryPoint). */
+export function anonymizeControlEvents(
+  anon: Anon,
+  events: ControlEvent[],
+  cidrs: CidrMap[] = [],
+): ControlEvent[] {
+  return events.map((e) => ({
+    ...e,
+    ts: e.ts ? e.ts + anon.offsetSec * 1000 : e.ts,
+    target: e.target
+      ? looksLikeMAC(e.target)
+        ? anon.fakeMAC(e.target)
+        : anon.rewriteText(e.target, cidrs)
+      : e.target,
+    summary: e.summary
+      ? looksLikeMAC(e.summary)
+        ? anon.fakeMAC(e.summary)
+        : anon.fakeName('device', e.summary)
+      : e.summary,
+    error: e.error ? anon.rewriteText(e.error, cidrs) : e.error,
+    before: anonymizeControlSnapshot(anon, e.before, cidrs),
+    after: anonymizeControlSnapshot(anon, e.after, cidrs),
+  }))
 }
 
 export function anonymizeModules(anon: Anon, mods: ModuleInfo[]): ModuleInfo[] {

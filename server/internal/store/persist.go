@@ -55,6 +55,10 @@ func OpenPersist(path string, retentionDays int) (*Persist, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := p.migrateControlEvents(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := p.migrateAuth(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -68,6 +72,10 @@ func OpenPersist(path string, retentionDays int) (*Persist, error) {
 		return nil, err
 	}
 	if err := p.PruneAgentEvents(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := p.PruneControlEvents(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

@@ -158,6 +158,44 @@ func TestAuthSessionsAPIKeysAgentOIDC(t *testing.T) {
 	}
 }
 
+func TestGetAPIKeyByID(t *testing.T) {
+	p, err := OpenPersist(filepath.Join(t.TempDir(), "auth.db"), 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	_, ok, err := p.GetAPIKeyByID("missing")
+	if err != nil || ok {
+		t.Fatalf("miss: ok=%v err=%v", ok, err)
+	}
+
+	now := time.Now().Unix()
+	key := AuthAPIKey{
+		ID:        "key-1",
+		Name:      "ci",
+		Hash:      "hash-abc",
+		Scopes:    "read,write",
+		CreatedAt: now,
+	}
+	if err := p.InsertAPIKey(key); err != nil {
+		t.Fatal(err)
+	}
+	found, ok, err := p.GetAPIKeyByID("key-1")
+	if err != nil || !ok || found.ID != "key-1" || found.Name != "ci" ||
+		found.Hash != "hash-abc" || found.Scopes != "read,write" || found.CreatedAt != now {
+		t.Fatalf("GetAPIKeyByID %+v ok=%v err=%v", found, ok, err)
+	}
+	usedAt := now + 10
+	if err := p.TouchAPIKeyLastUsed("key-1", usedAt); err != nil {
+		t.Fatal(err)
+	}
+	found, ok, _ = p.GetAPIKeyByID("key-1")
+	if !ok || found.LastUsedAt == nil || *found.LastUsedAt != usedAt {
+		t.Fatalf("last_used %+v", found)
+	}
+}
+
 func TestAuthPutOIDCSettingsNilSecretAtomic(t *testing.T) {
 	p, err := OpenPersist(filepath.Join(t.TempDir(), "auth-oidc.db"), 90)
 	if err != nil {

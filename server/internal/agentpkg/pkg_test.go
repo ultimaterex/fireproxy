@@ -16,6 +16,24 @@ func TestOpenMissing(t *testing.T) {
 	}
 }
 
+func TestOpenDevStampsSHA(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fireproxy-agent-arm64"), []byte("fake-agent-bytes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte("dev\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Open(dir)
+	if err != nil || p.Missing() {
+		t.Fatalf("%v missing=%v", err, p.Missing())
+	}
+	want := "dev-" + p.SHA256[:12]
+	if p.Version != want {
+		t.Fatalf("version=%q want %q", p.Version, want)
+	}
+}
+
 func TestOpenPresent(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "fireproxy-agent")
@@ -40,6 +58,24 @@ func TestOpenPresent(t *testing.T) {
 	}
 	if Newer("1.2.2", "1.2.3") {
 		t.Fatal("older not newer")
+	}
+	if !NeedsUpdate("1.2.4", "1.2.3", "", "") {
+		t.Fatal("semver needs update")
+	}
+	if NeedsUpdate("1.2.3", "1.2.3", "", "") {
+		t.Fatal("equal semver without sha should not update")
+	}
+	if !NeedsUpdate("dev", "dev", "aaa", "bbb") {
+		t.Fatal("sha mismatch should update")
+	}
+	if NeedsUpdate("dev", "dev", "aaa", "aaa") {
+		t.Fatal("sha match should not update")
+	}
+	if !NeedsUpdate("dev-20260102150405", "dev", "", "") {
+		t.Fatal("dev stamp vs bare dev should update")
+	}
+	if NeedsUpdate("dev-1", "dev-1", "", "") {
+		t.Fatal("equal stamps without sha should not update")
 	}
 	// Legacy unsuffixed binary resolves as the default arch.
 	if b, ok := p.Bin(""); !ok || b.Arch != DefaultArch {

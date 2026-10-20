@@ -7,10 +7,12 @@ import {
   Bug,
   Cable,
   ClipboardList,
+  History,
   MonitorSmartphone,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
   ScrollText,
   Settings,
   Shield,
@@ -73,6 +75,7 @@ import {
   type PersistInfo,
   type AgentHealth,
   type Policy,
+  type Provenance,
   type SeenId,
   type Tab,
   type Tag,
@@ -102,6 +105,7 @@ import { SettingsTab } from '@/tabs/SettingsTab'
 import { TopologyTab } from '@/tabs/TopologyTab'
 import { WirelessTab, WirelessAPDetail, WirelessNetworkDetail, apLabel, netKey, clientLabel } from '@/tabs/WirelessTab'
 import { AuditTab, type AuditFocus, type AuditSectionId } from '@/tabs/AuditTab'
+import { HistoryTab } from '@/tabs/HistoryTab'
 import { LogsTab } from '@/tabs/LogsTab'
 import {
   countUnsnoozedOffline,
@@ -115,6 +119,7 @@ const NAV: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: 'topology', label: 'Topology', icon: Network },
   { id: 'wireless', label: 'Wireless', icon: Wifi },
   { id: 'audit', label: 'Audit', icon: ClipboardList },
+  { id: 'history', label: 'History', icon: History },
   { id: 'devices', label: 'Devices', icon: MonitorSmartphone },
   { id: 'rules', label: 'Rules', icon: Shield },
   { id: 'groups', label: 'Groups', icon: Users },
@@ -159,6 +164,8 @@ function App() {
   const [query, setQuery] = useState('')
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [box, setBox] = useState<BoxInfo | null>(null)
+  const [devicesProv, setDevicesProv] = useState<Provenance>({})
+  const [boxProv, setBoxProv] = useState<Provenance>({})
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [legacyPage, setLegacyPage] = useState<LegacyPage>('metrics')
   const [unifiMod, setUnifiMod] = useState<ModuleInfo | null>(null)
@@ -166,6 +173,9 @@ function App() {
   const [unifiConsole, setUnifiConsole] = useState<UnifiConsole | null>(null)
   const [settingsOpen, setSettingsOpen] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [initRefreshing, setInitRefreshing] = useState(false)
+  const [controlLanOk, setControlLanOk] = useState(false)
+  const loadBootstrapRef = useRef<(() => Promise<void>) | null>(null)
   const [auditFocus, setAuditFocus] = useState<AuditFocus | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(loadNavCollapsed)
   const [anonOn, setAnonOn] = useState(isAnonymityOn)
@@ -234,7 +244,7 @@ function App() {
     async function load() {
       setNowMs(Date.now())
       try {
-        const [mRes, hRes, dRes, nRes, tRes, wRes, pRes, gRes, healthRes, dashRes, boxRes, modRes, uRes, aRes] =
+        const [mRes, hRes, dRes, nRes, tRes, wRes, pRes, gRes, healthRes, dashRes, boxRes, modRes, uRes, aRes, fwRes] =
           await Promise.all([
           api('/v1/metrics/latest'),
           api(`/v1/metrics/history?range=${chartRange}`),
@@ -250,8 +260,16 @@ function App() {
           api('/v1/modules'),
           api('/v1/unifi'),
           api('/v1/audit'),
+          api('/v1/fw-app/status'),
         ])
         if (!cancelled) setError(null)
+
+        if (fwRes.ok) {
+          const st = (await fwRes.json()) as { paired?: boolean; state?: string }
+          if (!cancelled) setControlLanOk(!!st.paired && st.state === 'lan-ok')
+        } else if (!cancelled) {
+          setControlLanOk(false)
+        }
 
         if (mRes.ok) {
           const data = (await mRes.json()) as LatestView
@@ -270,13 +288,24 @@ function App() {
             ts: number
             host: string
             devices: Device[]
+            source?: string
+            fetched_at?: string
+            stale?: boolean
+            reason?: string
           }
           if (!cancelled) {
             setDevices(data.devices ?? [])
             setInvMeta({ ts: data.ts, host: data.host })
+            setDevicesProv({
+              source: data.source,
+              fetched_at: data.fetched_at,
+              stale: data.stale,
+              reason: data.reason,
+            })
           }
         } else if (dRes.status === 404 && !cancelled) {
           setDevices([])
+          setDevicesProv({})
         }
 
         if (nRes.ok) {
@@ -345,10 +374,25 @@ function App() {
         }
 
         if (boxRes.ok) {
-          const data = (await boxRes.json()) as { box?: BoxInfo }
-          if (!cancelled) setBox(data.box ?? null)
+          const data = (await boxRes.json()) as {
+            box?: BoxInfo
+            source?: string
+            fetched_at?: string
+            stale?: boolean
+            reason?: string
+          }
+          if (!cancelled) {
+            setBox(data.box ?? null)
+            setBoxProv({
+              source: data.source,
+              fetched_at: data.fetched_at,
+              stale: data.stale,
+              reason: data.reason,
+            })
+          }
         } else if (boxRes.status === 404 && !cancelled) {
           setBox(null)
+          setBoxProv({})
         }
 
         if (modRes.ok) {
@@ -362,13 +406,34 @@ function App() {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       }
     }
+    loadBootstrapRef.current = load
     void load()
     const id = window.setInterval(load, 5000)
     return () => {
       cancelled = true
+      loadBootstrapRef.current = null
       window.clearInterval(id)
     }
   }, [chartRange, auth])
+
+  async function refreshFromControl() {
+    if (initRefreshing || !controlLanOk) return
+    setInitRefreshing(true)
+    setNotifOpen(false)
+    try {
+      const r = await api('/v1/fw-app/init/refresh', { method: 'POST' })
+      if (!r.ok) {
+        const msg = (await r.text().catch(() => '')) || `Refresh failed (${r.status})`
+        setError(msg)
+        return
+      }
+      await loadBootstrapRef.current?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInitRefreshing(false)
+    }
+  }
 
   const cidrs = useMemo(() => (anon ? lanCidrsFromNetwork(anon, network) : []), [anon, network])
   const showNetwork = useMemo(
@@ -855,6 +920,20 @@ function App() {
           ) : MODE_TABS.includes(tab) ? (
             <ViewToggle value={modes[tab]} onChange={setMode} />
           ) : null}
+          <button
+            type="button"
+            className="relative rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            aria-label="Refresh from Firewalla"
+            title={
+              controlLanOk
+                ? 'Pull live data from Firewalla control'
+                : 'Pair Firewalla control (LAN OK) to refresh'
+            }
+            disabled={!controlLanOk || initRefreshing}
+            onClick={() => void refreshFromControl()}
+          >
+            <RefreshCw className={cn('size-5', initRefreshing && 'animate-spin')} />
+          </button>
           <div className="relative" ref={notifRef}>
             <button
               type="button"
@@ -945,7 +1024,15 @@ function App() {
           </div>
         </header>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto">
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-x-auto">
+        {initRefreshing ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+            <div className="flex items-center gap-2 rounded-md border bg-background px-4 py-3 text-sm text-muted-foreground shadow-sm">
+              <RefreshCw className="size-4 animate-spin" />
+              Refreshing from Firewalla…
+            </div>
+          </div>
+        ) : null}
         <main
           className={cn(
             'mx-auto w-full px-5 py-5',
@@ -971,6 +1058,45 @@ function App() {
               }
               port={portIndex.get(selectedDevice.mac.toUpperCase())}
               groupLabel={groupNameFor(selectedDevice, labelTag)}
+              tags={showTags}
+              labelTag={labelTag}
+              unifi={unifiMod}
+              domainSuffix={showBox?.local_domain_suffix}
+              onRenamed={(mac, name) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, name } : d,
+                  ),
+                )
+                setStack((prev) => {
+                  const idx = prev.findIndex(
+                    (f) => f.kind === 'device' && f.mac.toUpperCase() === key,
+                  )
+                  if (idx < 0) return prev
+                  const frame = prev[idx]
+                  if (frame.kind !== 'device') return prev
+                  const next = [...prev]
+                  next[idx] = { ...frame, label: name }
+                  return next
+                })
+              }}
+              onDNSUpdated={(mac, hostname) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, local_domain: hostname || undefined } : d,
+                  ),
+                )
+              }}
+              onGroupUpdated={(mac, tagIds) => {
+                const key = mac.toUpperCase()
+                setDevices((prev) =>
+                  prev.map((d) =>
+                    d.mac.toUpperCase() === key ? { ...d, tag_ids: tagIds } : d,
+                  ),
+                )
+              }}
             />
           ) : selectedRegion && tab === 'metrics' ? (
             <RegionDetail
@@ -988,6 +1114,9 @@ function App() {
           ) : showDevicesTable ? (
             <DevicesTab
               devices={showDevices}
+              source={devicesProv.source}
+              stale={devicesProv.stale}
+              reason={devicesProv.reason}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}
@@ -1056,12 +1185,16 @@ function App() {
               onOpenRules={() => selectTab('rules')}
               onSelectDevice={(mac, label) => openDevice(mac, label)}
               onSelectRegion={(cc, label) => openRegion(cc, label)}
+              onDashboard={setDashboard}
             />
           )}
 
           {tab === 'inventory' && (
             <InventoryTab
               box={showBox}
+              source={boxProv.source}
+              stale={boxProv.stale}
+              reason={boxProv.reason}
               unifi={unifiMod}
               console={showUnifi}
               devices={showDevices}
@@ -1192,11 +1325,16 @@ function App() {
             />
           )}
 
+          {tab === 'history' && <HistoryTab />}
+
           {tab === 'logs' && <LogsTab />}
 
           {tab === 'devices' && (
             <DevicesTab
               devices={showDevices}
+              source={devicesProv.source}
+              stale={devicesProv.stale}
+              reason={devicesProv.reason}
               groupFilter={groupFilter}
               lanFilter={lanFilter}
               switchMacs={switchMacs}
@@ -1251,7 +1389,18 @@ function App() {
             />
           )}
 
-          {tab === 'rules' && <RulesTab mode={modes.rules} policies={showPolicies} />}
+          {tab === 'rules' && (
+            <RulesTab
+              mode={modes.rules}
+              devices={showDevices}
+              tags={showTags}
+              labelTag={labelTag}
+              onOpenControl={() => {
+                setSettingsOpen('fw-app')
+                selectTab('settings')
+              }}
+            />
+          )}
 
           {tab === 'settings' && (
             <SettingsTab

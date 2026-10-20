@@ -14,6 +14,7 @@ import (
 
 	"fireproxy/agent/internal/agentevents"
 	"fireproxy/agent/internal/svclogs"
+	"fireproxy/agent/internal/update"
 	"fireproxy/pkg/agentws"
 
 	"github.com/gorilla/websocket"
@@ -183,6 +184,7 @@ func (c *Client) session(ctx context.Context) error {
 			Version:    ver,
 			SelfUpdate: c.SelfUpdate,
 			Arch:       runtime.GOARCH,
+			SHA256:     update.SelfSHA256(),
 		},
 	})
 	go c.flushAgentEvents(conn)
