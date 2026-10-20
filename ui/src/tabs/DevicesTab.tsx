@@ -767,7 +767,7 @@ function DeviceGroup({
                     </ContextMenu.Item>
                     <ContextMenu.Sub>
                       <ContextMenu.SubTrigger className={menuItemCls} disabled={busy}>
-                        Set group…
+                        Add group…
                       </ContextMenu.SubTrigger>
                       <ContextMenu.Portal>
                         <ContextMenu.SubContent className="z-50 min-w-36 rounded-lg border bg-popover py-1 shadow-md">
