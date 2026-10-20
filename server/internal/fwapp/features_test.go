@@ -5,7 +5,25 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestListFeaturesWithWarmObservatoryOnly(t *testing.T) {
+	svc, _ := pairedMutateService(t)
+	svc.obsCache.Set(ObservatorySnapshot{}, time.Now())
+	fetched := 0
+	svc.SetFetchInit(func(context.Context, Creds) (json.RawMessage, error) {
+		fetched++
+		return json.RawMessage(`{"runtimeFeatures":{"adblock":true}}`), nil
+	})
+	view, err := svc.ListFeatures(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetched != 1 || len(view.Features) == 0 || !view.Features[0].Enabled {
+		t.Fatalf("features not loaded: fetched=%d view=%+v", fetched, view)
+	}
+}
 
 func TestParseInitFeatures_curated(t *testing.T) {
 	raw := []byte(`{"mtype":"init","data":{

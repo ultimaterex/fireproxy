@@ -185,7 +185,16 @@ func (s *Service) ListFeatures(ctx context.Context) (FeaturesView, error) {
 			DNS:      DNSPosture{UnboundSummary: "off"},
 		}, nil
 	}
-	if err := s.EnsureInit(ctx); err != nil {
+	// Persisted observatory data may be warm after restart while feature state
+	// has not been loaded yet. A normal EnsureInit would skip that fetch.
+	_, _, haveFeatures := s.features.Get()
+	var err error
+	if haveFeatures {
+		err = s.EnsureInit(ctx)
+	} else {
+		err = s.refreshInitForced(ctx)
+	}
+	if err != nil {
 		return FeaturesView{Status: s.Status()}, err
 	}
 	view, _, ok := s.features.Get()
