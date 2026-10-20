@@ -9,7 +9,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/oschwald/geoip2-golang v1.11.0
-	golang.org/x/oauth2 v0.24.0
+	golang.org/x/oauth2 v0.27.0
 	modernc.org/sqlite v1.34.5
 )
 
