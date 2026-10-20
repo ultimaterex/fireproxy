@@ -143,7 +143,7 @@ Threat model and vulnerability reporting: [`SECURITY.md`](./SECURITY.md).
 The **agent** stays read/observe-only and capped so it barely touches the box. **Control** (when you enable it) is a separate server-side path over the box App API — not via the agent.
 
 - Designed to use as little on-box resources as possible
-- Interval default 60s (floor 30s)
+- Interval default 1s (floor 250ms); the installer and example environment retain an explicit 60s interval
 - No scrape server on the Firewalla
 - No Redis `KEYS`/`SCAN`, dig, Zeek, or product-tree edits
 - `Nice=10`, `CPUQuota=5%`, `MemoryMax=64M`
