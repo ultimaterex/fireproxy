@@ -233,6 +233,8 @@ func parseScreentimeScope(scopeIn, tagIn []string) (scope []string, tags []strin
 		lower := strings.ToLower(raw)
 		switch {
 		case strings.HasPrefix(lower, "intf:"):
+			// Preserve network scope so the UI does not label it as all devices.
+			tags = append(tags, raw)
 			continue
 		case strings.HasPrefix(lower, "tag:"):
 			id := strings.TrimSpace(raw[len("tag:"):])
