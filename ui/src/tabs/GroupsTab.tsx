@@ -134,6 +134,8 @@ export function GroupsTab({
     setBusyMac(device.mac)
     try {
       await onSetHostTags(device.mac, next)
+    } catch {
+      // The application reports the mutation error; keep rejected UI actions handled.
     } finally {
       setBusyMac(null)
     }

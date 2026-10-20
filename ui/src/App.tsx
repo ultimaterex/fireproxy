@@ -1482,11 +1482,11 @@ function App() {
             <GroupsTab
               groups={groups}
               devices={showDevices}
-              canEditGroupMembers={controlLanOk && !!tagCaps['host.group']}
+              canEditGroupMembers={!anonOn && controlLanOk && !!tagCaps['host.group']}
               canCreateTag={!!tagCaps['tag.create']}
               canRenameTag={!!tagCaps['tag.rename']}
               canDeleteTag={!!tagCaps['tag.delete']}
-              {...(controlLanOk && tagCaps['host.group']
+              {...(!anonOn && controlLanOk && tagCaps['host.group']
                 ? { onSetHostTags: setHostTags }
                 : {})}
               onViewInDevices={goDevicesGroup}
