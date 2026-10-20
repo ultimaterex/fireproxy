@@ -14,11 +14,27 @@ type AlarmsView struct {
 	NewAlarms        []fwapp.AlarmSample `json:"new_alarms"`
 }
 
-// Alarms resolves alarm count + newAlarms sample via agent catalog or fw-app init.
-// Prefer agent path for active_alarm_count when catalog dashboard is fresh and agent online.
-// Read-only bootstrap — no ignore/archive cmds.
+// Alarms resolves alarm count + samples via dual sources:
+// 1) fw-app get item "alarms" when control is lan-ok (beats PreferInit),
+// 2) else PreferInit / agent catalog / fw-app init Pick (existing semantics).
+// On get failure, fall through to agent/init — do not empty if those are available.
 func Alarms(ctx context.Context, deps Deps) (AlarmsView, Provenance, bool) {
 	now := deps.now()
+
+	if deps.ControlLANOK && deps.GetAlarms != nil {
+		count, alarms, err := deps.GetAlarms(ctx)
+		if err == nil {
+			if alarms == nil {
+				alarms = []fwapp.AlarmSample{}
+			}
+			return AlarmsView{
+				ActiveAlarmCount: count,
+				NewAlarms:        alarms,
+			}, Provenance{Source: SourceFWAppGet, FetchedAt: now}, true
+		}
+		// fall through to PreferInit / agent / init
+	}
+
 	agentAge, haveAgent, cat := alarmsCatalogAge(deps, now, CatalogTTL)
 
 	if deps.PreferInit {

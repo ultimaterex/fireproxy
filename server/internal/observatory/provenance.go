@@ -5,6 +5,7 @@ import "time"
 const (
 	SourceAgent     = "agent"
 	SourceFWAppInit = "fw-app-init"
+	SourceFWAppGet  = "fw-app-get"
 	SourceEmpty     = "empty"
 
 	// ReasonPrefer = user forced control (header refresh / PreferInit hold).

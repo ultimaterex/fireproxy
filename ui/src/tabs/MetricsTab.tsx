@@ -54,6 +54,7 @@ export function MetricsTab({
   ruleCount,
   onOpenDevices,
   onOpenRules,
+  onOpenAlarms,
   onSelectDevice,
   onSelectRegion,
   onDashboard,
@@ -66,6 +67,7 @@ export function MetricsTab({
   ruleCount: number
   onOpenDevices: () => void
   onOpenRules: () => void
+  onOpenAlarms?: () => void
   onSelectDevice?: (mac: string, label: string) => void
   onSelectRegion?: (cc: string, label: string) => void
   onDashboard?: (dash: Dashboard) => void
@@ -206,7 +208,7 @@ export function MetricsTab({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard label="Devices" value={dashboard?.devices ?? deviceCount} onClick={onOpenDevices} />
-        <StatCard label="Alarms" value={dashboard?.alarm_count ?? 0} />
+        <StatCard label="Alarms" value={dashboard?.alarm_count ?? 0} onClick={onOpenAlarms} />
         <StatCard label="Rules" value={dashboard?.rules ?? ruleCount} onClick={onOpenRules} />
       </div>
 

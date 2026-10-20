@@ -1,4 +1,5 @@
 import type {
+  AlarmSample,
   AuditView,
   BoxInfo,
   ControlEvent,
@@ -874,6 +875,19 @@ function fakeFlow(anon: Anon, r: RankedFlow, kind: 'device' | 'dest' | 'region',
     devices: r.devices?.map((d) => fakeFlow(anon, d, 'device', cidrs)),
     targets: r.targets?.map((t) => fakeFlow(anon, t, 'dest', cidrs)),
   }
+}
+
+// Alarm messages are free text and can contain names and other personal details.
+// Omit them instead of relying on address-only text rewriting.
+export function anonymizeAlarms(anon: Anon, alarms: AlarmSample[], cidrs: CidrMap[] = []): AlarmSample[] {
+  return alarms.map((alarm) => ({
+    ...alarm,
+    device_name: alarm.device_name ? anon.fakeName('device', alarm.device_name) : alarm.device_name,
+    device_mac: alarm.device_mac ? anon.fakeMAC(alarm.device_mac) : alarm.device_mac,
+    device_ip: alarm.device_ip ? anon.fakeIP(alarm.device_ip, cidrs) : alarm.device_ip,
+    message: alarm.message ? 'Alarm details hidden in anonymity mode' : alarm.message,
+    timestamp: alarm.timestamp ? anon.shiftTS(alarm.timestamp) : alarm.timestamp,
+  }))
 }
 
 export function anonymizeDevices(anon: Anon, devs: Device[], cidrs: CidrMap[] = []): Device[] {
