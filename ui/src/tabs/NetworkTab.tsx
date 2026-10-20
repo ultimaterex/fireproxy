@@ -47,11 +47,13 @@ export function NetworkTab({
   network,
   wanType,
   anon,
+  refreshKey,
   onSelectLan,
 }: {
   network: NetIface[]
   wanType?: string
   anon?: Anon | null
+  refreshKey?: number
   onSelectLan: (uuid: string) => void
 }) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
@@ -61,9 +63,10 @@ export function NetworkTab({
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
       try {
-        const r = await api('/v1/vpn')
+        const r = await api('/v1/vpn', { signal: controller.signal })
         if (r.status === 404) {
           if (!cancelled) {
             setVpn(null)
@@ -92,8 +95,9 @@ export function NetworkTab({
     })()
     return () => {
       cancelled = true
+      controller.abort()
     }
-  }, [])
+  }, [refreshKey])
 
   return (
     <div className="space-y-4">
