@@ -714,6 +714,31 @@ function App() {
     })
   }
 
+  const patchDeviceName = (mac: string, name: string) => {
+    const key = mac.toUpperCase()
+    setDevices((prev) =>
+      prev.map((d) => (d.mac.toUpperCase() === key ? { ...d, name } : d)),
+    )
+    setStack((prev) => {
+      const idx = prev.findIndex(
+        (f) => f.kind === 'device' && f.mac.toUpperCase() === key,
+      )
+      if (idx < 0) return prev
+      const frame = prev[idx]
+      if (frame.kind !== 'device') return prev
+      const next = [...prev]
+      next[idx] = { ...frame, label: name }
+      return next
+    })
+  }
+
+  const patchDeviceTags = (mac: string, tagIds: string[]) => {
+    const key = mac.toUpperCase()
+    setDevices((prev) =>
+      prev.map((d) => (d.mac.toUpperCase() === key ? { ...d, tag_ids: tagIds } : d)),
+    )
+  }
+
   const openRegion = (cc: string, label: string) => {
     setStack((s) => {
       const base = s.filter((f) => f.kind !== 'region' && f.kind !== 'device')
@@ -1104,6 +1129,7 @@ function App() {
 
           {selectedDevice ? (
             <DeviceDetail
+              writesAllowed={!anonOn}
               device={selectedDevice}
               nowMs={showNowMs}
               lan={
@@ -1117,25 +1143,7 @@ function App() {
               labelTag={labelTag}
               unifi={unifiMod}
               domainSuffix={showBox?.local_domain_suffix}
-              onRenamed={(mac, name) => {
-                const key = mac.toUpperCase()
-                setDevices((prev) =>
-                  prev.map((d) =>
-                    d.mac.toUpperCase() === key ? { ...d, name } : d,
-                  ),
-                )
-                setStack((prev) => {
-                  const idx = prev.findIndex(
-                    (f) => f.kind === 'device' && f.mac.toUpperCase() === key,
-                  )
-                  if (idx < 0) return prev
-                  const frame = prev[idx]
-                  if (frame.kind !== 'device') return prev
-                  const next = [...prev]
-                  next[idx] = { ...frame, label: name }
-                  return next
-                })
-              }}
+              onRenamed={patchDeviceName}
               onDNSUpdated={(mac, hostname) => {
                 const key = mac.toUpperCase()
                 setDevices((prev) =>
@@ -1144,14 +1152,7 @@ function App() {
                   ),
                 )
               }}
-              onGroupUpdated={(mac, tagIds) => {
-                const key = mac.toUpperCase()
-                setDevices((prev) =>
-                  prev.map((d) =>
-                    d.mac.toUpperCase() === key ? { ...d, tag_ids: tagIds } : d,
-                  ),
-                )
-              }}
+              onGroupUpdated={patchDeviceTags}
             />
           ) : selectedRegion && tab === 'metrics' ? (
             <RegionDetail
@@ -1168,6 +1169,7 @@ function App() {
             />
           ) : showDevicesTable ? (
             <DevicesTab
+              writesAllowed={!anonOn}
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}
@@ -1226,6 +1228,8 @@ function App() {
               labelTag={labelTag}
               onSelectDevice={(d) => openDevice(d.mac, preferredName(d))}
               groupTagType={groupTagType}
+              onRenamed={patchDeviceName}
+              onGroupUpdated={patchDeviceTags}
             />
           ) : (
             <>
@@ -1387,6 +1391,7 @@ function App() {
 
           {tab === 'devices' && (
             <DevicesTab
+              writesAllowed={!anonOn}
               devices={showDevices}
               source={devicesProv.source}
               stale={devicesProv.stale}
@@ -1443,6 +1448,8 @@ function App() {
               onQuery={setQuery}
               labelTag={labelTag}
               onSelectDevice={(d) => openDevice(d.mac, preferredName(d))}
+              onRenamed={patchDeviceName}
+              onGroupUpdated={patchDeviceTags}
             />
           )}
 

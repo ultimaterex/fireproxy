@@ -50,6 +50,51 @@ func TestSetHostPolicyMonitorIsolation(t *testing.T) {
 	}
 }
 
+func TestSetHostPolicyAdblockFamily(t *testing.T) {
+	svc, sent := pairedMutateService(t)
+	initRaw, err := os.ReadFile(filepath.Join("testdata", "init_rules_min.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetFetchInit(func(ctx context.Context, creds Creds) (json.RawMessage, error) {
+		return json.RawMessage(initRaw), nil
+	})
+	svc.SetSendFn(func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+		if mtype != MTypeSet {
+			t.Fatalf("mtype %q", mtype)
+		}
+		*sent = append(*sent, sentCmd{item: data["item"].(string), data: data, target: target})
+		return json.RawMessage(`{"code":200}`), nil
+	})
+
+	adblock := true
+	family := true
+	if err := svc.SetHostPolicy(context.Background(), "50-ba-02-ca-d4-8a", HostPolicyPatch{
+		Adblock: &adblock,
+		Family:  &family,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*sent) != 1 {
+		t.Fatalf("sent=%d", len(*sent))
+	}
+	got := (*sent)[0]
+	if got.item != "policy" || got.target != "50:BA:02:CA:D4:8A" {
+		t.Fatalf("%+v", got)
+	}
+	val := got.data["value"].(map[string]any)
+	if val["adblock"] != true {
+		t.Fatalf("adblock %+v", val)
+	}
+	if val["family"] != true {
+		t.Fatalf("family %+v", val)
+	}
+	pol, ok := svc.LookupHostPolicy("50:BA:02:CA:D4:8A")
+	if !ok || !pol.Adblock || !pol.Family {
+		t.Fatalf("overlay %+v", pol)
+	}
+}
+
 func TestSetHostPolicyEmergencyNoteTags(t *testing.T) {
 	svc, sent := pairedMutateService(t)
 	initRaw, err := os.ReadFile(filepath.Join("testdata", "init_rules_min.json"))
@@ -216,5 +261,27 @@ func TestSetEmergency(t *testing.T) {
 	val = (*sent)[1].data["value"].(map[string]any)
 	if val["flag"] != "off" {
 		t.Fatalf("%+v", val)
+	}
+}
+
+// Captured host policies use booleans; upstream also accepts null for exclusion.
+// The boolean API reports only whether a device override is explicitly enabled.
+func TestHostProtectionOverrideReadStates(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		enabled   bool
+	}{
+		{"enabled", `{"adblock":true,"family":true,"monitor":false}`, true},
+		{"inherit", `{"adblock":false,"family":false,"monitor":false}`, false},
+		{"excluded", `{"adblock":null,"family":null,"monitor":false}`, false},
+		{"absent", `{"monitor":false}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hp := HostPolicy{Monitor: true}
+			applyRawHostPolicy(&hp, json.RawMessage(tc.raw))
+			if hp.Adblock != tc.enabled || hp.Family != tc.enabled || hp.Monitor {
+				t.Fatalf("unexpected policy: %+v", hp)
+			}
+		})
 	}
 }

@@ -49,8 +49,29 @@ func TestParseInitRules(t *testing.T) {
 	if r, ok := byID["1004"]; !ok || r.Section != RuleSectionDisturb || !r.Disabled {
 		t.Fatalf("disturb: %+v ok=%v", r, ok)
 	}
-	if r, ok := byID["2001"]; !ok || r.Section != RuleSectionTimelimit {
-		t.Fatalf("screentime → timelimit: %+v ok=%v", r, ok)
+	r2001 := byID["2001"]
+	if r2001.Section != RuleSectionTimelimit || r2001.Action != "screentime" {
+		t.Fatalf("2001: %+v", r2001)
+	}
+	if r2001.ThresholdMinutes != 120 || r2001.OffsetSeconds != 7200 {
+		t.Fatalf("2001 quota/offset: %+v", r2001)
+	}
+	if len(r2001.Scope) != 1 || r2001.Scope[0] != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("2001 scope mac prefix: %+v", r2001)
+	}
+	if r2001.ScopeLabel != "Lab Phone" {
+		t.Fatalf("2001 ScopeLabel: %q", r2001.ScopeLabel)
+	}
+
+	r2002, ok := byID["2002"]
+	if !ok || r2002.Section != RuleSectionTimelimit || r2002.ThresholdMinutes != 45 {
+		t.Fatalf("2002: %+v ok=%v", r2002, ok)
+	}
+	if len(r2002.Tags) != 1 || r2002.Tags[0] != "tag:10" {
+		t.Fatalf("2002 tags: %+v", r2002.Tags)
+	}
+	if r2002.ScopeLabel != "Kids" {
+		t.Fatalf("2002 ScopeLabel: %q", r2002.ScopeLabel)
 	}
 	if r, ok := byID["1001"]; !ok || r.ScopeLabel != "Lab Phone" {
 		t.Fatalf("scoped rule ScopeLabel: %+v ok=%v", r, ok)
@@ -99,7 +120,7 @@ func TestParseInitRules(t *testing.T) {
 			phone = h
 		}
 	}
-	if !phone.Monitor || !phone.Isolated || phone.Emergency || phone.Note != "lab note" {
+	if !phone.Monitor || !phone.Isolated || phone.Emergency || !phone.Adblock || !phone.Family || phone.Note != "lab note" {
 		t.Fatalf("host policy %+v hosts=%+v", phone, snap.Hosts)
 	}
 	if len(phone.Tags) != 1 || phone.Tags[0] != "10" {
@@ -116,29 +137,16 @@ func TestParseInitRules(t *testing.T) {
 	}
 }
 
-func TestParseInitRulesTagScopeLabel(t *testing.T) {
-	raw := []byte(`{
-		"policyRules":[{"pid":"1","action":"block","type":"dns","target":"x.test","tag":["tag:10"],"hitCount":"1"}],
-		"exceptionRules":[],
-		"screentimeRules":[],
-		"hosts":[],
-		"tags":{"10":{"uid":"10","name":"Routers"}}
-	}`)
+func TestParseInitRulesEmptyScreentime(t *testing.T) {
+	raw := []byte(`{"policyRules":[],"exceptionRules":[],"screentimeRules":[],"hosts":[],"tags":{}}`)
 	snap, err := ParseInitRules(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var label string
-	for _, c := range snap.Scopes {
-		if c.Kind == ScopeChipTag && c.ID == "tag:10" {
-			label = c.Label
+	for _, r := range snap.Rules {
+		if r.Section == RuleSectionTimelimit {
+			t.Fatalf("unexpected timelimit: %+v", r)
 		}
-	}
-	if label != "Routers" {
-		t.Fatalf("want tag name Routers, got %q scopes=%+v", label, snap.Scopes)
-	}
-	if snap.Rules[0].ScopeLabel != "Routers" {
-		t.Fatalf("rule ScopeLabel=%q", snap.Rules[0].ScopeLabel)
 	}
 }
 
@@ -241,4 +249,30 @@ func labInitFixturePath() string {
 	// server/internal/fwapp → repo root
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
 	return filepath.Join(root, "local", "fixtures", "fw-app", "rules", "init.sanitized.json")
+}
+
+func TestParseInitRulesTagScopeLabel(t *testing.T) {
+	raw := []byte(`{
+		"policyRules":[{"pid":"1","action":"block","type":"dns","target":"x.test","tag":["tag:10"],"hitCount":"1"}],
+		"exceptionRules":[],
+		"screentimeRules":[],
+		"hosts":[],
+		"tags":{"10":{"uid":"10","name":"Routers"}}
+	}`)
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var label string
+	for _, c := range snap.Scopes {
+		if c.Kind == ScopeChipTag && c.ID == "tag:10" {
+			label = c.Label
+		}
+	}
+	if label != "Routers" {
+		t.Fatalf("want tag name Routers, got %q scopes=%+v", label, snap.Scopes)
+	}
+	if snap.Rules[0].ScopeLabel != "Routers" {
+		t.Fatalf("rule ScopeLabel=%q", snap.Rules[0].ScopeLabel)
+	}
 }
