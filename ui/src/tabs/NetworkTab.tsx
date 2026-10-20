@@ -5,6 +5,7 @@ import { SourceBadge } from '@/components/SourceBadge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { api } from '@/lib/api'
+import { anonymizeVPN, type Anon } from '@/lib/anonymity'
 import { fmtBytes, netLabel } from '@/lib/format'
 import { managerKind, portChips, wanTypeLabel, type PortChip } from '@/lib/ports'
 import type {
@@ -45,10 +46,12 @@ const FAMILY_LABEL: Record<string, string> = {
 export function NetworkTab({
   network,
   wanType,
+  anon,
   onSelectLan,
 }: {
   network: NetIface[]
   wanType?: string
+  anon?: Anon | null
   onSelectLan: (uuid: string) => void
 }) {
   const lans = network.filter((n) => managerKind(n) === 'lan').sort(lanOrder)
@@ -132,7 +135,10 @@ export function NetworkTab({
         </CardContent>
       </Card>
 
-      <VPNRegion vpn={vpn} err={vpnErr} />
+      <VPNRegion
+        vpn={vpn && anon ? anonymizeVPN(anon, vpn) : vpn}
+        err={anon && vpnErr ? 'VPN inventory unavailable' : vpnErr}
+      />
     </div>
   )
 }
