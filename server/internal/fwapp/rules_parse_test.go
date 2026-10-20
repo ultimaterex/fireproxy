@@ -49,8 +49,29 @@ func TestParseInitRules(t *testing.T) {
 	if r, ok := byID["1004"]; !ok || r.Section != RuleSectionDisturb || !r.Disabled {
 		t.Fatalf("disturb: %+v ok=%v", r, ok)
 	}
-	if r, ok := byID["2001"]; !ok || r.Section != RuleSectionTimelimit {
-		t.Fatalf("screentime → timelimit: %+v ok=%v", r, ok)
+	r2001 := byID["2001"]
+	if r2001.Section != RuleSectionTimelimit || r2001.Action != "screentime" {
+		t.Fatalf("2001: %+v", r2001)
+	}
+	if r2001.ThresholdMinutes != 120 || r2001.OffsetSeconds != 7200 {
+		t.Fatalf("2001 quota/offset: %+v", r2001)
+	}
+	if len(r2001.Scope) != 1 || r2001.Scope[0] != "AA:BB:CC:DD:EE:01" {
+		t.Fatalf("2001 scope mac prefix: %+v", r2001)
+	}
+	if r2001.ScopeLabel != "Lab Phone" {
+		t.Fatalf("2001 ScopeLabel: %q", r2001.ScopeLabel)
+	}
+
+	r2002, ok := byID["2002"]
+	if !ok || r2002.Section != RuleSectionTimelimit || r2002.ThresholdMinutes != 45 {
+		t.Fatalf("2002: %+v ok=%v", r2002, ok)
+	}
+	if len(r2002.Tags) != 1 || r2002.Tags[0] != "tag:10" {
+		t.Fatalf("2002 tags: %+v", r2002.Tags)
+	}
+	if r2002.ScopeLabel != "Kids" {
+		t.Fatalf("2002 ScopeLabel: %q", r2002.ScopeLabel)
 	}
 	if r, ok := byID["1001"]; !ok || r.ScopeLabel != "Lab Phone" {
 		t.Fatalf("scoped rule ScopeLabel: %+v ok=%v", r, ok)
@@ -113,6 +134,19 @@ func TestParseInitRules(t *testing.T) {
 	}
 	if !laptop.Monitor || laptop.Isolated || laptop.Emergency {
 		t.Fatalf("default host policy %+v", laptop)
+	}
+}
+
+func TestParseInitRulesEmptyScreentime(t *testing.T) {
+	raw := []byte(`{"policyRules":[],"exceptionRules":[],"screentimeRules":[],"hosts":[],"tags":{}}`)
+	snap, err := ParseInitRules(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range snap.Rules {
+		if r.Section == RuleSectionTimelimit {
+			t.Fatalf("unexpected timelimit: %+v", r)
+		}
 	}
 }
 
