@@ -401,6 +401,8 @@ func TestIsISPWan(t *testing.T) {
 		{inventory.NetworkIface{Type: "wan", UUID: "4", Name: "eth3", Desc: ""}, false},
 		{inventory.NetworkIface{Type: "wan", UUID: "5", Name: "eth4", Desc: "eth4"}, false},
 		{inventory.NetworkIface{Type: "lan", UUID: "6", Name: "br0", Desc: "Core"}, false},
+		{inventory.NetworkIface{Type: "wan", UUID: "7", Name: "eth0", Desc: "WAN"}, true},
+		{inventory.NetworkIface{Type: "wan", UUID: "8", Name: "WAN", Desc: "WAN"}, true},
 	}
 	for _, c := range cases {
 		if got := isISPWan(c.n); got != c.want {

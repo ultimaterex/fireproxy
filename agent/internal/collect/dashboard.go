@@ -42,6 +42,22 @@ func (c *Collector) collectDashboard(now time.Time, nets []inventory.NetworkIfac
 		metric := "wan:" + n.UUID
 		wUp, _ := timedHits(c.Redis, "upload:"+metric, granDay, days, now)
 		wDown, _ := timedHits(c.Redis, "download:"+metric, granDay, days, now)
+		upBytes := sumHits(wUp)
+		downBytes := sumHits(wDown)
+		if upBytes == 0 && downBytes == 0 && c.Redis != nil {
+			if lastTs, err := c.Redis.Get("monthly:wan:data:usage:" + n.UUID + ":lastTs"); err == nil && lastTs != "" {
+				if raw, err := c.Redis.Get("monthly:wan:data:usage:" + n.UUID + ":" + strings.TrimSpace(lastTs)); err == nil && raw != "" {
+					var u struct {
+						TotalUpload   float64 `json:"totalUpload"`
+						TotalDownload float64 `json:"totalDownload"`
+					}
+					if json.Unmarshal([]byte(raw), &u) == nil {
+						upBytes = int64(u.TotalUpload)
+						downBytes = int64(u.TotalDownload)
+					}
+				}
+			}
+		}
 		name := n.Desc
 		if name == "" {
 			name = n.Name
@@ -49,8 +65,8 @@ func (c *Collector) collectDashboard(now time.Time, nets []inventory.NetworkIfac
 		out.MonthlyWANs = append(out.MonthlyWANs, inventory.WANUsage{
 			UUID:     n.UUID,
 			Name:     name,
-			Upload:   sumHits(wUp),
-			Download: sumHits(wDown),
+			Upload:   upBytes,
+			Download: downBytes,
 		})
 	}
 
@@ -407,10 +423,13 @@ func isISPWan(n inventory.NetworkIface) bool {
 	}
 	name := strings.ToLower(strings.TrimSpace(n.Name))
 	desc := strings.TrimSpace(n.Desc)
-	if desc == "" || strings.EqualFold(desc, n.Name) {
+	if desc == "" {
 		return false
 	}
 	dlow := strings.ToLower(desc)
+	if strings.EqualFold(desc, n.Name) && looksLikeNIC(dlow) {
+		return false
+	}
 	if strings.Contains(name, "vpn") || strings.Contains(dlow, "vpn") {
 		return false
 	}
@@ -428,7 +447,7 @@ func looksLikeNIC(s string) bool {
 			return true
 		}
 	}
-	return strings.HasPrefix(s, "wan") && len(s) <= 5
+	return false
 }
 
 func daysThisCycle(now time.Time, billingDay int) int {

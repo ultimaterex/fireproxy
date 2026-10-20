@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Dialog } from 'radix-ui'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { Flag } from '@/components/Flag'
@@ -141,6 +142,14 @@ export function MetricsTab({
   const monthly = (dashboard?.monthly_wans ?? []).filter((w) => isISPLabel(w.name))
   const monthMax = Math.max(1, ...monthly.map((w) => w.upload + w.download))
   const speed = dashboard?.speedtest ?? []
+  const hasSpeedHistory = speed.some((wan) => (wan.points?.length ?? 0) > 0)
+  const hasSpeedMeasurements = hasSpeedHistory || speed.some((wan) => wan.down != null || wan.up != null)
+  const sourceLabel = dataSource === 'agent' ? 'agent' : fromControl || dataSource === 'fw-app-get' ? 'Firewalla control' : 'current source'
+  const unavailable = (what: string) => dataStale
+    ? `The last received data from the ${sourceLabel} contains no ${what}.`
+    : `No ${what} reported by the ${sourceLabel}.`
+  const monthlyEmptyHint = unavailable('monthly WAN usage')
+  const speedEmptyHint = unavailable('speedtest results')
   const dns = dashboard?.dns
   const dnsHours = completeHourPoints(dns?.queries ?? [], dashboard?.ts || Math.floor(Date.now() / 1000))
   const dnsLookups = dnsHours.reduce((n, q) => n + q.count, 0)
@@ -220,7 +229,7 @@ export function MetricsTab({
                 <CardTitle className="text-sm">Network data transferred</CardTitle>
                 <CardDescription>Last 24 hours</CardDescription>
               </div>
-              <div className="flex gap-8 text-right">
+              <div className="flex min-w-0 flex-wrap gap-x-6 gap-y-3 text-right" aria-label="Transfer totals for the last 24 hours">
                 <div>
                   <p className="font-mono text-2xl tabular-nums" style={{ color: UP }}>
                     {fmtBytes(xfer?.upload)}
@@ -247,7 +256,7 @@ export function MetricsTab({
           </CardContent>
         </Card>
 
-        <div className="grid gap-3 lg:grid-rows-2">
+        <div className={cn('grid gap-3', monthly.length ? 'lg:grid-rows-2' : 'lg:grid-rows-[auto_1fr]')}>
           <Card className="gap-2 py-4">
             <CardHeader className="px-5">
               <CardTitle className="text-sm">Monthly data usage</CardTitle>
@@ -257,7 +266,7 @@ export function MetricsTab({
             </CardHeader>
             <CardContent className="space-y-3 px-5">
               {monthly.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{emptyHint}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">{monthlyEmptyHint}</p>
               ) : (
                 monthly.map((w) => {
                   const used = w.upload + w.download
@@ -310,18 +319,22 @@ export function MetricsTab({
           ref={speedTileRef}
           type="button"
           className={cn(
-            'text-left',
+            'min-w-0 text-left rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            !hasSpeedHistory && 'self-start',
             detail === 'speed' && !speedClosing && 'invisible pointer-events-none',
           )}
           onClick={openSpeed}
         >
-          <Card className="h-full gap-2 py-4 transition-colors hover:bg-accent/40">
+          <Card className={cn('gap-2 py-4 transition-colors hover:bg-accent/40', hasSpeedHistory && 'h-full')}>
             <CardHeader className="px-5">
               <CardTitle className="text-sm">Speedtest</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5 px-5">
-              {speed.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{emptyHint}</p>
+              {!hasSpeedMeasurements ? (
+                <div className="space-y-2">
+                  <p className="text-sm leading-relaxed text-muted-foreground">{speedEmptyHint}</p>
+                  <p className="text-xs font-medium">View availability →</p>
+                </div>
               ) : (
                 speed.map((w, i) => (
                   <div key={w.uuid}>
@@ -339,9 +352,9 @@ export function MetricsTab({
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <CardTitle className="text-sm">DNS</CardTitle>
-                <CardDescription>Last 24 hours</CardDescription>
+                <CardDescription>Queries over the last 24 hours</CardDescription>
               </div>
-              <div className="flex gap-8 text-right">
+              <div className="flex min-w-0 flex-wrap gap-x-6 gap-y-3 text-right">
                 <div>
                   <p
                     className={cn(
@@ -353,13 +366,13 @@ export function MetricsTab({
                       ? `${latest.unbound_hit.pct.toFixed(0)}%`
                       : '—'}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {latest?.unbound_hit?.life ? 'Hit · life' : 'Hit'}
+                  <p className="max-w-36 text-xs leading-relaxed text-muted-foreground">
+                    {latest?.unbound_hit?.life ? 'Lifetime cache hit rate' : 'Cache hit rate'}
                   </p>
                 </div>
                 <div>
                   <p className="font-mono text-2xl tabular-nums">{fmtCount(dnsLookups)}</p>
-                  <p className="text-[11px] text-muted-foreground">Lookups</p>
+                  <p className="text-xs text-muted-foreground">Lookups · last 24 hours</p>
                 </div>
               </div>
             </div>
@@ -378,6 +391,8 @@ export function MetricsTab({
           onCloseBegin={beginCloseSpeed}
           onClose={closeSpeed}
           onDashboard={onDashboard}
+          emptyHint={speedEmptyHint}
+          onReturnFocus={() => speedTileRef.current?.focus()}
         />
       ) : null}
 
@@ -478,12 +493,13 @@ export function MetricsTab({
 }
 
 function IspRow({ wan }: { wan: SpeedtestWAN }) {
+  const hasHistory = (wan.points?.length ?? 0) > 0
   const plan = fmtPlan(wan.plan_down, wan.plan_up)
   const trend = speedTrend(wan.points ?? [])
   const server = [wan.server, wan.location].filter(Boolean).join(' · ')
   const hint = [wan.active ? 'active' : 'standby', plan || null, server || null].filter(Boolean).join(' · ')
   return (
-    <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] items-center gap-3">
+    <div className={cn('grid items-center gap-3', hasHistory && 'grid-cols-[8.5rem_minmax(0,1fr)]')}>
       <div className="min-w-0 space-y-0.5">
         <p className="font-mono text-xl tabular-nums tracking-tight" style={{ color: DOWN }}>
           {fmtMbps(wan.down)}{' '}
@@ -499,12 +515,12 @@ function IspRow({ wan }: { wan: SpeedtestWAN }) {
         </p>
         <p className="text-[11px] text-muted-foreground">{hint}</p>
       </div>
-      <SpeedSpark
+      {hasHistory ? <SpeedSpark
         points={wan.points ?? []}
         planDown={wan.plan_down}
         planUp={wan.plan_up}
         className="h-[120px] w-full"
-      />
+      /> : <p className="text-xs text-muted-foreground">No speedtest history reported.</p>}
     </div>
   )
 }
@@ -527,6 +543,8 @@ function SpeedtestDetail({
   onCloseBegin,
   onClose,
   onDashboard,
+  emptyHint,
+  onReturnFocus,
 }: {
   wans: SpeedtestWAN[]
   dashboard: Dashboard | null
@@ -534,6 +552,8 @@ function SpeedtestDetail({
   onCloseBegin: () => void
   onClose: () => void
   onDashboard?: (dash: Dashboard) => void
+  emptyHint: string
+  onReturnFocus: () => void
 }) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -541,8 +561,10 @@ function SpeedtestDetail({
   const rows = wans
     .flatMap((w) => (w.points ?? []).map((p) => ({ ...p, name: w.name })))
     .sort((a, b) => b.ts - a.ts)
+  const hasCurrentMeasurements = wans.some((w) => w.down != null || w.up != null)
 
   const [canRun, setCanRun] = useState(false)
+  const [availabilityHint, setAvailabilityHint] = useState('Checking Firewalla control availability…')
   const [picking, setPicking] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'running'>('idle')
   const [runError, setRunError] = useState<string | null>(null)
@@ -570,6 +592,15 @@ function SpeedtestDetail({
         }
         const ok = enabled && lanOk && wans.length > 0
         setCanRun(ok)
+        setAvailabilityHint(!stR.ok || !modR.ok
+          ? 'Control availability could not be checked. Running a test requires enabled Firewalla control, a LAN connection, and a reported WAN.'
+          : !enabled
+            ? 'To run a test, enable Firewalla control in Settings and connect it on the LAN.'
+            : !lanOk
+              ? 'To run a test, Firewalla control must be connected on the LAN.'
+              : wans.length === 0
+                ? 'Firewalla control is connected, but no WAN information has been reported. A reported WAN is required to run a test.'
+                : 'Firewalla control is connected. Run starts a speed test on the selected WAN.')
         if (ok) {
           try {
             await api('/v1/fw-app/speedtest/sync', { method: 'POST' })
@@ -582,7 +613,10 @@ function SpeedtestDetail({
           }
         }
       } catch {
-        if (!cancelled) setCanRun(false)
+        if (!cancelled) {
+          setCanRun(false)
+          setAvailabilityHint('Control availability could not be checked. Running a test requires enabled Firewalla control, a LAN connection, and a reported WAN.')
+        }
       }
     })()
     return () => {
@@ -847,18 +881,22 @@ function SpeedtestDetail({
   const busy = phase === 'running'
 
   return (
-    <div
+    <Dialog.Root open onOpenChange={(open) => { if (!open) requestClose() }}>
+    <Dialog.Portal>
+    <Dialog.Overlay
       ref={backdropRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={requestClose}
     >
-      <div
+      <Dialog.Content
         ref={panelRef}
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border bg-popover shadow-md will-change-transform"
-        onClick={(e) => e.stopPropagation()}
+        aria-describedby={undefined}
+        className={cn('flex max-h-[90dvh] w-full flex-col overflow-hidden rounded-lg border bg-popover shadow-md outline-none will-change-transform', rows.length ? 'max-w-5xl' : 'max-w-lg')}
+        onCloseAutoFocus={(event) => { event.preventDefault(); onReturnFocus() }}
+        onEscapeKeyDown={(event) => { event.preventDefault(); requestClose() }}
+        onPointerDownOutside={(event) => { event.preventDefault(); requestClose() }}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b px-6 py-4">
-          <span className="text-base font-medium">Speedtest</span>
+          <Dialog.Title className="text-base font-medium">Speedtest</Dialog.Title>
           {canRun ? (
             <Button
               type="button"
@@ -931,6 +969,13 @@ function SpeedtestDetail({
         ) : null}
         {runError ? <p className="px-6 pt-3 text-sm text-destructive">{runError}</p> : null}
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+          {rows.length === 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{hasCurrentMeasurements ? 'No speedtest history available' : 'No speedtest measurements yet'}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{hasCurrentMeasurements ? 'Current WAN summaries are available, but no timestamped measurements were reported.' : emptyHint}</p>
+            </div>
+          ) : null}
+          <p role="status" className="text-sm leading-relaxed text-muted-foreground">{availabilityHint}</p>
           {wans.map((w) => {
             const trend = speedTrend(w.points ?? [])
             return (
@@ -955,12 +1000,17 @@ function SpeedtestDetail({
                     {w.ping ? `${Math.round(w.ping)} ms` : ''}
                   </span>
                 </div>
-                <SpeedSpark
+                {(w.points?.length ?? 0) > 0 ? <SpeedSpark
                   points={w.points ?? []}
                   planDown={w.plan_down}
                   planUp={w.plan_up}
                   className="h-[220px] w-full"
-                />
+                /> : w.down != null || w.up != null ? (
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                    <p>Download <span className="font-mono tabular-nums">{fmtMbps(w.down)}</span></p>
+                    <p>Upload <span className="font-mono tabular-nums">{fmtMbps(w.up)}</span></p>
+                  </div>
+                ) : <p className="text-sm text-muted-foreground">No measurements reported for this WAN.</p>}
               </div>
             )
           })}
@@ -1009,7 +1059,8 @@ function SpeedtestDetail({
             Close
           </button>
         </div>
-      </div>
+      </Dialog.Content>
+    </Dialog.Overlay>
       {toast
         ? createPortal(<Toast message={toast} onDismiss={dismissToast} />, document.body)
         : null}
@@ -1019,7 +1070,8 @@ function SpeedtestDetail({
   100% { transform: translateX(400%); }
 }
 `}</style>
-    </div>
+    </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
@@ -1179,6 +1231,5 @@ function isISPLabel(name: string): boolean {
   const n = name.trim().toLowerCase()
   if (!n || n.includes('vpn')) return false
   if (/^(eth|enp|ens|enx|wlan|wlp|br|bond|vlan|wg|tun)\d*/.test(n)) return false
-  if (/^wan\d?$/.test(n)) return false
   return true
 }
