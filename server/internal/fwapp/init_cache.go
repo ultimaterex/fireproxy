@@ -58,6 +58,15 @@ func (c *ObservatoryCache) Clear() {
 
 func cloneObservatorySnapshot(in ObservatorySnapshot) ObservatorySnapshot {
 	out := in
+	out.WGPeers = append([]InitWGPeer(nil), in.WGPeers...)
+	out.AWGPeers = append([]InitWGPeer(nil), in.AWGPeers...)
+	out.WGClients = append([]InitWGClient(nil), in.WGClients...)
+	if in.ClientProfiles != nil {
+		out.ClientProfiles = append([]InitVPNClientFamily(nil), in.ClientProfiles...)
+		for i := range out.ClientProfiles {
+			out.ClientProfiles[i].Profiles = append([]InitVPNClientProfile(nil), in.ClientProfiles[i].Profiles...)
+		}
+	}
 	if in.NewAlarms != nil {
 		out.NewAlarms = append([]AlarmSample(nil), in.NewAlarms...)
 	}
@@ -169,13 +178,16 @@ func (g *initFlight) Do(key string, fn func() error) error {
 	return c.err
 }
 
-// EnsureInit fills rules + observatory caches from one LAN init when cold or past TTL.
+// EnsureInit fills rules, observatory, and features caches from one LAN init when cold or past TTL.
 // Concurrent callers share a single in-flight FetchInit.
 func (s *Service) EnsureInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	generation := s.pairGeneration
 	c, ok, err := s.vault.Load()
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -185,7 +197,7 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 	if s.initCacheWarm() {
 		return nil
 	}
-	return s.initGroup.Do(initFlightKey, func() error {
+	return s.initGroup.Do(fmt.Sprintf("%s:%d", initFlightKey, generation), func() error {
 		if s.initCacheWarm() {
 			return nil
 		}
@@ -194,8 +206,27 @@ func (s *Service) EnsureInit(ctx context.Context) error {
 }
 
 // ObservatorySnapshot returns the cached observatory read model. ok is false when empty.
+// Falls back to a persisted SQLite/KV snapshot so restarts don't require a full LAN init.
 func (s *Service) ObservatorySnapshot() (ObservatorySnapshot, time.Time, bool) {
-	return s.obsCache.Get()
+	if snap, at, ok := s.obsCache.Get(); ok {
+		return snap, at, true
+	}
+	return s.hydrateObservatoryCacheFromStore()
+}
+
+// ColdStart hydrates Rules + observatory from KV when paired, then runs one EnsureInit.
+// No retry loop or background poll. Safe at process start; EnsureInit errors leave hydrate in place.
+func (s *Service) ColdStart(ctx context.Context) {
+	if s == nil || !s.secretsReady() {
+		return
+	}
+	c, ok, err := s.vault.Load()
+	if err != nil || !ok || c.SymKey == "" {
+		return
+	}
+	_, _, _ = s.hydrateRulesCacheFromStore()
+	_, _, _ = s.hydrateObservatoryCacheFromStore()
+	_ = s.EnsureInit(ctx)
 }
 
 func (s *Service) initCacheWarm() bool {
@@ -206,13 +237,15 @@ func (s *Service) initCacheWarm() bool {
 	return time.Since(at) < InitCacheTTL
 }
 
-// fetchAndApplyInit performs one LAN FetchInit, parses rules + observatory, updates both caches,
-// and persists the Rules snapshot (observatory is memory-only for now).
+// fetchAndApplyInit refreshes init-backed views and persists Rules and observatory.
 func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if !s.secretsReady() {
 		return fmt.Errorf("FIREPROXY_SECRETS_KEY required")
 	}
+	s.mu.Lock()
+	generation := s.pairGeneration
 	c, ok, err := s.vault.Load()
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -222,6 +255,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	raw, err := s.fetchInit(ctx, c)
 	if err != nil {
 		s.mu.Lock()
+		if generation != s.pairGeneration {
+			s.mu.Unlock()
+			return ErrNotPaired
+		}
 		s.lastPingOK = false
 		s.lastPingAt = time.Now().UTC()
 		s.state = "lan-down"
@@ -237,6 +274,10 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	featuresView, err := ParseInitFeatures(raw)
+	if err != nil {
+		return err
+	}
 	at := time.Now().UTC()
 	// Re-check pairing under the same lock Unpair uses so a concurrent
 	// Unpair cannot Clear then lose to a late Set.
@@ -246,18 +287,22 @@ func (s *Service) fetchAndApplyInit(ctx context.Context) error {
 		s.mu.Unlock()
 		return err2
 	}
-	if !ok2 || c2.SymKey == "" {
+	if !ok2 || c2.SymKey == "" || generation != s.pairGeneration || c2.Gid != c.Gid || c2.Eid != c.Eid || c2.SymKey != c.SymKey {
 		s.mu.Unlock()
 		return ErrNotPaired
 	}
 	s.rules.Set(rulesSnap, at)
 	s.obsCache.Set(obsSnap, at)
+	s.features.Set(featuresView, at)
 	s.lastPingOK = true
 	s.lastPingAt = at
 	s.state = "lan-ok"
 	s.lastErr = ""
-	s.mu.Unlock()
+	// Persistence is part of the same commit as memory updates. Unpair must
+	// clear both after this commit, never between the Set and the final PutKV.
 	s.persistRulesCache(rulesSnap, at)
+	s.persistObservatoryCache(obsSnap, at)
+	s.mu.Unlock()
 	return nil
 }
 
