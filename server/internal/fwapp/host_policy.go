@@ -14,6 +14,8 @@ type HostPolicy struct {
 	Monitor   bool     `json:"monitor"`
 	Isolated  bool     `json:"isolated"`
 	Emergency bool     `json:"emergency"`
+	Adblock   bool     `json:"adblock"`
+	Family    bool     `json:"family"`
 	Note      string   `json:"note,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
 }
@@ -25,12 +27,14 @@ type HostPolicyPatch struct {
 	Monitor   *bool     `json:"monitor,omitempty"`
 	Isolation *bool     `json:"isolation,omitempty"`
 	Emergency *bool     `json:"emergency,omitempty"`
+	Adblock   *bool     `json:"adblock,omitempty"`
+	Family    *bool     `json:"family,omitempty"`
 	Note      *string   `json:"note,omitempty"`
 	Tags      *[]string `json:"tags,omitempty"`
 }
 
 func (p HostPolicyPatch) empty() bool {
-	return p.Monitor == nil && p.Isolation == nil && p.Emergency == nil && p.Note == nil && p.Tags == nil
+	return p.Monitor == nil && p.Isolation == nil && p.Emergency == nil && p.Adblock == nil && p.Family == nil && p.Note == nil && p.Tags == nil
 }
 
 // LookupHostPolicy returns cached init-backed host flags. Unknown MAC defaults to monitor on.
@@ -57,7 +61,7 @@ func (s *Service) SetHostPolicy(ctx context.Context, mac string, patch HostPolic
 		return err
 	}
 	if patch.empty() {
-		return fmt.Errorf("monitor, isolation, emergency, note, or tags required")
+		return fmt.Errorf("monitor, isolation, emergency, adblock, family, note, or tags required")
 	}
 	value := map[string]any{}
 	if patch.Monitor != nil {
@@ -74,6 +78,12 @@ func (s *Service) SetHostPolicy(ctx context.Context, mac string, patch HostPolic
 		if *patch.Emergency && patch.Monitor == nil {
 			value["monitor"] = false
 		}
+	}
+	if patch.Adblock != nil {
+		value["adblock"] = *patch.Adblock
+	}
+	if patch.Family != nil {
+		value["family"] = *patch.Family
 	}
 	if patch.Note != nil {
 		value["_note"] = *patch.Note
@@ -118,6 +128,12 @@ func applyHostPolicyPatch(hp HostPolicy, patch HostPolicyPatch) HostPolicy {
 		if *patch.Emergency && patch.Monitor == nil {
 			hp.Monitor = false
 		}
+	}
+	if patch.Adblock != nil {
+		hp.Adblock = *patch.Adblock
+	}
+	if patch.Family != nil {
+		hp.Family = *patch.Family
 	}
 	if patch.Note != nil {
 		hp.Note = *patch.Note

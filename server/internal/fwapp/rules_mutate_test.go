@@ -195,6 +195,13 @@ func TestNormalizeCreateRule(t *testing.T) {
 	}
 }
 
+func TestCreateRuleRejectsTimelimit(t *testing.T) {
+	_, err := normalizeCreateRule(CreateRuleRequest{Action: "screentime", Target: "social", Type: "category"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestCreateRuleAllDevicesAndTag(t *testing.T) {
 	svc, sent := pairedMutateService(t)
 	blockEnv := readCmdFixture(t, "create_block.cmd.json")
@@ -367,4 +374,22 @@ func cmdFixtureResponseEnvelope(t *testing.T, env map[string]json.RawMessage) js
 		t.Fatal("missing response")
 	}
 	return raw
+}
+
+func TestScreentimePolicyWritesRejected(t *testing.T) {
+	svc, sent := pairedMutateService(t)
+	svc.SetFetchInit(func(context.Context, Creds) (json.RawMessage, error) {
+		return json.RawMessage(`{"policyRules":[{"pid":"7","action":"block","type":"dns","target":"x.test"}],"screentimeRules":[{"pid":"7","action":"screentime","type":"app","target":"youtube"}]}`), nil
+	})
+	if _, err := svc.RefreshRules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(context.Context, string) error{svc.DisableRule, svc.EnableRule, svc.DeleteRule} {
+		if err := mutate(context.Background(), "7"); err == nil || !strings.Contains(err.Error(), "read-only") {
+			t.Fatalf("expected read-only rejection, got %v", err)
+		}
+	}
+	if len(*sent) != 0 {
+		t.Fatalf("sent unsupported commands: %+v", *sent)
+	}
 }

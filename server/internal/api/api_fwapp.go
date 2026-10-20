@@ -373,6 +373,8 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 		Monitor   *bool     `json:"monitor"`
 		Isolation *bool     `json:"isolation"`
 		Emergency *bool     `json:"emergency"`
+		Adblock   *bool     `json:"adblock"`
+		Family    *bool     `json:"family"`
 		Note      *string   `json:"note"`
 		Tags      *[]string `json:"tags"`
 	}
@@ -392,6 +394,14 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 		s.writeFWAppRulesNotImplemented(w, "host emergency not available")
 		return
 	}
+	if body.Adblock != nil && !caps["host.adblock"] {
+		s.writeFWAppRulesNotImplemented(w, "host adblock not available")
+		return
+	}
+	if body.Family != nil && !caps["host.family"] {
+		s.writeFWAppRulesNotImplemented(w, "host family not available")
+		return
+	}
 	if body.Note != nil && !caps["host.note"] {
 		s.writeFWAppRulesNotImplemented(w, "host note not available")
 		return
@@ -406,6 +416,8 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 		Monitor:   body.Monitor,
 		Isolation: body.Isolation,
 		Emergency: body.Emergency,
+		Adblock:   body.Adblock,
+		Family:    body.Family,
 		Note:      body.Note,
 		Tags:      body.Tags,
 	})
@@ -413,7 +425,7 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 	if mac == "" {
 		mac = strings.TrimSpace(body.MAC)
 	}
-	summaryParts := make([]string, 0, 4)
+	summaryParts := make([]string, 0, 6)
 	after := map[string]any{}
 	if body.Monitor != nil {
 		after["monitor"] = *body.Monitor
@@ -439,6 +451,22 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 			summaryParts = append(summaryParts, "emergency off")
 		}
 	}
+	if body.Adblock != nil {
+		after["adblock"] = *body.Adblock
+		if *body.Adblock {
+			summaryParts = append(summaryParts, "adblock on")
+		} else {
+			summaryParts = append(summaryParts, "adblock off")
+		}
+	}
+	if body.Family != nil {
+		after["family"] = *body.Family
+		if *body.Family {
+			summaryParts = append(summaryParts, "family on")
+		} else {
+			summaryParts = append(summaryParts, "family off")
+		}
+	}
 	if body.Note != nil {
 		after["note"] = *body.Note
 		summaryParts = append(summaryParts, "note")
@@ -458,6 +486,8 @@ func (s *Server) postFWAppHostPolicy(w http.ResponseWriter, r *http.Request) {
 			"monitor":   before.Monitor,
 			"isolated":  before.Isolated,
 			"emergency": before.Emergency,
+			"adblock":   before.Adblock,
+			"family":    before.Family,
 			"note":      before.Note,
 			"tags":      before.Tags,
 		},

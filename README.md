@@ -20,7 +20,7 @@ Put simply an on-box **agent** pushes snapshots to an off-box **server** which s
 - **UniFi name sync** — push custom device names to UniFi automatically (optional write)
 - **Audit** — name drift, VLAN/STP issues, unknown/offline gear, with snooze
 - **Live service logs** — unbound / dnsmasq / firerouter via agent WebSocket
-- **Firewalla control (early)** — pair via Settings → Control; LAN App API for ping, WAN speedtest, Wake-on-LAN, host rename, and local DNS hostname (more coming; unofficial)
+- **Firewalla control (early)** — pair via Settings → Control; LAN App API for ping, WAN speedtest, Wake-on-LAN, host rename, local DNS hostname, group assign, and per-device adblock/family (more coming; unofficial)
 - **Control history** — local audit log of control actions (History tab); retention in Settings
 - **Auth by default** — password admin, optional OIDC (e.g. Pocket ID), scoped API keys, per-agent enroll tokens
 - **Anonymity mode** — scrub hostnames/MACs/IPs for screenshots
@@ -116,7 +116,7 @@ Threat model and vulnerability reporting: [`SECURITY.md`](./SECURITY.md).
 
 ## Optional modules
 
-**Firewalla control** — enable in **Settings → Firewalla → Control**. Pair with a fresh Additional Pairing QR + box LAN IP (credentials encrypted with `FIREPROXY_SECRETS_KEY`). After pairing, FireProxy talks to the box on LAN `:8833` (cloud only for the handshake). Early surface: connectivity check, WAN speedtest from Metrics, **Wake-on-LAN**, **host rename**, and **local DNS hostname** from Devices (optional UniFi name push when name sync is enabled; UniFi failures warn only). Unofficial / unsupported by Firewalla; treat writes as privileged.
+**Firewalla control** — enable in **Settings → Firewalla → Control**. Pair with a fresh Additional Pairing QR + box LAN IP (credentials encrypted with `FIREPROXY_SECRETS_KEY`). After pairing, FireProxy talks to the box on LAN `:8833` (cloud only for the handshake). Early surface: connectivity check, WAN speedtest from Metrics, **Wake-on-LAN**, **host rename**, **local DNS**, **group**, and **adblock/family** from Devices (isolation/emergency with confirm; optional UniFi name push when name sync is enabled; UniFi failures warn only). Unofficial / unsupported by Firewalla; treat writes as privileged.
 
 **UniFi** — set `UNIFI_BASE_URL` + `UNIFI_API_KEY` (UniFi Network API key) in `.env`, or configure in Settings. Reads enrich topology, wireless, and inventory. **Name sync writes** client names to UniFi — treat that as a privileged action.
 
