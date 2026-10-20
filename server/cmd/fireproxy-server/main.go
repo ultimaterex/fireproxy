@@ -121,11 +121,6 @@ func main() {
 		tplinkStore = tplink.NewStore(nil, os.Getenv("FIREPROXY_SECRETS_KEY"))
 		fwAppSvc = fwapp.NewService(fwapp.NewMemStore(), os.Getenv("FIREPROXY_SECRETS_KEY"))
 	}
-	{
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		fwAppSvc.ColdStart(ctx)
-		cancel()
-	}
 	facts["tplink-sync"] = func() modules.Module {
 		return tplink.New(tplink.ModuleConfig{
 			Store:    tplinkStore,
@@ -320,6 +315,15 @@ func main() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %v", err)
 		}
+	}()
+
+	// A slow/offline box must not delay the listener or module startup.
+	// This is one bounded boot attempt; demand reads can hydrate persisted data.
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer bootCancel()
+	go func() {
+		defer bootCancel()
+		fwAppSvc.ColdStart(bootCtx)
 	}()
 
 	time.Sleep(50 * time.Millisecond)

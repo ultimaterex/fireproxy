@@ -45,6 +45,13 @@ func (s *Service) hydrateObservatoryCacheFromStore() (ObservatorySnapshot, time.
 	if s == nil || s.vault == nil || s.vault.Store == nil {
 		return ObservatorySnapshot{}, time.Time{}, false
 	}
+	// Serialize the read and cache Set with Unpair and pairing replacement.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, paired, err := s.vault.Load()
+	if err != nil || !paired || c.SymKey == "" {
+		return ObservatorySnapshot{}, time.Time{}, false
+	}
 	raw, ok, err := s.vault.Store.GetKV(kvObsCache)
 	if err != nil || !ok || len(raw) == 0 {
 		return ObservatorySnapshot{}, time.Time{}, false
