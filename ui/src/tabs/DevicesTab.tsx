@@ -275,7 +275,8 @@ export function DevicesTab({
         setToast(res.error || 'Policy failed')
         return
       }
-      setToast(next ? `${key === 'adblock' ? 'Adblock' : 'Family'} on` : `${key === 'adblock' ? 'Adblock' : 'Family'} off`)
+      const label = key === 'adblock' ? 'Adblock' : 'Family'
+      setToast(next ? `${label}: device override enabled` : `${label}: using inherited policy`)
     } catch {
       setToast('Policy failed')
     } finally {
@@ -799,14 +800,14 @@ function DeviceGroup({
                       disabled={busy}
                       onSelect={() => onToggleAdblock(row.d)}
                     >
-                      Adblock on/off
+                      Adblock device override / inherit
                     </ContextMenu.Item>
                     <ContextMenu.Item
                       className={menuItemCls}
                       disabled={busy}
                       onSelect={() => onToggleFamily(row.d)}
                     >
-                      Family on/off
+                      Family device override / inherit
                     </ContextMenu.Item>
                     <ContextMenu.Item
                       className={menuItemCls}

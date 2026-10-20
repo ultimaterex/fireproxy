@@ -263,3 +263,25 @@ func TestSetEmergency(t *testing.T) {
 		t.Fatalf("%+v", val)
 	}
 }
+
+// Captured host policies use booleans; upstream also accepts null for exclusion.
+// The boolean API reports only whether a device override is explicitly enabled.
+func TestHostProtectionOverrideReadStates(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		enabled   bool
+	}{
+		{"enabled", `{"adblock":true,"family":true,"monitor":false}`, true},
+		{"inherit", `{"adblock":false,"family":false,"monitor":false}`, false},
+		{"excluded", `{"adblock":null,"family":null,"monitor":false}`, false},
+		{"absent", `{"monitor":false}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hp := HostPolicy{Monitor: true}
+			applyRawHostPolicy(&hp, json.RawMessage(tc.raw))
+			if hp.Adblock != tc.enabled || hp.Family != tc.enabled || hp.Monitor {
+				t.Fatalf("unexpected policy: %+v", hp)
+			}
+		})
+	}
+}

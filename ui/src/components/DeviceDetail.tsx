@@ -661,9 +661,10 @@ export function DeviceDetail({
                 </div>
               </div>
               <div className={ROW}>
-                <div className="text-muted-foreground">Adblock</div>
+                <div className="text-muted-foreground">Adblock device override<div className="text-xs">{hostPol.adblock ? 'Enabled on this device' : 'Inherited or excluded; effective protection may differ'}</div></div>
                 <div className="flex justify-end">
                   <Toggle
+                    aria-label={hostPol.adblock ? 'Adblock: use inherited policy' : 'Adblock: enable device override'}
                     checked={!!hostPol.adblock}
                     disabled={polBusy}
                     onCheckedChange={(v) => void setPolicy({ adblock: v })}
@@ -671,9 +672,10 @@ export function DeviceDetail({
                 </div>
               </div>
               <div className={ROW}>
-                <div className="text-muted-foreground">Family</div>
+                <div className="text-muted-foreground">Family device override<div className="text-xs">{hostPol.family ? 'Enabled on this device' : 'Inherited or excluded; effective protection may differ'}</div></div>
                 <div className="flex justify-end">
                   <Toggle
+                    aria-label={hostPol.family ? 'Family: use inherited policy' : 'Family: enable device override'}
                     checked={!!hostPol.family}
                     disabled={polBusy}
                     onCheckedChange={(v) => void setPolicy({ family: v })}
