@@ -6,6 +6,7 @@ import { ContextMenu } from 'radix-ui'
 
 import { DeviceIcon } from '@/components/DeviceIcon'
 import { DeviceSearch } from '@/components/DeviceSearch'
+import { SourceBadge } from '@/components/SourceBadge'
 import { Toast } from '@/components/Toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch as Toggle } from '@/components/ui/switch'
@@ -55,6 +56,9 @@ type Dir = 'asc' | 'desc'
 
 export function DevicesTab({
   devices,
+  source,
+  stale,
+  reason,
   groupFilter,
   lanFilter,
   switchMacs,
@@ -72,6 +76,9 @@ export function DevicesTab({
   onSelectDevice,
 }: {
   devices: Device[]
+  source?: string
+  stale?: boolean
+  reason?: string
   groupFilter: string
   lanFilter: string
   switchMacs: string[]
@@ -259,6 +266,7 @@ export function DevicesTab({
             <span className="text-sm tabular-nums text-muted-foreground">
               {rows.length} / {visibleDevices.length}
             </span>
+            <SourceBadge source={source} stale={stale} reason={reason} />
             {hasStamp && !showInactive && hiddenInactive > 0 ? (
               <span className="text-sm tabular-nums text-muted-foreground">+{hiddenInactive} inactive</span>
             ) : null}
