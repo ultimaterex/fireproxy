@@ -94,6 +94,35 @@ func TestParseInitObservatoryFromFixture(t *testing.T) {
 	if len(obs.WGPeers) == 0 && len(obs.WGClients) == 0 {
 		t.Fatal("expected wg peers or clients")
 	}
+	if len(obs.ClientProfiles) == 0 {
+		t.Fatal("expected client_profiles catalog")
+	}
+	var wgFamily *InitVPNClientFamily
+	emptyFamily := false
+	for i := range obs.ClientProfiles {
+		f := &obs.ClientProfiles[i]
+		if f.Family == "wireguard" {
+			wgFamily = f
+		}
+		if f.Family != "wireguard" && len(f.Profiles) == 0 {
+			emptyFamily = true
+		}
+	}
+	if wgFamily == nil || len(wgFamily.Profiles) < 4 {
+		t.Fatalf("wireguard client profiles: %+v", obs.ClientProfiles)
+	}
+	if wgFamily.Profiles[0].ProfileID == "" || wgFamily.Profiles[0].DisplayName == "" {
+		t.Fatalf("profile fields: %+v", wgFamily.Profiles[0])
+	}
+	if wgFamily.Profiles[0].Status != "disconnected" && wgFamily.Profiles[0].Status != "connected" {
+		t.Fatalf("expected normalized status, got %q", wgFamily.Profiles[0].Status)
+	}
+	if !emptyFamily {
+		t.Fatal("expected empty families in catalog")
+	}
+	if len(obs.WGClients) < 4 || obs.WGClients[0].Status == "false" || obs.WGClients[0].Status == "true" {
+		t.Fatalf("legacy wg_clients should reuse normalized status: %+v", obs.WGClients)
+	}
 	var sawDigicel, sawTelesur bool
 	for _, w := range obs.MonthlyWANs {
 		if w.Name == "" || w.Name == w.UUID {

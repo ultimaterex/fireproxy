@@ -158,6 +158,47 @@ export type VirtWAN = {
   strict_vpn?: boolean
 }
 
+/** GET /v1/vpn — init-primary VPN inventory. */
+export type VPNPeer = {
+  name?: string
+  public_key?: string
+  intf?: string
+  rx_bytes?: number
+  tx_bytes?: number
+  last_active?: number
+}
+
+export type VPNClientProfile = {
+  profile_id?: string
+  display_name?: string
+  status?: string
+  type?: string
+  remote_ip?: string
+  local_ip?: string
+  message?: string
+}
+
+export type VPNClientFamily = {
+  family: string
+  profiles: VPNClientProfile[]
+}
+
+export type VPNVIP = {
+  uid?: string
+  name?: string
+  ip?: string
+}
+
+export type VPNVirtWAN = {
+  uuid?: string
+  name?: string
+  type?: string
+  conn_state?: string
+  wans?: string[]
+  failback?: boolean
+  strict_vpn?: boolean
+}
+
 export type NetworkView = {
   extras_provenance?: Provenance
   network: NetIface[]
@@ -165,6 +206,18 @@ export type NetworkView = {
   wan_test?: WanTest
   virt_wans?: VirtWAN[]
   capabilities?: { writes?: boolean }
+}
+
+export type VPNInventory = Provenance & {
+  ts?: number
+  host?: string
+  wg_peers?: VPNPeer[]
+  awg_peers?: VPNPeer[]
+  wg_clients?: VPNClientProfile[]
+  client_profiles?: VPNClientFamily[]
+  vips?: VPNVIP[]
+  virt_wans?: VPNVirtWAN[]
+  source?: DataSource
 }
 
 export type SwitchPort = {

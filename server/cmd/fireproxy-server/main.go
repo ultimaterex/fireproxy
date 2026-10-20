@@ -317,6 +317,15 @@ func main() {
 		}
 	}()
 
+	// A slow/offline box must not delay the listener or module startup.
+	// This is one bounded boot attempt; demand reads can hydrate persisted data.
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer bootCancel()
+	go func() {
+		defer bootCancel()
+		fwAppSvc.ColdStart(bootCtx)
+	}()
+
 	time.Sleep(50 * time.Millisecond)
 
 	stop := make(chan os.Signal, 1)

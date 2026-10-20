@@ -249,6 +249,97 @@ func TestDashboardExpiredInitTriggersEnsureInit(t *testing.T) {
 	if prov.Source != SourceFWAppInit || dash.AlarmCount != 5 {
 		t.Fatalf("prov=%+v dash=%+v", prov, dash)
 	}
+	if prov.Stale {
+		t.Fatal("rewarmed init must not be marked stale")
+	}
+}
+
+func TestDashboardStaleFallbackWhenEnsureInitFails(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	staleAt := now.Add(-fwapp.InitCacheTTL - time.Minute)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: false,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{}, false
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{AlarmCount: 9}, staleAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			return errors.New("lan down")
+		},
+	}
+
+	dash, prov, ok := Dashboard(context.Background(), deps)
+	if !ok {
+		t.Fatal("expected stale fallback")
+	}
+	if dash.AlarmCount != 9 {
+		t.Fatalf("AlarmCount=%d want 9", dash.AlarmCount)
+	}
+	if prov.Source != SourceFWAppInit || prov.Reason != ReasonFallback || !prov.Stale {
+		t.Fatalf("prov=%+v", prov)
+	}
+	if !prov.FetchedAt.Equal(staleAt) {
+		t.Fatalf("fetched_at=%v want %v", prov.FetchedAt, staleAt)
+	}
+}
+
+func TestDashboardPreferInitDoesNotStaleFallback(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	staleAt := now.Add(-fwapp.InitCacheTTL - time.Minute)
+	deps := Deps{
+		Now:         now,
+		AgentOnline: true,
+		PreferInit:  true,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{
+				TS:        now.Unix(),
+				Dashboard: &inventory.Dashboard{AlarmCount: 1},
+			}, true
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{AlarmCount: 9}, staleAt, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			return errors.New("lan down")
+		},
+	}
+
+	_, prov, ok := Dashboard(context.Background(), deps)
+	if ok {
+		t.Fatal("PreferInit must not stale-fallback")
+	}
+	if prov.Source != SourceEmpty {
+		t.Fatalf("source=%q want empty", prov.Source)
+	}
+}
+
+func TestDashboardRejectsOlderThanPersistMaxAge(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	tooOld := now.Add(-(fwapp.InitPersistMaxAge + time.Hour))
+	deps := Deps{
+		Now:         now,
+		AgentOnline: false,
+		Catalog: func() (inventory.Catalog, bool) {
+			return inventory.Catalog{}, false
+		},
+		ObservatorySnapshot: func() (fwapp.ObservatorySnapshot, time.Time, bool) {
+			return fwapp.ObservatorySnapshot{AlarmCount: 9}, tooOld, true
+		},
+		EnsureInit: func(ctx context.Context) error {
+			return errors.New("lan down")
+		},
+	}
+
+	_, prov, ok := Dashboard(context.Background(), deps)
+	if ok {
+		t.Fatal("expected empty past InitPersistMaxAge")
+	}
+	if prov.Source != SourceEmpty {
+		t.Fatalf("source=%q want empty", prov.Source)
+	}
 }
 
 func TestMetricsLatestAgentOnline(t *testing.T) {

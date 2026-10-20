@@ -1227,6 +1227,8 @@ function App() {
             <NetworkTab
               network={showNetwork}
               wanType={wanType}
+              anon={anon}
+              refreshKey={nowMs}
               features={networkExtras.features}
               extrasProvenance={networkExtras.extras_provenance}
               wanTest={networkExtras.wan_test}

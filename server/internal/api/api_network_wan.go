@@ -9,7 +9,7 @@ import (
 // Keep extras' init age separate from the agent catalog timestamp.
 func multiWANNetworkExtrasAt(snap fwapp.ObservatorySnapshot, at time.Time, ok bool, now time.Time) map[string]any {
 	age := now.Sub(at)
-	usable := ok && !at.IsZero() && age >= 0 && age <= 24*time.Hour
+	usable := ok && !at.IsZero() && age >= 0 && age <= fwapp.InitPersistMaxAge
 	out := multiWANNetworkExtras(snap, usable)
 	if !usable {
 		return out
