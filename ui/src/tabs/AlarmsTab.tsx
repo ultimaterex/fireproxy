@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 
 import { AlarmInboxList } from '@/components/AlarmInboxList'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { anonymizeAlarms, type Anon, type CidrMap } from '@/lib/anonymity'
+import { alarmCountLimited, formatAlarmCount } from '@/lib/alarms'
 import { api } from '@/lib/api'
 import type { AlarmsView } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -17,10 +19,14 @@ const emptyView = (): AlarmsView => ({
 export function AlarmsTab({
   controlLanOk,
   onAlarmCount,
+  anon = null,
+  cidrs = [],
 }: {
   controlLanOk: boolean
+  anon?: Anon | null
+  cidrs?: CidrMap[]
   /** Push active count to the notifications bell after load/mutate. */
-  onAlarmCount?: (count: number) => void
+  onAlarmCount?: (count: number, limited: boolean) => void
 }) {
   const [view, setView] = useState<AlarmsView | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -37,7 +43,7 @@ export function AlarmsTab({
       const r = await api('/v1/alarms')
       if (r.status === 404) {
         setView(emptyView())
-        onAlarmCount?.(0)
+        onAlarmCount?.(0, false)
         return
       }
       if (!r.ok) throw new Error(`alarms ${r.status}`)
@@ -52,7 +58,7 @@ export function AlarmsTab({
         reason: data.reason,
         enriched_from: data.enriched_from,
       })
-      onAlarmCount?.(count)
+      onAlarmCount?.(count, alarmCountLimited(data.source, count))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setView(null)
@@ -66,7 +72,7 @@ export function AlarmsTab({
   }, [load])
 
   const ignoreOne = async (aid: number) => {
-    if (!controlLanOk || busyAid != null) return
+    if (anon || !controlLanOk || busyAid != null) return
     setBusyAid(aid)
     setError(null)
     try {
@@ -88,7 +94,7 @@ export function AlarmsTab({
   }
 
   const ignoreAll = async () => {
-    if (!controlLanOk || busyAid != null) return
+    if (anon || !controlLanOk || busyAid != null) return
     setConfirmAll(false)
     setBusyAid(-1)
     setError(null)
@@ -108,7 +114,12 @@ export function AlarmsTab({
 
   const count = view?.active_alarm_count ?? 0
   const alarms = view?.new_alarms ?? []
+  const shownAlarms = useMemo(
+    () => (anon ? anonymizeAlarms(anon, alarms, cidrs) : alarms),
+    [anon, alarms, cidrs],
+  )
   const source = view?.source
+  const limited = alarmCountLimited(source, count)
   const showSource =
     source === 'agent' || source === 'fw-app-init' || source === 'fw-app-get'
 
@@ -117,7 +128,7 @@ export function AlarmsTab({
       <div className="flex flex-wrap items-center gap-2">
         <ShieldAlert className="size-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold tracking-tight">Alarms</h1>
-        <span className="text-sm tabular-nums text-muted-foreground">{count}</span>
+        <span className="text-sm tabular-nums text-muted-foreground">{formatAlarmCount(count, limited)}</span>
         {showSource ? (
           <SourceBadge
             source={source}
@@ -131,7 +142,7 @@ export function AlarmsTab({
             type="button"
             size="sm"
             variant="outline"
-            disabled={!controlLanOk || busy || busyAid != null || count === 0}
+            disabled={!!anon || !controlLanOk || busy || busyAid != null || count === 0}
             onClick={() => {
               if (busyAid != null) return
               setConfirmAll(true)
@@ -142,16 +153,18 @@ export function AlarmsTab({
         </div>
       </div>
 
+      {limited ? <p className="text-sm text-muted-foreground">Showing the latest 500 alarms. More may be active.</p> : null}
+      {anon ? <p className="text-sm text-muted-foreground">Alarm actions are disabled in anonymity mode.</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <Card className="gap-0 py-0">
         <CardContent className={cn('px-0', busy && !view && 'opacity-60')}>
           {view ? (
             <AlarmInboxList
-              alarms={alarms}
+              alarms={shownAlarms}
               activeCount={count}
-              nowMs={nowMs}
-              controlLanOk={controlLanOk}
+              nowMs={nowMs + (anon?.offsetSec ?? 0) * 1000}
+              controlLanOk={controlLanOk && !anon}
               busyAid={busyAid}
               onIgnore={(aid) => void ignoreOne(aid)}
             />
@@ -180,7 +193,7 @@ export function AlarmsTab({
               </h2>
             </div>
             <div className="px-6 py-5 text-sm text-muted-foreground">
-              {count} active {count === 1 ? 'alarm' : 'alarms'}
+              Ignore every active alarm, including any not shown here?
             </div>
             <div className="flex justify-end gap-2 border-t px-6 py-3">
               <Button type="button" size="sm" variant="outline" onClick={() => setConfirmAll(false)}>
@@ -189,7 +202,7 @@ export function AlarmsTab({
               <Button
                 type="button"
                 size="sm"
-                disabled={!controlLanOk || busy || busyAid != null}
+                disabled={!!anon || !controlLanOk || busy || busyAid != null}
                 onClick={() => void ignoreAll()}
               >
                 Ignore all

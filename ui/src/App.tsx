@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   Archive,
@@ -32,6 +32,7 @@ import {
 } from '@/components/DeviceDetail'
 import { RegionDetail } from '@/components/RegionDetail'
 import {
+  anonymizeAlarms,
   anonymizeAudit,
   anonymizeBox,
   anonymizeDashboard,
@@ -48,6 +49,7 @@ import {
   lanCidrsFromNetwork,
 } from '@/lib/anonymity'
 import { anonymitySalt, isAnonymityOn, subscribeAnonymity } from '@/lib/anonymity-on'
+import { alarmCountLimited, formatAlarmCount } from '@/lib/alarms'
 import { api, AUTH_EVENT } from '@/lib/api'
 import { isDebugEnabled } from '@/lib/debug'
 import { LoginPage } from '@/pages/LoginPage'
@@ -180,6 +182,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
   const [alarmNotifCount, setAlarmNotifCount] = useState(0)
+  const [alarmNotifLimited, setAlarmNotifLimited] = useState(false)
   const [alarmNotifFromApi, setAlarmNotifFromApi] = useState(false)
   const [alarmNotifLoading, setAlarmNotifLoading] = useState(false)
   const [alarmPreview, setAlarmPreview] = useState<AlarmSample[]>([])
@@ -614,6 +617,16 @@ function App() {
   const bellCount = notifCount + alarmBellCount
   const notifRef = useRef<HTMLDivElement>(null)
 
+  const onAlarmCount = useCallback((count: number, limited: boolean) => {
+    setAlarmNotifCount(count)
+    setAlarmNotifLimited(limited)
+    setAlarmNotifFromApi(true)
+  }, [])
+  const showAlarmPreview = useMemo(
+    () => (anon ? anonymizeAlarms(anon, alarmPreview, cidrs) : alarmPreview),
+    [anon, alarmPreview, cidrs],
+  )
+
   const openAudit = (section: AuditSectionId, mac?: string) => {
     setNotifOpen(false)
     const focusMac = mac && anon ? anon.fakeMAC(mac) : mac
@@ -648,6 +661,7 @@ function App() {
         const data = (await r.json()) as AlarmsView
         if (cancelled) return
         setAlarmNotifCount(data.active_alarm_count ?? 0)
+        setAlarmNotifLimited(alarmCountLimited(data.source, data.active_alarm_count ?? 0))
         setAlarmPreview((data.new_alarms ?? []).slice(0, 5))
         setAlarmNotifFromApi(true)
       } catch {
@@ -1002,7 +1016,7 @@ function App() {
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-sm font-medium">Notifications</span>
                   {bellCount > 0 ? (
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">{bellCount}</span>
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">{formatAlarmCount(bellCount, alarmNotifFromApi && alarmNotifLimited)}</span>
                   ) : null}
                 </div>
                 {bellCount > 0 ? (
@@ -1012,7 +1026,7 @@ function App() {
                         <div className="flex items-center justify-between px-3 py-1.5">
                           <span className="text-xs font-medium text-muted-foreground">Alarms</span>
                           <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                            {alarmBellCount}
+                            {formatAlarmCount(alarmBellCount, alarmNotifFromApi && alarmNotifLimited)}
                           </span>
                         </div>
                         <div className="px-1">
@@ -1020,9 +1034,9 @@ function App() {
                             <p className="px-1 py-2 text-sm text-muted-foreground">Loading…</p>
                           ) : (
                             <AlarmInboxList
-                              alarms={alarmPreview}
+                              alarms={showAlarmPreview}
                               activeCount={alarmBellCount}
-                              nowMs={nowMs}
+                              nowMs={nowMs + (anon?.offsetSec ?? 0) * 1000}
                               controlLanOk={controlLanOk}
                               compact
                             />
@@ -1282,10 +1296,9 @@ function App() {
           {tab === 'alarms' && (
             <AlarmsTab
               controlLanOk={controlLanOk}
-              onAlarmCount={(count) => {
-                setAlarmNotifCount(count)
-                setAlarmNotifFromApi(true)
-              }}
+              onAlarmCount={onAlarmCount}
+              anon={anon}
+              cidrs={cidrs}
             />
           )}
 

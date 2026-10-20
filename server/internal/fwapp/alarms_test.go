@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -110,5 +111,33 @@ func TestIgnoreAlarmNotPaired(t *testing.T) {
 	err = svc.IgnoreAlarm(context.Background(), "1")
 	if !errors.Is(err, ErrNotPaired) {
 		t.Fatalf("got %v want ErrNotPaired", err)
+	}
+}
+
+func TestGetAlarmsRequestsBeyondDefaultPage(t *testing.T) {
+	for _, n := range []int{75, maxAlarmsInbox + 1} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			svc, _ := pairedMutateService(t)
+			svc.SetSendFn(func(ctx context.Context, creds Creds, mtype string, data map[string]any, target string) (json.RawMessage, error) {
+				value := data["value"].(map[string]any)
+				if value["count"] != maxAlarmsInbox {
+					t.Fatalf("count option = %v", value["count"])
+				}
+				rows := make([]map[string]any, n)
+				for i := range rows {
+					rows[i] = map[string]any{"aid": fmt.Sprint(i + 1)}
+				}
+				b, err := json.Marshal(map[string]any{"code": 200, "data": map[string]any{"count": n, "alarms": rows}})
+				return b, err
+			})
+			list, err := svc.GetAlarms(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := min(n, maxAlarmsInbox)
+			if len(list.Alarms) != want || list.Count != int64(n) {
+				t.Fatalf("got count=%d rows=%d want count=%d rows=%d", list.Count, len(list.Alarms), n, want)
+			}
+		})
 	}
 }

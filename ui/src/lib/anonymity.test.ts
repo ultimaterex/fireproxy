@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  anonymizeAlarms,
   anonymizeAudit,
   anonymizeBox,
   anonymizeControlEvents,
@@ -275,3 +276,22 @@ describe('anonymizeControlEvents', () => {
 })
 
 
+
+
+describe('alarm privacy', () => {
+  it('masks device identity and free text without mutating the original', () => {
+    const original = [{ aid: 42, type: 'ALARM_LARGE_UPLOAD', timestamp: 1700000000,
+      device_name: 'Rex private laptop', device_mac: 'AA:BB:CC:DD:EE:FF', device_ip: '10.9.1.2',
+      message: 'Rex private laptop uploaded medical-records.pdf to secret.example.com' }]
+    const shown = anonymizeAlarms(A(), original)
+    expect(shown[0]!.aid).toBe(42)
+    expect(shown[0]!.type).toBe('ALARM_LARGE_UPLOAD')
+    expect(shown[0]!.device_name).not.toBe(original[0]!.device_name)
+    expect(shown[0]!.device_mac).not.toBe(original[0]!.device_mac)
+    expect(shown[0]!.device_ip).not.toBe(original[0]!.device_ip)
+    expect(shown[0]!.timestamp).not.toBe(original[0]!.timestamp)
+    expect(JSON.stringify(shown)).not.toMatch(/Rex|medical-records|secret\.example/)
+    expect(original[0]!.message).toContain('medical-records.pdf')
+    expect(anonymizeAlarms(A(), original)).toEqual(shown)
+  })
+})

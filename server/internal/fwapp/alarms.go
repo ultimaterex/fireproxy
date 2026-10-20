@@ -22,7 +22,7 @@ func (s *Service) GetAlarms(ctx context.Context) (AlarmsList, error) {
 	var zero AlarmsList
 	raw, err := s.sendGet(ctx, map[string]any{
 		"item":  "alarms",
-		"value": map[string]any{},
+		"value": map[string]any{"count": maxAlarmsInbox},
 	})
 	if err != nil {
 		return zero, err
